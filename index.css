@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+/* ── Markdown Preview ── */
+.markdown-body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.75;
+  color: #1e293b;
+}
+.markdown-body h1,.markdown-body h2,.markdown-body h3,
+.markdown-body h4,.markdown-body h5,.markdown-body h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
+  color: #0f172a;
+}
+.markdown-body h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 2px solid #e2e8f0; }
+.markdown-body h2 { font-size: 1.5em; padding-bottom: 0.2em; border-bottom: 1px solid #e2e8f0; }
+.markdown-body h3 { font-size: 1.25em; }
+.markdown-body h4 { font-size: 1em; }
+.markdown-body p { margin: 0.75em 0; }
+.markdown-body a { color: #2563eb; text-decoration: underline; }
+.markdown-body a:hover { color: #1d4ed8; }
+.markdown-body strong { font-weight: 700; color: #0f172a; }
+.markdown-body em { font-style: italic; }
+.markdown-body del { text-decoration: line-through; color: #94a3b8; }
+.markdown-body code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.875em;
+  background: #f1f5f9;
+  color: #e11d48;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+.markdown-body pre {
+  background: #0f172a;
+  border-radius: 10px;
+  padding: 1.25em 1.5em;
+  overflow-x: auto;
+  margin: 1em 0;
+  border: 1px solid #1e293b;
+}
+.markdown-body pre code {
+  background: none;
+  color: #94d2bd;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  font-size: 0.875em;
+  line-height: 1.6;
+}
+.markdown-body blockquote {
+  border-left: 4px solid #3b82f6;
+  background: #eff6ff;
+  margin: 1em 0;
+  padding: 0.75em 1.25em;
+  border-radius: 0 8px 8px 0;
+  color: #475569;
+}
+.markdown-body blockquote p { margin: 0; }
+.markdown-body ul,.markdown-body ol { padding-left: 1.75em; margin: 0.75em 0; }
+.markdown-body li { margin: 0.3em 0; }
+.markdown-body ul li { list-style-type: disc; }
+.markdown-body ol li { list-style-type: decimal; }
+.markdown-body hr {
+  border: none;
+  border-top: 2px solid #e2e8f0;
+  margin: 1.5em 0;
+}
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.9em;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+.markdown-body thead { background: #f8fafc; }
+.markdown-body th {
+  padding: 0.65em 1em;
+  font-weight: 700;
+  text-align: left;
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+}
+.markdown-body td {
+  padding: 0.6em 1em;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+.markdown-body tbody tr:last-child td { border-bottom: none; }
+.markdown-body tbody tr:hover { background: #f8fafc; }
+/* GFM task list */
+.markdown-body input[type="checkbox"] {
+  accent-color: #2563eb;
+  margin-right: 0.4em;
+  width: 14px;
+  height: 14px;
+}
+
+/* Fix for Query Plan Viewer — scale SVG to fit, no scrollbar */
+.qp-root {
+  width: 100% !important;
+  display: block !important;
+  overflow: hidden !important;
+}
+
+.qp-root svg {
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100% !important;
+  display: block !important;
+}
+
+/* Remove blank lines injected before/around the plan */
+.qp-root br { display: none !important; }
+.qp-root > *:first-child { margin-top: 0 !important; padding-top: 0 !important; }

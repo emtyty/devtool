@@ -1,0 +1,78 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ── Favicon ── -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='15' font-weight='900' text-anchor='middle' fill='white'%3E%26lt%3B/%26gt%3B%3C/text%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='15' font-weight='900' text-anchor='middle' fill='white'%3E%26lt%3B/%26gt%3B%3C/text%3E%3C/svg%3E">
+  <meta name="theme-color" content="#2563eb">
+
+  <!-- ── Primary SEO ── -->
+  <title>DevToolKit — Local-First Developer Tools</title>
+  <meta name="description" content="Free, privacy-first developer toolkit. Format & minify JSON/SQL, generate TypeScript types, clean lists, live Markdown preview, binary file metadata, and SQL execution plan analysis with AI. Everything runs 100% in your browser — zero data sent to any server.">
+  <meta name="keywords" content="JSON formatter, SQL formatter, TypeScript generator, list cleaner, markdown preview, data formatter, SQL execution plan, exiftool, developer tools, local-first, privacy, offline tools, JSON beautifier, SQL prettifier, JSON diff, JSON tree view">
+  <meta name="author" content="DevToolKit">
+  <meta name="robots" content="index, follow">
+
+  <!-- ── Open Graph (social share) ── -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="DevToolKit — Local-First Developer Tools">
+  <meta property="og:description" content="JSON, SQL, Markdown, TypeScript types, List Cleaner, Binary Metadata & SQL Query Plan — all running 100% in your browser. No server. No tracking.">
+  <meta property="og:site_name" content="DevToolKit">
+
+  <!-- ── Twitter Card ── -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="DevToolKit — Local-First Developer Tools">
+  <meta name="twitter:description" content="JSON, SQL, Markdown, TypeScript types, List Cleaner, Binary Metadata & SQL Query Plan — all running 100% in your browser. No server. No tracking.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Fira+Code:wght@400;500&display=swap');
+    :root {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --accent: #3b82f6;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-primary);
+      color: #1e293b;
+      margin: 0;
+      overflow-x: hidden;
+    }
+    .mono { font-family: 'Fira Code', monospace; }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; color: black !important; }
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(203, 213, 225, 0.5);
+    }
+  </style>
+  <link rel="stylesheet" href="/index.css">
+</head>
+<body>
+  <div id="root">
+    <div style="display: flex; height: 100vh; flex-direction: column; align-items: center; justify-content: center; color: #475569; text-align: center; padding: 20px;">
+      <i id="loading-icon" class="fa-solid fa-code fa-spin-pulse" style="font-size: 2.5rem; color: #3b82f6; margin-bottom: 1.5rem;"></i>
+      <div id="status-text" style="font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.75rem;">Loading DevToolKit...</div>
+      <div id="error-display" style="display: none; margin-top: 20px; color: #ef4444; max-width: 500px;">
+        <p style="font-size: 0.8rem; font-family: monospace; background: rgba(239, 68, 68, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);" id="error-text"></p>
+        <button onclick="location.reload()" style="margin-top: 15px; background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">RETRY INITIALIZATION</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
