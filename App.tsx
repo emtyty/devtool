@@ -5,7 +5,7 @@ import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
 import MetadataSidebar from './components/MetadataSidebar';
 import DropZone from './components/DropZone';
-import LandingPage from './components/LandingPage';
+import PrivacyPage from './components/PrivacyPage';
 
 const QueryPlanViewer = lazy(() => import('./components/QueryPlanViewer'));
 const DataFormatter   = lazy(() => import('./components/DataFormatter'));
@@ -14,7 +14,7 @@ const SqlFormatter    = lazy(() => import('./components/SqlFormatter'));
 const JsonTools       = lazy(() => import('./components/JsonTools'));
 const MarkdownPreview = lazy(() => import('./components/MarkdownPreview'));
 
-type AppMode = 'landing' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown';
+type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown';
 
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
@@ -27,7 +27,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
 ];
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<AppMode>('landing');
+  const [mode, setMode] = useState<AppMode>('dataformatter');
   const [session, setSession] = useState<ImageFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,7 +58,7 @@ const App: React.FC = () => {
       <header className="no-print border-b border-slate-200 glass sticky top-0 z-50 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
           <button
-            onClick={() => setMode('landing')}
+            onClick={() => setMode('dataformatter')}
             className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity"
             aria-label="Go to home"
           >
@@ -101,7 +101,7 @@ const App: React.FC = () => {
             <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
           </div>
         }>
-          {mode === 'landing'       ? <LandingPage onNavigate={(id: string) => setMode(id as AppMode)} /> :
+          {mode === 'privacy'        ? <PrivacyPage /> :
            mode === 'queryplan'     ? <QueryPlanViewer /> :
            mode === 'dataformatter' ? <DataFormatter /> :
            mode === 'listcleaner'   ? <ListCleaner /> :
@@ -149,6 +149,12 @@ const App: React.FC = () => {
               {['React 19', 'TypeScript', 'Vite', 'Tailwind CSS', 'Lucide Icons'].map(t => (
                 <span key={t} className="text-[10px] text-slate-400 font-semibold">{t}</span>
               ))}
+              <button
+                onClick={() => setMode('privacy')}
+                className="text-[10px] text-blue-400 hover:text-blue-600 font-bold transition-colors"
+              >
+                Privacy Policy
+              </button>
             </div>
           </div>
         </div>
