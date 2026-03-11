@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Copy, Check, Trash2, Upload, FileText, Eye, Columns2 } from 'lucide-react';
+import { Download, Printer, Trash2, Upload, FileText, Eye, Columns2 } from 'lucide-react';
 
 // ── Mermaid diagram renderer ─────────────────────────────────────────────────
 
@@ -98,20 +98,53 @@ flowchart LR
 \`\`\`
 `;
 
+const EXPORT_STYLES = `
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }
+    h1,h2,h3,h4,h5,h6 { font-weight: 700; margin: 1.5em 0 0.5em; }
+    h1 { font-size: 2em; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.2em; }
+    code { background: #f1f5f9; border-radius: 4px; padding: 0.2em 0.4em; font-family: monospace; font-size: 0.9em; }
+    pre { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 1em; overflow-x: auto; }
+    pre code { background: none; padding: 0; color: inherit; }
+    blockquote { border-left: 4px solid #3b82f6; margin: 0; padding: 0.5em 1em; background: #eff6ff; color: #1e40af; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5em 1em; }
+    th { background: #f8fafc; font-weight: 700; }
+    a { color: #3b82f6; } img { max-width: 100%; } hr { border: none; border-top: 2px solid #e2e8f0; }
+    ul, ol { padding-left: 1.5em; } li { margin: 0.25em 0; }
+    input[type="checkbox"] { margin-right: 0.4em; }
+  `;
+
 export default function MarkdownPreview() {
   const [markdown, setMarkdown] = useState(DEFAULT_MARKDOWN);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
-  const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const wordCount = markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
   const charCount = markdown.length;
   const lineCount = markdown.split('\n').length;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(markdown);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const buildHtmlDoc = () => {
+    const content = previewRef.current?.innerHTML || '';
+    return `<!DOCTYPE html>\n<html lang="en">\n<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Markdown Export</title><style>${EXPORT_STYLES}</style></head>\n<body>${content}</body>\n</html>`;
+  };
+
+  const exportHtml = () => {
+    const blob = new Blob([buildHtmlDoc()], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'export.html'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPdf = () => {
+    const html = buildHtmlDoc();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (!win) return;
+    win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url); });
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,11 +207,16 @@ export default function MarkdownPreview() {
             <Upload size={12} /> Import .md
           </button>
           <button
-            onClick={handleCopy}
+            onClick={exportHtml}
+            className="flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors"
+          >
+            <Download size={12} /> Export HTML
+          </button>
+          <button
+            onClick={exportPdf}
             className="flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-sm"
           >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? 'COPIED' : 'COPY RESULT'}
+            <Printer size={12} /> Export PDF
           </button>
           <button
             onClick={() => setMarkdown('')}
@@ -230,7 +268,7 @@ export default function MarkdownPreview() {
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Preview</span>
             </div>
             <div className="flex-1 overflow-auto p-6">
-              <div className="markdown-body max-w-none">
+              <div ref={previewRef} className="markdown-body max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{

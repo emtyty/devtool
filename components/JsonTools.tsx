@@ -3,14 +3,14 @@ import ResizableSplit from './ResizableSplit';
 import {
   Braces, Layers, Copy, Check, Maximize2, Minimize2, AlertCircle,
   Upload, Wrench, GitCompare, ChevronRight, ChevronDown, Plus, Minus,
-  RefreshCw, TreePine, Code2,
+  RefreshCw, TreePine, Code2, Quote,
 } from 'lucide-react';
 import { jsonrepair } from 'jsonrepair';
 
 // --- Types ---
 
 type JsonTab = 'format' | 'diff' | 'ts';
-type OutputMode = 'text' | 'tree';
+type OutputMode = 'text' | 'tree' | 'string';
 type DiffType = 'added' | 'removed' | 'changed' | 'nested';
 
 interface DiffEntry {
@@ -385,7 +385,7 @@ export default function JsonTools() {
 
   const indentVal = () => (indent === 'tab' ? '\t' : indent);
 
-  // Switch output mode: text ↔ tree, releasing unused memory
+  // Switch output mode: text ↔ tree ↔ string, releasing unused memory
   const switchOutputMode = (mode: OutputMode) => {
     if (mode === outputMode) return;
     if (mode === 'tree') {
@@ -453,10 +453,11 @@ export default function JsonTools() {
   };
 
   const handleCopy = () => {
-    const text = outputMode === 'tree' && treeParsed !== null
+    const raw = outputMode === 'tree' && treeParsed !== null
       ? JSON.stringify(treeParsed, null, indentVal())
       : output;
-    if (!text) return;
+    if (!raw) return;
+    const text = outputMode === 'string' ? JSON.stringify(raw) : raw;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -615,6 +616,16 @@ export default function JsonTools() {
                   >
                     <TreePine size={11} /> Tree
                   </button>
+                  <button
+                    onClick={() => switchOutputMode('string')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${
+                      outputMode === 'string'
+                        ? 'bg-slate-600 text-blue-300 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    <Quote size={11} /> String
+                  </button>
                 </div>
 
                 <button
@@ -635,6 +646,12 @@ export default function JsonTools() {
                         dangerouslySetInnerHTML={{ __html: highlightedOutput }}
                       />
                     : <pre className="font-mono text-[13px] text-slate-600 whitespace-pre-wrap leading-relaxed">{'// Output will appear here...'}</pre>
+                ) : outputMode === 'string' ? (
+                  output
+                    ? <pre className="font-mono text-[13px] text-emerald-400 whitespace-pre-wrap leading-relaxed selection:bg-blue-500 selection:text-white">
+                        {JSON.stringify(output)}
+                      </pre>
+                    : <pre className="font-mono text-[13px] text-slate-600 whitespace-pre-wrap leading-relaxed">{'// Stringified output will appear here...'}</pre>
                 ) : (
                   treeParsed !== null ? (
                     <TreeNode value={treeParsed} depth={0} />
