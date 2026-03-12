@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -12,9 +12,10 @@ const DataFormatter   = lazy(() => import('./components/DataFormatter'));
 const ListCleaner     = lazy(() => import('./components/ListCleaner'));
 const SqlFormatter    = lazy(() => import('./components/SqlFormatter'));
 const JsonTools       = lazy(() => import('./components/JsonTools'));
-const MarkdownPreview = lazy(() => import('./components/MarkdownPreview'));
+const MarkdownPreview       = lazy(() => import('./components/MarkdownPreview'));
+const StackTraceFormatter   = lazy(() => import('./components/StackTraceFormatter'));
 
-type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown';
+type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace';
 
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
@@ -22,6 +23,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'sqlformatter',  label: 'SQL',             icon: <Code2 size={16} /> },
   { id: 'jsontools',     label: 'JSON',            icon: <Braces size={16} /> },
   { id: 'markdown',      label: 'Markdown',        icon: <FileText size={16} /> },
+  { id: 'stacktrace',   label: 'Stack Trace',     icon: <AlertTriangle size={16} /> },
   { id: 'metadata',      label: 'Binary Metadata', icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
   { id: 'queryplan',     label: 'SQL Query Plan',  icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
 ];
@@ -108,6 +110,7 @@ const App: React.FC = () => {
            mode === 'sqlformatter'  ? <SqlFormatter /> :
            mode === 'jsontools'     ? <JsonTools /> :
            mode === 'markdown'      ? <MarkdownPreview /> :
+           mode === 'stacktrace'   ? <StackTraceFormatter /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (
@@ -142,6 +145,7 @@ const App: React.FC = () => {
             <FooterTech icon="fa-solid fa-list-check" name="List Cleaner" desc="Dedup, sort, trim, natural sort for plain text lists" />
             <FooterTech icon="fa-solid fa-braces" name="JSON Tools" desc="Format, minify, auto-repair (jsonrepair), diff & tree view" />
             <FooterTech icon="fa-solid fa-file-lines" name="Markdown" desc="Live preview with react-markdown + remark-gfm (GFM tables, tasks)" />
+            <FooterTech icon="fa-solid fa-triangle-exclamation" name="Stack Trace" desc="Parse, highlight and filter stack traces for JS, Java, Python, .NET, Go, Ruby" />
           </div>
           <div className="border-t border-slate-200 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.4em]">Powered by Coding4Pizza With Love</p>
