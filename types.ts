@@ -35,3 +35,84 @@ export interface PlanSummary {
   missingIndexes: string[];
   redFlags: RedFlag[];
 }
+
+// --- Mock Data Generator ---
+export type FieldType =
+  | 'UUID'
+  | 'FirstName'
+  | 'LastName'
+  | 'FullName'
+  | 'Email'
+  | 'Phone'
+  | 'Address'
+  | 'City'
+  | 'Country'
+  | 'ZipCode'
+  | 'Date'
+  | 'Number'
+  | 'Boolean'
+  | 'Company'
+  | 'JobTitle'
+  | 'Paragraph'
+  | 'Sentence'
+  | 'Word'
+  | 'URL'
+  | 'IPAddress'
+  | 'Avatar'
+  | 'Color'
+  | 'ProductName'
+  | 'Price'
+  | 'Department'
+  | 'ProductMaterial'
+  | 'CreditCardNumber'
+  | 'CreditCardCVV'
+  | 'AccountNumber'
+  | 'BitcoinAddress'
+  | 'CurrencyCode'
+  | 'Username'
+  | 'Password'
+  | 'IPv6'
+  | 'MACAddress'
+  | 'DomainName'
+  | 'UserAgent'
+  | 'State'
+  | 'CountryCode'
+  | 'Latitude'
+  | 'Longitude'
+  | 'Gender'
+  | 'Prefix'
+  | 'Suffix'
+  | 'FileName'
+  | 'MimeType'
+  | 'Semver'
+  | 'Vehicle'
+  | 'Manufacturer'
+  | 'Model'
+  | 'VIN'
+  | 'AnimalType'
+  | 'Cat'
+  | 'Dog'
+  | 'Product'
+  | 'ProductDescription'
+  | 'ProductAdjective'
+  | 'SKU'
+  | 'CustomList';
+
+export interface FieldOptions {
+  min?: number;
+  max?: number;
+  from?: string;
+  to?: string;
+  customValues?: string;
+  nullPercentage?: number;
+  factor?: string;
+}
+
+export interface MockField {
+  id: string;
+  name: string;
+  type: FieldType;
+  options?: FieldOptions;
+}
+
+export type OutputFormat = 'JSON' | 'CSV' | 'SQL';

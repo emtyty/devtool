@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@6over3/zeroperl-ts": "^1.0.10",
+    "@faker-js/faker": "^10.3.0",
     "@google/genai": "^1.43.0",
     "@uswriting/exiftool": "^1.0.9",
     "html-query-plan": "^2.6.1",
