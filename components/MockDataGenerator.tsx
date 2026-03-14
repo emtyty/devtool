@@ -563,6 +563,7 @@ export default function MockDataGenerator() {
             placeholder="e.g. users"
             className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
           />
+          <span className="text-[10px] text-slate-400">Used in INSERT INTO statements</span>
         </div>
       )}
 
