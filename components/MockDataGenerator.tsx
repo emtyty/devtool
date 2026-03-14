@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Plus, Trash2, Download, Copy, Check, Play,
   FileJson, FileText, Database, LayoutTemplate, Save,
@@ -453,7 +453,25 @@ export default function MockDataGenerator() {
     else if (importedTree.children) setImportedTree({ ...importedTree, children: updateNode(importedTree.children) });
   };
 
-  const addField = () => setFields(prev => [...prev, { id: newId(), name: `field_${prev.length + 1}`, type: 'Word' }]);
+  const [justAddedId, setJustAddedId] = useState<string | null>(null);
+  const fieldInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const addField = () => {
+    const id = newId();
+    setFields(prev => [...prev, { id, name: `field_${prev.length + 1}`, type: 'Word' }]);
+    setJustAddedId(id);
+  };
+
+  useEffect(() => {
+    if (!justAddedId) return;
+    const input = fieldInputRefs.current[justAddedId];
+    if (input) {
+      input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      input.focus();
+      input.select();
+      setJustAddedId(null);
+    }
+  }, [justAddedId, fields]);
   const removeField = (id: string) => setFields(prev => prev.filter(f => f.id !== id));
   const updateField = (id: string, updates: Partial<MockField>) =>
     setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
@@ -493,45 +511,47 @@ export default function MockDataGenerator() {
         <Settings2 size={14} /> Settings
       </span>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Rows</label>
-        <input
-          type="number" min={1} max={50000} value={rows}
-          onChange={e => setRows(Math.min(50000, Math.max(1, parseInt(e.target.value) || 1)))}
-          className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-        />
-        <span className="text-[10px] text-slate-400">Max 50,000 rows</span>
-      </div>
+      <div className="flex gap-3 items-start">
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Rows</label>
+          <input
+            type="number" min={1} max={50000} value={rows}
+            onChange={e => setRows(Math.min(50000, Math.max(1, parseInt(e.target.value) || 1)))}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none w-24"
+          />
+          <span className="text-[10px] text-slate-400">Max 50k</span>
+        </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Format</label>
-        {activeTab === 'generator' ? (
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 gap-0.5">
-            {(['JSON', 'CSV', 'SQL'] as OutputFormat[]).map(f => (
-              <button
-                key={f}
-                onClick={() => setFormat(f)}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black rounded-lg uppercase transition-all ${
-                  format === f ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {f === 'JSON' && <FileJson size={12} />}
-                {f === 'CSV' && <FileText size={12} />}
-                {f === 'SQL' && <Database size={12} />}
-                {f}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <>
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <div className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black rounded-lg uppercase bg-white shadow-sm text-blue-600">
-                <FileJson size={12} /> JSON
-              </div>
+        <div className="flex flex-col gap-1 flex-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Format</label>
+          {activeTab === 'generator' ? (
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 gap-0.5">
+              {(['JSON', 'CSV', 'SQL'] as OutputFormat[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFormat(f)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black rounded-lg uppercase transition-all ${
+                    format === f ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {f === 'JSON' && <FileJson size={12} />}
+                  {f === 'CSV' && <FileText size={12} />}
+                  {f === 'SQL' && <Database size={12} />}
+                  {f}
+                </button>
+              ))}
             </div>
-            <span className="text-[10px] text-slate-400">API JSON always outputs JSON</span>
-          </>
-        )}
+          ) : (
+            <>
+              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <div className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black rounded-lg uppercase bg-white shadow-sm text-blue-600">
+                  <FileJson size={12} /> JSON
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-400">API JSON always outputs JSON</span>
+            </>
+          )}
+        </div>
       </div>
 
       {effectiveFormat === 'SQL' && (
@@ -642,12 +662,13 @@ export default function MockDataGenerator() {
               <div className="col-span-1 text-center">Del</div>
             </div>
 
-            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+            <div className="space-y-2 overflow-y-auto pr-1">
               {fields.map(field => (
                 <div key={field.id} className="grid grid-cols-12 gap-2 items-center group">
                   <div className="col-span-2">
                     <input
                       type="text" value={field.name} placeholder="field_name"
+                      ref={el => { fieldInputRefs.current[field.id] = el; }}
                       onChange={e => updateField(field.id, { name: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
                     />
