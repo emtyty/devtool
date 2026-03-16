@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -15,8 +15,9 @@ const JsonTools       = lazy(() => import('./components/JsonTools'));
 const MarkdownPreview       = lazy(() => import('./components/MarkdownPreview'));
 const StackTraceFormatter   = lazy(() => import('./components/StackTraceFormatter'));
 const MockDataGenerator     = lazy(() => import('./components/MockDataGenerator'));
+const JwtDecode             = lazy(() => import('./components/JwtDecode'));
 
-type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata';
+type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode';
 
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
@@ -26,6 +27,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'markdown',      label: 'Markdown',        icon: <FileText size={16} /> },
   { id: 'stacktrace',   label: 'Stack Trace',     icon: <AlertTriangle size={16} /> },
   { id: 'mockdata',      label: 'Mock Data',       icon: <Database size={16} /> },
+  { id: 'jwtdecode',    label: 'JWT Decode',      icon: <Key size={16} /> },
   { id: 'metadata',      label: 'Binary Metadata', icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
   { id: 'queryplan',     label: 'Query Plan',      icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
 ];
@@ -33,7 +35,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(() => {
     const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata'];
+    const valid: AppMode[] = ['privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode'];
     return valid.includes(saved as AppMode) ? (saved as AppMode) : 'dataformatter';
   });
 
@@ -123,6 +125,7 @@ const App: React.FC = () => {
            mode === 'markdown'      ? <MarkdownPreview /> :
            mode === 'stacktrace'   ? <StackTraceFormatter /> :
            mode === 'mockdata'     ? <MockDataGenerator /> :
+           mode === 'jwtdecode'   ? <JwtDecode /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (
