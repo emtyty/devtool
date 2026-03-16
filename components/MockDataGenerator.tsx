@@ -120,6 +120,106 @@ const HighlightedOutput: React.FC<{ output: string; format: OutputFormat }> = ({
   );
 };
 
+// ---- JSON Tree View ----
+
+const JsonTreeNode: React.FC<{
+  keyName?: string | number;
+  value: any;
+  depth: number;
+  isLast?: boolean;
+  defaultOpen?: boolean;
+}> = ({ keyName, value, depth, isLast = true, defaultOpen }) => {
+  const isPrimitive = value === null || typeof value !== 'object';
+  const isArray = !isPrimitive && Array.isArray(value);
+  const count = !isPrimitive ? (isArray ? (value as any[]).length : Object.keys(value).length) : 0;
+  const [expanded, setExpanded] = useState(defaultOpen ?? (depth < 1 && count <= 20));
+
+  const comma = isLast ? '' : ',';
+  const indent = { paddingLeft: `${depth * 1.25}rem` };
+
+  if (isPrimitive) {
+    let valueEl: React.ReactNode;
+    if (value === null) valueEl = <span className="text-red-400">null</span>;
+    else if (typeof value === 'boolean') valueEl = <span className="text-purple-400">{String(value)}</span>;
+    else if (typeof value === 'number') valueEl = <span className="text-yellow-300">{value}</span>;
+    else valueEl = <span className="text-emerald-300">"{String(value)}"</span>;
+    return (
+      <div className="flex items-baseline leading-6" style={indent}>
+        {keyName !== undefined && <span className="text-cyan-300 mr-1">"{keyName}":<span className="text-slate-400"> </span></span>}
+        {valueEl}
+        <span className="text-slate-400">{comma}</span>
+      </div>
+    );
+  }
+
+  const [open, close] = isArray ? ['[', ']'] : ['{', '}'];
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-0.5 leading-6 cursor-pointer hover:bg-white/5 rounded select-none"
+        style={indent}
+        onClick={() => setExpanded(e => !e)}
+      >
+        {expanded
+          ? <ChevronDown size={11} className="text-slate-500 shrink-0" />
+          : <ChevronRight size={11} className="text-slate-500 shrink-0" />}
+        {keyName !== undefined && <span className="text-cyan-300 mr-1">"{keyName}":<span className="text-slate-400"> </span></span>}
+        <span className="text-slate-400">{open}</span>
+        {!expanded && (
+          <>
+            <span className="text-slate-500 text-[11px] italic mx-1">
+              {isArray ? `${count} item${count !== 1 ? 's' : ''}` : `${count} propert${count !== 1 ? 'ies' : 'y'}`}
+            </span>
+            <span className="text-slate-400">{close}{comma}</span>
+          </>
+        )}
+      </div>
+      {expanded && (
+        <>
+          {isArray
+            ? (value as any[]).map((item: any, i: number) => (
+                <JsonTreeNode key={i} value={item} depth={depth + 1} isLast={i === (value as any[]).length - 1} />
+              ))
+            : Object.entries(value).map(([k, v], i, arr) => (
+                <JsonTreeNode key={k} keyName={k} value={v} depth={depth + 1} isLast={i === arr.length - 1} />
+              ))
+          }
+          <div className="leading-6 text-slate-400" style={indent}>{close}{comma}</div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const JsonTreeView: React.FC<{ jsonString: string }> = ({ jsonString }) => {
+  const parsed = useMemo(() => {
+    try { return { data: JSON.parse(jsonString), error: null }; }
+    catch (e) { return { data: null, error: String(e) }; }
+  }, [jsonString]);
+
+  if (parsed.error) return <pre className="text-red-400 p-4 text-xs">{parsed.error}</pre>;
+
+  const data = parsed.data;
+  if (Array.isArray(data)) {
+    return (
+      <div className="font-mono text-[13px] p-4 leading-relaxed select-text">
+        <div className="text-slate-400">[</div>
+        {data.map((item: any, i: number) => (
+          <JsonTreeNode key={i} value={item} depth={1} isLast={i === data.length - 1} defaultOpen={i === 0} />
+        ))}
+        <div className="text-slate-400">]</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="font-mono text-[13px] p-4 leading-relaxed select-text">
+      <JsonTreeNode value={data} depth={0} defaultOpen={true} />
+    </div>
+  );
+};
+
 // ---- JSON Import Tree ----
 
 type JsonNode = {
@@ -360,6 +460,7 @@ export default function MockDataGenerator() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTab, setActiveTab] = useState<'generator' | 'import'>('generator');
   const [importedTree, setImportedTree] = useState<JsonNode | null>(null);
+  const [viewMode, setViewMode] = useState<'tree' | 'raw'>('tree');
 
   // Import JSON tab always outputs JSON
   const effectiveFormat: OutputFormat = activeTab === 'import' ? 'JSON' : format;
@@ -472,6 +573,7 @@ export default function MockDataGenerator() {
     setTimeout(() => {
       const dataFields = activeTab === 'import' && importedTree ? getFlatFieldsFromTree(importedTree) : fields;
       setOutput(generateData(dataFields, rows, effectiveFormat, tableName));
+      setViewMode('tree');
       setIsGenerating(false);
     }, 50);
   };
@@ -800,6 +902,21 @@ export default function MockDataGenerator() {
           )}
         </span>
         <div className="flex items-center gap-2">
+          {output && effectiveFormat === 'JSON' && (
+            <div className="flex bg-slate-800 p-0.5 rounded-lg border border-slate-700 gap-0.5">
+              {(['tree', 'raw'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${
+                    viewMode === mode ? 'bg-slate-600 text-slate-100' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          )}
           <button onClick={handleDownload} disabled={!output}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title="Download file">
@@ -814,7 +931,10 @@ export default function MockDataGenerator() {
       </div>
       <div className="flex-1 overflow-auto relative">
         {output
-          ? <HighlightedOutput output={output} format={effectiveFormat} />
+          ? (effectiveFormat === 'JSON' && viewMode === 'tree'
+              ? <JsonTreeView jsonString={output} />
+              : <HighlightedOutput output={output} format={effectiveFormat} />
+            )
           : (
             <div className="absolute inset-0 flex items-center justify-center">
               <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">

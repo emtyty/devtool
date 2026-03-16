@@ -162,6 +162,7 @@ const App: React.FC = () => {
                 <FooterTech icon="fa-solid fa-file-lines" name="Markdown" desc="Live preview with react-markdown + remark-gfm (GFM tables, tasks)" />
                 <FooterTech icon="fa-solid fa-triangle-exclamation" name="Stack Trace" desc="Parse, highlight and filter stack traces for JS, Java, Python, .NET, Go, Ruby" />
                 <FooterTech icon="fa-solid fa-database" name="Mock Data" desc="Generate fake test data (JSON/CSV/SQL) via @faker-js/faker with 60+ field types" />
+                <FooterTech icon="fa-solid fa-code" name="SQL Tool" desc="Format, minify and beautify SQL queries with sql-formatter — supports MySQL, PostgreSQL, and more" />
               </div>
               <div className="border-t border-slate-200 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.4em]">Powered by Coding4Pizza With Love</p>

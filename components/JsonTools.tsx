@@ -362,7 +362,7 @@ export default function JsonTools() {
   // Format
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
-  const [outputMode, setOutputMode] = useState<OutputMode>('text');
+  const [outputMode, setOutputMode] = useState<OutputMode>('tree');
   const [treeParsed, setTreeParsed] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [indent, setIndent] = useState<2 | 4 | 'tab'>(2);
