@@ -1,6 +1,6 @@
 # DevToolKit
 
-A local-first developer toolkit. Eight professional-grade tools that run 100% in your browser — no server, no account, no tracking.
+A local-first developer toolkit. Nine professional-grade tools that run 100% in your browser — no server, no account, no tracking.
 
 ## Tools
 
@@ -14,6 +14,7 @@ A local-first developer toolkit. Eight professional-grade tools that run 100% in
 | **Binary Metadata** | Drop any file to extract EXIF/XMP/IPTC tags via WebAssembly ExifTool |
 | **SQL Query Plan** | Visualize SQL Server execution plans with optional Gemini AI analysis |
 | **Stack Trace Formatter** | Parse and display .NET/C#/js ... stack traces with user code highlighting and EF Core support |
+| **Diagram Generator** | Describe a system in plain English and generate Mermaid sequence diagrams and flowcharts with live preview, copy, and SVG download |
 
 ## Getting Started
 
@@ -33,6 +34,7 @@ npm run dev
 - **jsonrepair** — Auto-repair malformed JSON
 - **react-markdown** + **remark-gfm** — Markdown preview
 - **html-query-plan** — SQL execution plan renderer
+- **Mermaid.js** — Sequence diagram and flowchart rendering
 - **Lucide Icons** + **Font Awesome** — Icon sets
 
 ## Privacy
