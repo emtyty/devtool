@@ -3,14 +3,14 @@ import ResizableSplit from './ResizableSplit';
 import {
   Braces, Layers, Copy, Check, Maximize2, Minimize2, AlertCircle,
   Upload, Wrench, GitCompare, ChevronRight, ChevronDown, Plus, Minus,
-  RefreshCw, TreePine, Code2, Quote, ArrowLeftRight,
+  RefreshCw, TreePine, Code2, Quote, ArrowLeftRight, Unlink,
 } from 'lucide-react';
 import { jsonrepair } from 'jsonrepair';
 import JsonDiffV2, { findDiffs, type DiffItem } from './JsonDiffV2';
 
 // --- Types ---
 
-type JsonTab = 'format' | 'diff' | 'ts';
+type JsonTab = 'format' | 'diff' | 'ts' | 'unescape';
 type DiffViewMode = 'tree' | 'sidebyside';
 type OutputMode = 'text' | 'tree' | 'string';
 type DiffType = 'added' | 'removed' | 'changed' | 'nested';
@@ -385,6 +385,12 @@ export default function JsonTools() {
   const [diffError, setDiffError] = useState<string | null>(null);
   const [v2Parsed, setV2Parsed] = useState<{ a: any; b: any; diffs: DiffItem[] } | null>(null);
 
+  // Unescape
+  const [unescInput, setUnescInput] = useState('');
+  const [unescOutput, setUnescOutput] = useState('');
+  const [unescError, setUnescError] = useState<string | null>(null);
+  const [unescCopied, setUnescCopied] = useState(false);
+
   // --- Format handlers ---
 
   const indentVal = () => (indent === 'tab' ? '\t' : indent);
@@ -545,6 +551,9 @@ export default function JsonTools() {
         </button>
         <button onClick={() => setTab('ts')} className={TAB_CLASSES(tab === 'ts')}>
           <Code2 size={14} /> TS Types
+        </button>
+        <button onClick={() => setTab('unescape')} className={TAB_CLASSES(tab === 'unescape')}>
+          <Unlink size={14} /> Unescape
         </button>
       </div>
 
@@ -777,6 +786,114 @@ export default function JsonTools() {
                       dangerouslySetInnerHTML={{ __html: highlightTs(tsOutput) }}
                     />
                   : <pre className="font-mono text-[13px] text-slate-600 whitespace-pre-wrap leading-relaxed">{'// Interfaces will appear here...'}</pre>
+                }
+              </div>
+            </section>
+          }
+        />
+      )}
+
+      {/* ── UNESCAPE TAB ── */}
+      {tab === 'unescape' && (
+        <ResizableSplit
+          storageKey="split:json-unescape"
+          left={
+            <div className="flex flex-col gap-6 h-full">
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[400px]">
+                <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <Unlink size={14} /> Escaped JSON String
+                  </span>
+                  <button
+                    onClick={() => {
+                      const example = `{\\\"id\\\":42,\\\"name\\\":\\\"Alice Smith\\\",\\\"email\\\":\\\"alice@example.com\\\",\\\"roles\\\":[\\\"admin\\\",\\\"editor\\\"],\\\"active\\\":true,\\\"score\\\":9.5}`;
+                      setUnescInput(example);
+                      setUnescError(null);
+                      setUnescOutput('');
+                    }}
+                    className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 hover:text-blue-600 transition-colors border border-slate-200 hover:border-blue-300 px-3 py-1.5 rounded-lg bg-white"
+                  >
+                    Load Example
+                  </button>
+                </div>
+                <textarea
+                  className={`flex-1 p-6 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed ${unescError ? 'ring-2 ring-red-100' : ''}`}
+                  value={unescInput}
+                  onChange={e => { setUnescInput(e.target.value); setUnescError(null); }}
+                  placeholder={'Paste a JSON string with escaped quotes, e.g.:\n{\\\"name\\\":\\\"Alice\\\",\\\"age\\\":30}'}
+                />
+                {unescError && (
+                  <div className="px-6 py-3 bg-red-50 border-t border-red-100 flex items-center gap-2 text-red-600 text-xs font-bold">
+                    <AlertCircle size={14} /> {unescError}
+                  </div>
+                )}
+              </section>
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-4">How it works</p>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                  Removes backslash-escaping from JSON strings. Useful when JSON is embedded in a log line, API response, or serialized as a string with <code className="bg-slate-100 px-1 rounded text-slate-600 font-mono">\&quot;</code> instead of real quotes.
+                </p>
+                <button
+                  onClick={() => {
+                    const s = unescInput.trim();
+                    if (!s) return;
+                    try {
+                      // Case 1: wrapped in outer quotes → full JSON string literal
+                      if (s.startsWith('"') && s.endsWith('"')) {
+                        const inner = JSON.parse(s) as string;
+                        try {
+                          const parsed = JSON.parse(inner);
+                          setUnescOutput(JSON.stringify(parsed, null, 2));
+                        } catch {
+                          setUnescOutput(inner);
+                        }
+                        setUnescError(null);
+                        return;
+                      }
+                      // Case 2: raw escaped text without outer quotes
+                      const unescaped = s.replace(/\\"/g, '"');
+                      const parsed = JSON.parse(unescaped);
+                      setUnescOutput(JSON.stringify(parsed, null, 2));
+                      setUnescError(null);
+                    } catch (e: unknown) {
+                      setUnescError(`Could not parse: ${e instanceof Error ? e.message : 'Invalid input'}`);
+                      setUnescOutput('');
+                    }
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-100 uppercase tracking-widest text-xs"
+                >
+                  <Unlink size={16} /> Unescape JSON
+                </button>
+              </section>
+            </div>
+          }
+          right={
+            <section className="bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 flex flex-col flex-1 overflow-hidden min-h-[500px]">
+              <div className="px-5 py-3 bg-slate-800/50 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                  <Braces size={14} /> Unescaped JSON
+                </span>
+                <button
+                  onClick={() => {
+                    if (!unescOutput) return;
+                    navigator.clipboard.writeText(unescOutput);
+                    setUnescCopied(true);
+                    setTimeout(() => setUnescCopied(false), 2000);
+                  }}
+                  disabled={!unescOutput}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {unescCopied ? <Check size={12} /> : <Copy size={12} />}
+                  {unescCopied ? 'COPIED' : 'COPY RESULT'}
+                </button>
+              </div>
+              <div className="flex-1 p-6 overflow-auto">
+                {unescOutput
+                  ? <pre
+                      className="font-mono text-[13px] whitespace-pre-wrap leading-relaxed selection:bg-blue-500 selection:text-white"
+                      dangerouslySetInnerHTML={{ __html: highlightJson(unescOutput) }}
+                    />
+                  : <pre className="font-mono text-[13px] text-slate-600 whitespace-pre-wrap leading-relaxed">{'// Unescaped JSON will appear here...'}</pre>
                 }
               </div>
             </section>
