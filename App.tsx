@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -18,8 +18,9 @@ const MockDataGenerator     = lazy(() => import('./components/MockDataGenerator'
 const JwtDecode             = lazy(() => import('./components/JwtDecode'));
 const TextTools             = lazy(() => import('./components/TextTools'));
 const DiagramGenerator      = lazy(() => import('./components/DiagramGenerator'));
+const EpochConverter        = lazy(() => import('./components/EpochConverter'));
 
-type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram';
+type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch';
 
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
@@ -31,6 +32,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'mockdata',      label: 'Mock Data',       icon: <Database size={16} /> },
   { id: 'jwtdecode',    label: 'JWT Decode',      icon: <Key size={16} /> },
   { id: 'texttools',    label: 'Text Tools',      icon: <Replace size={16} /> },
+  { id: 'epoch',        label: 'Epoch Converter', icon: <Clock size={16} /> },
   { id: 'diagram',      label: 'Diagram Generator', icon: <Workflow size={16} /> },
   { id: 'metadata',      label: 'Binary Metadata', icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
   { id: 'queryplan',     label: 'Query Plan',      icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
@@ -39,7 +41,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(() => {
     const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram'];
+    const valid: AppMode[] = ['privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch'];
     return valid.includes(saved as AppMode) ? (saved as AppMode) : 'dataformatter';
   });
 
@@ -131,6 +133,7 @@ const App: React.FC = () => {
            mode === 'mockdata'     ? <MockDataGenerator /> :
            mode === 'jwtdecode'   ? <JwtDecode /> :
            mode === 'texttools'   ? <TextTools /> :
+           mode === 'epoch'      ? <EpochConverter /> :
            mode === 'diagram'    ? <DiagramGenerator /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
