@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   FileText, Copy, Check, Search, BarChart3, ChevronDown, ChevronRight,
-  AlertTriangle, AlertCircle, Info, Bug, Layers, Zap, X,
+  Layers, Zap, X, Upload,
 } from 'lucide-react';
 import ResizableSplit from './ResizableSplit';
 
@@ -48,43 +48,27 @@ function normalizeLevel(raw: string): LogLevel | null {
   return null;
 }
 
-// ISO timestamp: 2024-01-15T10:30:00.000Z or 2024-01-15T10:30:00+00:00
 const RE_ISO = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\s+(\w+)\s+(.*)/s;
-
-// Bracketed timestamp with level: [2024-01-15 10:30:00] ERROR message  or  [2024-01-15 10:30:00.123] ERROR message
 const RE_BRACKET = /^\[(\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(?:\.\d+)?)\]\s*(\w+)\s+(.*)/s;
-
-// Bracketed timestamp with bracketed level: [2024-01-15 10:30:00] [ERROR] message
 const RE_BRACKET_LEVEL = /^\[(\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(?:\.\d+)?)\]\s*\[(\w+)\]\s+(.*)/s;
-
-// Timestamp without brackets: 2024-01-15 10:30:00 ERROR message
 const RE_DATETIME = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(\w+)\s+(.*)/s;
-
-// Syslog style: Jan 15 10:30:00 hostname process[pid]: message
 const RE_SYSLOG = /^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+?)(?:\[\d+\])?:\s+(.*)/s;
-
-// Simple level prefix: ERROR: message  or  [ERROR] message
 const RE_LEVEL_PREFIX = /^(\w+):\s+(.*)/s;
 const RE_LEVEL_BRACKET = /^\[(\w+)\]\s+(.*)/s;
-
-// IIS/Apache combined log format
 const RE_APACHE = /^(\S+)\s+\S+\s+\S+\s+\[(\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+[+-]\d{4})\]\s+"(\w+)\s+(\S+)\s+\S+"\s+(\d{3})\s+/;
 
 function tryParseDate(s: string): Date | null {
-  // Handle syslog month names by prepending current year
   const syslogMatch = s.match(/^([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})$/);
   if (syslogMatch) {
     const year = new Date().getFullYear();
     const d = new Date(`${syslogMatch[1]} ${syslogMatch[2]}, ${year} ${syslogMatch[3]}`);
     return isNaN(d.getTime()) ? null : d;
   }
-  // Handle Apache date format: 15/Jan/2024:10:30:00 +0000
   const apacheMatch = s.match(/^(\d{2})\/(\w{3})\/(\d{4}):(\d{2}:\d{2}:\d{2})\s+([+-]\d{4})$/);
   if (apacheMatch) {
     const d = new Date(`${apacheMatch[2]} ${apacheMatch[1]}, ${apacheMatch[3]} ${apacheMatch[4]} ${apacheMatch[5]}`);
     return isNaN(d.getTime()) ? null : d;
   }
-  // Replace space between date and time with T for ISO parsing
   const normalized = s.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2})/, '$1T$2');
   const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
@@ -111,45 +95,24 @@ function tryParseJson(line: string): ParsedEntry | null {
 }
 
 function parseLine(line: string): Omit<ParsedEntry, 'lineIndex' | 'isMultiLine'> | null {
-  // JSON structured log
   const jsonEntry = tryParseJson(line);
   if (jsonEntry) return jsonEntry;
 
-  // Bracketed timestamp with bracketed level
   let m = line.match(RE_BRACKET_LEVEL);
-  if (m) {
-    const level = normalizeLevel(m[2]);
-    if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line };
-  }
+  if (m) { const level = normalizeLevel(m[2]); if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line }; }
 
-  // Bracketed timestamp with level
   m = line.match(RE_BRACKET);
-  if (m) {
-    const level = normalizeLevel(m[2]);
-    if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line };
-  }
+  if (m) { const level = normalizeLevel(m[2]); if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line }; }
 
-  // ISO timestamp
   m = line.match(RE_ISO);
-  if (m) {
-    const level = normalizeLevel(m[2]);
-    if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line };
-  }
+  if (m) { const level = normalizeLevel(m[2]); if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line }; }
 
-  // Datetime without brackets
   m = line.match(RE_DATETIME);
-  if (m) {
-    const level = normalizeLevel(m[2]);
-    if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line };
-  }
+  if (m) { const level = normalizeLevel(m[2]); if (level) return { timestamp: tryParseDate(m[1]), level, message: m[3], raw: line }; }
 
-  // Syslog
   m = line.match(RE_SYSLOG);
-  if (m) {
-    return { timestamp: tryParseDate(m[1]), level: 'INFO', message: `${m[2]} ${m[3]}: ${m[4]}`, raw: line };
-  }
+  if (m) return { timestamp: tryParseDate(m[1]), level: 'INFO', message: `${m[2]} ${m[3]}: ${m[4]}`, raw: line };
 
-  // Apache/IIS combined log
   m = line.match(RE_APACHE);
   if (m) {
     const status = parseInt(m[5], 10);
@@ -157,26 +120,17 @@ function parseLine(line: string): Omit<ParsedEntry, 'lineIndex' | 'isMultiLine'>
     return { timestamp: tryParseDate(m[2]), level, message: `${m[3]} ${m[4]} → ${m[5]}`, raw: line };
   }
 
-  // Simple level prefix: ERROR: message
   m = line.match(RE_LEVEL_PREFIX);
-  if (m) {
-    const level = normalizeLevel(m[1]);
-    if (level) return { timestamp: null, level, message: m[2], raw: line };
-  }
+  if (m) { const level = normalizeLevel(m[1]); if (level) return { timestamp: null, level, message: m[2], raw: line }; }
 
-  // Bracketed level: [ERROR] message
   m = line.match(RE_LEVEL_BRACKET);
-  if (m) {
-    const level = normalizeLevel(m[1]);
-    if (level) return { timestamp: null, level, message: m[2], raw: line };
-  }
+  if (m) { const level = normalizeLevel(m[1]); if (level) return { timestamp: null, level, message: m[2], raw: line }; }
 
   return null;
 }
 
 function parseLogInput(text: string): ParsedEntry[] {
   if (!text.trim()) return [];
-
   const lines = text.split(/\r?\n/);
   const entries: ParsedEntry[] = [];
 
@@ -186,31 +140,60 @@ function parseLogInput(text: string): ParsedEntry[] {
 
     const parsed = parseLine(line);
     if (parsed) {
-      entries.push({
-        ...parsed,
-        lineIndex: i,
-        isMultiLine: false,
-      });
+      entries.push({ ...parsed, lineIndex: i, isMultiLine: false });
     } else if (entries.length > 0) {
-      // Continuation line (e.g., stack trace) — append to previous entry
       const prev = entries[entries.length - 1];
       prev.message += '\n' + line;
       prev.raw += '\n' + line;
       prev.isMultiLine = true;
     } else {
-      // Standalone line with no detected format
-      entries.push({
-        lineIndex: i,
-        timestamp: null,
-        level: null,
-        message: line,
-        raw: line,
-        isMultiLine: false,
-      });
+      entries.push({ lineIndex: i, timestamp: null, level: null, message: line, raw: line, isMultiLine: false });
     }
   }
-
   return entries;
+}
+
+// ── Debounce hook ───────────────────────────────────────────────────────────
+
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+// ── Virtual scroll hook ─────────────────────────────────────────────────────
+
+const ROW_HEIGHT = 32;
+const OVERSCAN = 10;
+
+function useVirtualScroll(containerRef: React.RefObject<HTMLDivElement | null>, itemCount: number) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setContainerHeight(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [containerRef]);
+
+  const totalHeight = itemCount * ROW_HEIGHT;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIndex = Math.min(itemCount, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
+
+  return { totalHeight, startIndex, endIndex, offsetY: startIndex * ROW_HEIGHT };
 }
 
 // ── Example Data ────────────────────────────────────────────────────────────
@@ -280,45 +263,78 @@ java.lang.OutOfMemoryError: GC overhead limit exceeded
 [2024-01-15 08:01:20.600] INFO Database connection pool closed
 [2024-01-15 08:01:20.700] INFO Application shut down cleanly`;
 
+// ── Formatting helpers ──────────────────────────────────────────────────────
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function LogAnalyzer() {
-  const [input, setInput] = useState('');
+  const [rawInput, setRawInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(ALL_LEVELS));
   const [expandedEntries, setExpandedEntries] = useState<Set<number>>(new Set());
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [lineCount, setLineCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Parse all entries
-  const entries = useMemo(() => parseLogInput(input), [input]);
+  // For large files, don't bind textarea to input — show readonly summary instead
+  const isLargeInput = rawInput.length > 500_000; // ~500KB
 
-  // Search regex
-  const searchRegex = useMemo(() => {
-    if (!searchText.trim()) return null;
-    try {
-      return new RegExp(searchText, 'gi');
-    } catch {
-      // Fall back to literal match
-      return new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  // Debounce search for performance
+  const debouncedSearch = useDebounced(searchText, 200);
+
+  // Parse entries — use deferred parsing for large inputs
+  const [entries, setEntries] = useState<ParsedEntry[]>([]);
+
+  useEffect(() => {
+    if (!rawInput.trim()) {
+      setEntries([]);
+      setLineCount(0);
+      return;
     }
-  }, [searchText]);
+
+    setIsParsing(true);
+    // Use setTimeout to unblock UI for large inputs
+    const timer = setTimeout(() => {
+      const parsed = parseLogInput(rawInput);
+      setEntries(parsed);
+      setLineCount(rawInput.split(/\r?\n/).length);
+      setIsParsing(false);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [rawInput]);
+
+  // Search regex (debounced)
+  const searchRegex = useMemo(() => {
+    if (!debouncedSearch.trim()) return null;
+    try {
+      return new RegExp(debouncedSearch, 'gi');
+    } catch {
+      return new RegExp(debouncedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    }
+  }, [debouncedSearch]);
 
   // Filtered entries
   const filteredEntries = useMemo(() => {
     let result = entries;
-
-    // Filter by level
     if (enabledLevels.size < ALL_LEVELS.length) {
       result = result.filter(e => e.level === null || enabledLevels.has(e.level));
     }
-
-    // Filter by search
     if (searchRegex) {
-      result = result.filter(e => searchRegex.test(e.raw));
-      // Reset lastIndex after test calls
-      searchRegex.lastIndex = 0;
+      result = result.filter(e => {
+        searchRegex.lastIndex = 0;
+        return searchRegex.test(e.raw);
+      });
     }
-
     return result;
   }, [entries, enabledLevels, searchRegex]);
 
@@ -327,7 +343,6 @@ export default function LogAnalyzer() {
     const counts: Record<LogLevel, number> = { ERROR: 0, WARN: 0, INFO: 0, DEBUG: 0, TRACE: 0 };
     let minTime: Date | null = null;
     let maxTime: Date | null = null;
-
     for (const e of entries) {
       if (e.level) counts[e.level]++;
       if (e.timestamp) {
@@ -335,51 +350,42 @@ export default function LogAnalyzer() {
         if (!maxTime || e.timestamp > maxTime) maxTime = e.timestamp;
       }
     }
-
     return { total: entries.length, counts, minTime, maxTime };
   }, [entries]);
 
-  // Timeline buckets for bar chart
+  // Timeline buckets
   const timelineBuckets = useMemo(() => {
     if (!stats.minTime || !stats.maxTime) return [];
-
     const minMs = stats.minTime.getTime();
     const maxMs = stats.maxTime.getTime();
     const range = maxMs - minMs;
     if (range <= 0) return [];
-
     const bucketCount = Math.min(30, Math.max(5, Math.ceil(range / 1000)));
     const bucketSize = range / bucketCount;
-
     const buckets: { start: number; counts: Record<LogLevel, number>; total: number }[] = [];
     for (let i = 0; i < bucketCount; i++) {
-      buckets.push({
-        start: minMs + i * bucketSize,
-        counts: { ERROR: 0, WARN: 0, INFO: 0, DEBUG: 0, TRACE: 0 },
-        total: 0,
-      });
+      buckets.push({ start: minMs + i * bucketSize, counts: { ERROR: 0, WARN: 0, INFO: 0, DEBUG: 0, TRACE: 0 }, total: 0 });
     }
-
     for (const e of entries) {
       if (!e.timestamp) continue;
       const idx = Math.min(bucketCount - 1, Math.floor((e.timestamp.getTime() - minMs) / bucketSize));
       if (e.level) buckets[idx].counts[e.level]++;
       buckets[idx].total++;
     }
-
     return buckets;
   }, [entries, stats.minTime, stats.maxTime]);
 
-  const maxBucketTotal = useMemo(
-    () => Math.max(1, ...timelineBuckets.map(b => b.total)),
-    [timelineBuckets],
-  );
+  const maxBucketTotal = useMemo(() => Math.max(1, ...timelineBuckets.map(b => b.total)), [timelineBuckets]);
+
+  // Virtual scroll
+  const { totalHeight, startIndex, endIndex, offsetY } = useVirtualScroll(scrollContainerRef, filteredEntries.length);
+
+  // ── Handlers ────────────────────────────────────────────────────────────
 
   const toggleLevel = useCallback((level: LogLevel) => {
     setEnabledLevels(prev => {
       const next = new Set(prev);
-      if (next.has(level)) next.delete(level);
-      else next.add(level);
+      if (next.has(level)) next.delete(level); else next.add(level);
       return next;
     });
   }, []);
@@ -387,8 +393,7 @@ export default function LogAnalyzer() {
   const toggleExpanded = useCallback((lineIndex: number) => {
     setExpandedEntries(prev => {
       const next = new Set(prev);
-      if (next.has(lineIndex)) next.delete(lineIndex);
-      else next.add(lineIndex);
+      if (next.has(lineIndex)) next.delete(lineIndex); else next.add(lineIndex);
       return next;
     });
   }, []);
@@ -401,19 +406,54 @@ export default function LogAnalyzer() {
     setTimeout(() => setCopied(false), 2000);
   }, [filteredEntries]);
 
-  const loadExample = useCallback(() => {
-    setInput(EXAMPLE_LOGS);
+  const loadText = useCallback((text: string, name?: string) => {
+    setRawInput(text);
     setExpandedEntries(new Set());
+    setFileName(name || null);
   }, []);
 
+  const loadExample = useCallback(() => loadText(EXAMPLE_LOGS), [loadText]);
+
   const clearInput = useCallback(() => {
-    setInput('');
+    setRawInput('');
     setSearchText('');
     setExpandedEntries(new Set());
     setEnabledLevels(new Set(ALL_LEVELS));
+    setFileName(null);
   }, []);
 
-  // Highlight search matches in text
+  // ── File import ───────────────────────────────────────────────────────
+
+  const handleFile = useCallback((file: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result;
+      if (typeof text === 'string') {
+        loadText(text, file.name);
+      }
+    };
+    reader.readAsText(file);
+  }, [loadText]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  // Highlight search matches
   const highlightText = useCallback((text: string, regex: RegExp | null): React.ReactNode => {
     if (!regex) return text;
     regex.lastIndex = 0;
@@ -421,20 +461,16 @@ export default function LogAnalyzer() {
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     let key = 0;
-
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.slice(lastIndex, match.index));
-      }
-      parts.push(
-        <mark key={key++} className="bg-yellow-400/40 text-yellow-200 rounded px-0.5">{match[0]}</mark>
-      );
+    // Limit highlights per entry for performance
+    let matchCount = 0;
+    while ((match = regex.exec(text)) !== null && matchCount < 20) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      parts.push(<mark key={key++} className="bg-yellow-400/40 text-yellow-200 rounded px-0.5">{match[0]}</mark>);
       lastIndex = regex.lastIndex;
-      if (match[0].length === 0) { regex.lastIndex++; }
+      if (match[0].length === 0) regex.lastIndex++;
+      matchCount++;
     }
-    if (lastIndex < text.length) {
-      parts.push(text.slice(lastIndex));
-    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
     return parts.length > 0 ? parts : text;
   }, []);
 
@@ -447,26 +483,61 @@ export default function LogAnalyzer() {
 
   const leftPanel = (
     <div className="flex flex-col gap-4 h-full">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".log,.txt,.json,.csv,.out,.err,*"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+      />
+
       {/* Input area */}
-      <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[300px] flex-1">
+      <section
+        className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col min-h-[300px] flex-1 transition-colors ${
+          isDragging ? 'border-blue-400 bg-blue-50/50 ring-2 ring-blue-400/30' : 'border-slate-200'
+        }`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
             <FileText size={14} className="text-slate-400" /> Log Input
-          </span>
-          <div className="flex items-center gap-2">
-            {entries.length > 0 && (
-              <span className="text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded shadow-sm">
-                {entries.length} ENTRIES PARSED
+            {fileName && (
+              <span className="text-blue-500 normal-case tracking-normal font-bold ml-1">
+                — {fileName}
               </span>
             )}
+          </span>
+          <div className="flex items-center gap-2">
+            {isParsing && (
+              <span className="text-[10px] font-black text-amber-600 px-2 py-0.5 rounded bg-amber-50 border border-amber-200">
+                PARSING...
+              </span>
+            )}
+            {entries.length > 0 && !isParsing && (
+              <span className="text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded shadow-sm">
+                {entries.length.toLocaleString()} ENTRIES
+                {lineCount > 0 && ` / ${lineCount.toLocaleString()} LINES`}
+              </span>
+            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[10px] font-black text-slate-500 uppercase px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
+              title="Import log file (.log, .txt, .json)"
+            >
+              <Upload size={11} className="inline mr-1 -mt-0.5" />
+              Import File
+            </button>
             <button
               onClick={loadExample}
               className="text-[10px] font-black text-slate-500 uppercase px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
             >
               <Zap size={11} className="inline mr-1 -mt-0.5" />
-              Example Data
+              Example
             </button>
-            {input && (
+            {rawInput && (
               <button
                 onClick={clearInput}
                 className="text-[10px] font-black text-slate-400 uppercase px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
@@ -476,18 +547,49 @@ export default function LogAnalyzer() {
             )}
           </div>
         </div>
-        <textarea
-          className="flex-1 p-6 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder="Paste your log output here...&#10;&#10;Supports:&#10;  [2024-01-15 10:30:00] ERROR message&#10;  2024-01-15T10:30:00.000Z INFO message&#10;  Jan 15 10:30:00 hostname process: message&#10;  {&quot;timestamp&quot;:&quot;...&quot;,&quot;level&quot;:&quot;error&quot;,&quot;message&quot;:&quot;...&quot;}&#10;  ERROR: simple prefix messages"
-          spellCheck={false}
-        />
+
+        {isDragging ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Upload size={32} className="mx-auto text-blue-400 mb-2" />
+              <p className="text-sm font-bold text-blue-500">Drop log file here</p>
+              <p className="text-[10px] text-slate-400 mt-1">.log, .txt, .json, or any text file</p>
+            </div>
+          </div>
+        ) : isLargeInput ? (
+          /* For large files, show a read-only summary instead of binding to textarea */
+          <div className="flex-1 p-6 flex flex-col items-center justify-center text-center gap-3">
+            <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+              <FileText size={24} className="text-blue-500" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-700">
+                {fileName || 'Large log loaded'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {formatFileSize(rawInput.length)} — {lineCount.toLocaleString()} lines — {entries.length.toLocaleString()} parsed entries
+              </p>
+            </div>
+            <button
+              onClick={clearInput}
+              className="text-[10px] font-black text-slate-500 uppercase px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
+            >
+              Clear & paste new logs
+            </button>
+          </div>
+        ) : (
+          <textarea
+            className="flex-1 p-6 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed"
+            value={rawInput}
+            onChange={e => { setRawInput(e.target.value); setFileName(null); }}
+            placeholder={"Paste your log output here or drag & drop a log file...\n\nSupports:\n  [2024-01-15 10:30:00] ERROR message\n  2024-01-15T10:30:00.000Z INFO message\n  Jan 15 10:30:00 hostname process: message\n  {\"timestamp\":\"...\",\"level\":\"error\",\"message\":\"...\"}\n  ERROR: simple prefix messages"}
+            spellCheck={false}
+          />
+        )}
       </section>
 
       {/* Filters */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-        {/* Level filter chips */}
         <div className="mb-3">
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">
             Filter by Level
@@ -502,18 +604,14 @@ export default function LogAnalyzer() {
                   key={level}
                   onClick={() => toggleLevel(level)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${
-                    active
-                      ? `${config.bg} ${config.text} border-current`
-                      : 'bg-slate-50 text-slate-300 border-slate-200'
+                    active ? `${config.bg} ${config.text} border-current` : 'bg-slate-50 text-slate-300 border-slate-200'
                   }`}
                 >
                   <span className={`w-2 h-2 rounded-full ${active ? config.dot : 'bg-slate-300'}`} />
                   {level}
                   {count > 0 && (
-                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] ${
-                      active ? 'bg-white/20' : 'bg-slate-100'
-                    }`}>
-                      {count}
+                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] ${active ? 'bg-white/20' : 'bg-slate-100'}`}>
+                      {count.toLocaleString()}
                     </span>
                   )}
                 </button>
@@ -522,7 +620,6 @@ export default function LogAnalyzer() {
           </div>
         </div>
 
-        {/* Search */}
         <div>
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">
             Search (supports regex)
@@ -537,10 +634,7 @@ export default function LogAnalyzer() {
               className="w-full pl-9 pr-3 py-2 text-sm font-mono rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white text-slate-700 placeholder:text-slate-300"
             />
             {searchText && (
-              <button
-                onClick={() => setSearchText('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
+              <button onClick={() => setSearchText('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 <X size={14} />
               </button>
             )}
@@ -552,9 +646,10 @@ export default function LogAnalyzer() {
 
   // ── Right Panel ─────────────────────────────────────────────────────────
 
+  const visibleEntries = filteredEntries.slice(startIndex, endIndex);
+
   const rightPanel = (
     <section className="bg-slate-900 rounded-2xl shadow-sm border border-slate-700 overflow-hidden flex flex-col min-h-[400px] h-full">
-      {/* Header */}
       <div className="px-6 py-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
           <Layers size={14} className="text-slate-500" /> Analysis
@@ -562,9 +657,7 @@ export default function LogAnalyzer() {
         <button
           onClick={handleCopy}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
-            copied
-              ? 'bg-emerald-600 text-white'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
+            copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
           }`}
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -573,31 +666,32 @@ export default function LogAnalyzer() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {entries.length === 0 ? (
+        {entries.length === 0 && !isParsing ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-            Paste logs on the left to analyze...
+            Paste logs or import a file to analyze...
+          </div>
+        ) : isParsing ? (
+          <div className="flex items-center justify-center h-full gap-3">
+            <div className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+            <span className="text-slate-400 text-sm font-bold">Parsing log entries...</span>
           </div>
         ) : (
           <div className="p-4 space-y-4">
             {/* Stats summary */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Lines</div>
-                <div className="text-2xl font-black text-white">{stats.total}</div>
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Entries</div>
+                <div className="text-2xl font-black text-white">{stats.total.toLocaleString()}</div>
               </div>
               <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Filtered</div>
-                <div className="text-2xl font-black text-white">{filteredEntries.length}</div>
+                <div className="text-2xl font-black text-white">{filteredEntries.length.toLocaleString()}</div>
               </div>
               <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 col-span-2 md:col-span-1">
                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Time Range</div>
                 <div className="text-xs font-mono text-slate-300 leading-relaxed">
                   {stats.minTime ? (
-                    <>
-                      {formatTime(stats.minTime)}
-                      <br />
-                      {formatTime(stats.maxTime)}
-                    </>
+                    <>{formatTime(stats.minTime)}<br />{formatTime(stats.maxTime)}</>
                   ) : (
                     <span className="text-slate-500">No timestamps</span>
                   )}
@@ -618,13 +712,10 @@ export default function LogAnalyzer() {
                     <div key={level} className="flex items-center gap-2">
                       <span className={`text-[10px] font-black uppercase w-12 ${config.text}`}>{level}</span>
                       <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${config.bar} transition-all duration-300`}
-                          style={{ width: `${(count / stats.total) * 100}%` }}
-                        />
+                        <div className={`h-full rounded-full ${config.bar} transition-all duration-300`} style={{ width: `${(count / stats.total) * 100}%` }} />
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400 w-20 text-right">
-                        {count} ({pct}%)
+                      <span className="text-[10px] font-mono text-slate-400 w-24 text-right">
+                        {count.toLocaleString()} ({pct}%)
                       </span>
                     </div>
                   );
@@ -632,7 +723,7 @@ export default function LogAnalyzer() {
               </div>
             </div>
 
-            {/* Timeline bar chart */}
+            {/* Timeline */}
             {timelineBuckets.length > 0 && (
               <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
@@ -641,29 +732,15 @@ export default function LogAnalyzer() {
                 <div className="flex items-end gap-px h-16">
                   {timelineBuckets.map((bucket, i) => {
                     const heightPct = (bucket.total / maxBucketTotal) * 100;
-                    // Stack bars by level proportion
                     const levelOrder: LogLevel[] = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
                     return (
-                      <div
-                        key={i}
-                        className="flex-1 flex flex-col justify-end h-full group relative"
-                        title={`${new Date(bucket.start).toLocaleTimeString()}: ${bucket.total} entries`}
-                      >
-                        <div
-                          className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end transition-all"
-                          style={{ height: `${heightPct}%` }}
-                        >
+                      <div key={i} className="flex-1 flex flex-col justify-end h-full" title={`${new Date(bucket.start).toLocaleTimeString()}: ${bucket.total} entries`}>
+                        <div className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end" style={{ height: `${heightPct}%` }}>
                           {levelOrder.map(level => {
                             const cnt = bucket.counts[level];
                             if (cnt === 0 || bucket.total === 0) return null;
                             const config = LEVEL_CONFIG[level];
-                            return (
-                              <div
-                                key={level}
-                                className={`w-full ${config.bar}`}
-                                style={{ height: `${(cnt / bucket.total) * 100}%`, minHeight: cnt > 0 ? '1px' : 0 }}
-                              />
-                            );
+                            return <div key={level} className={`w-full ${config.bar}`} style={{ height: `${(cnt / bucket.total) * 100}%`, minHeight: cnt > 0 ? '1px' : 0 }} />;
                           })}
                         </div>
                       </div>
@@ -671,101 +748,84 @@ export default function LogAnalyzer() {
                   })}
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-[9px] font-mono text-slate-600">
-                    {stats.minTime?.toLocaleTimeString()}
-                  </span>
-                  <span className="text-[9px] font-mono text-slate-600">
-                    {stats.maxTime?.toLocaleTimeString()}
-                  </span>
+                  <span className="text-[9px] font-mono text-slate-600">{stats.minTime?.toLocaleTimeString()}</span>
+                  <span className="text-[9px] font-mono text-slate-600">{stats.maxTime?.toLocaleTimeString()}</span>
                 </div>
               </div>
             )}
 
-            {/* Parsed log entries */}
+            {/* Virtualized log entries */}
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
               <div className="px-3 py-2 border-b border-slate-700 flex items-center justify-between">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                  Log Entries ({filteredEntries.length})
+                  Log Entries ({filteredEntries.length.toLocaleString()})
                 </span>
               </div>
-              <div className="divide-y divide-slate-700/50 max-h-[600px] overflow-auto">
+              <div
+                ref={scrollContainerRef}
+                className="overflow-auto"
+                style={{ maxHeight: '600px' }}
+              >
                 {filteredEntries.length === 0 ? (
                   <div className="p-4 text-center text-slate-500 text-sm">
                     No entries match the current filters.
                   </div>
                 ) : (
-                  filteredEntries.map((entry, idx) => {
-                    const config = entry.level ? LEVEL_CONFIG[entry.level] : null;
-                    const isExpanded = expandedEntries.has(entry.lineIndex);
-                    const firstLine = entry.message.split('\n')[0];
-                    const hasMultipleLines = entry.message.includes('\n');
+                  <div style={{ height: totalHeight, position: 'relative' }}>
+                    <div style={{ transform: `translateY(${offsetY}px)` }}>
+                      {visibleEntries.map((entry, idx) => {
+                        const config = entry.level ? LEVEL_CONFIG[entry.level] : null;
+                        const isExpanded = expandedEntries.has(entry.lineIndex);
+                        const firstLine = entry.message.split('\n')[0];
+                        const hasMultipleLines = entry.message.includes('\n');
 
-                    return (
-                      <div
-                        key={`${entry.lineIndex}-${idx}`}
-                        className="px-3 py-1.5 hover:bg-slate-700/30 transition-colors"
-                      >
-                        <div
-                          className={`flex items-start gap-2 ${hasMultipleLines ? 'cursor-pointer' : ''}`}
-                          onClick={hasMultipleLines ? () => toggleExpanded(entry.lineIndex) : undefined}
-                        >
-                          {/* Expand toggle */}
-                          <div className="w-4 pt-0.5 shrink-0">
-                            {hasMultipleLines && (
-                              isExpanded
-                                ? <ChevronDown size={12} className="text-slate-500" />
-                                : <ChevronRight size={12} className="text-slate-500" />
+                        return (
+                          <div
+                            key={entry.lineIndex}
+                            className="px-3 hover:bg-slate-700/30 transition-colors"
+                            style={!isExpanded ? { height: ROW_HEIGHT, overflow: 'hidden' } : undefined}
+                          >
+                            <div
+                              className={`flex items-start gap-2 ${hasMultipleLines ? 'cursor-pointer' : ''}`}
+                              style={{ height: ROW_HEIGHT, alignItems: 'center' }}
+                              onClick={hasMultipleLines ? () => toggleExpanded(entry.lineIndex) : undefined}
+                            >
+                              <div className="w-4 shrink-0">
+                                {hasMultipleLines && (
+                                  isExpanded
+                                    ? <ChevronDown size={12} className="text-slate-500" />
+                                    : <ChevronRight size={12} className="text-slate-500" />
+                                )}
+                              </div>
+                              <div className="w-14 shrink-0">
+                                {config ? (
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${config.bg} ${config.text}`}>{entry.level}</span>
+                                ) : (
+                                  <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-700 text-slate-500">???</span>
+                                )}
+                              </div>
+                              {entry.timestamp && (
+                                <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                                  {entry.timestamp.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions)}
+                                </span>
+                              )}
+                              <span className="text-xs font-mono text-slate-300 truncate leading-relaxed">
+                                {highlightText(firstLine, searchRegex)}
+                                {hasMultipleLines && !isExpanded && (
+                                  <span className="text-slate-600 ml-1">(+{entry.message.split('\n').length - 1} lines)</span>
+                                )}
+                              </span>
+                            </div>
+                            {hasMultipleLines && isExpanded && (
+                              <pre className="ml-20 mb-2 text-[11px] font-mono text-slate-400 whitespace-pre-wrap leading-relaxed bg-slate-900/50 rounded p-2 border border-slate-700/50 max-h-80 overflow-auto">
+                                {highlightText(entry.message.split('\n').slice(1).join('\n'), searchRegex)}
+                              </pre>
                             )}
                           </div>
-
-                          {/* Level badge */}
-                          <div className="w-14 shrink-0">
-                            {config ? (
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${config.bg} ${config.text}`}>
-                                {entry.level}
-                              </span>
-                            ) : (
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-700 text-slate-500">
-                                ???
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Timestamp */}
-                          {entry.timestamp && (
-                            <span className="text-[11px] font-mono text-slate-500 shrink-0 pt-0.5">
-                              {entry.timestamp.toLocaleTimeString(undefined, {
-                                hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3,
-                              } as Intl.DateTimeFormatOptions)}
-                            </span>
-                          )}
-
-                          {/* Message */}
-                          <span className="text-xs font-mono text-slate-300 break-all leading-relaxed pt-0.5">
-                            {highlightText(
-                              isExpanded ? entry.message : firstLine,
-                              searchRegex,
-                            )}
-                            {hasMultipleLines && !isExpanded && (
-                              <span className="text-slate-600 ml-1">
-                                (+{entry.message.split('\n').length - 1} lines)
-                              </span>
-                            )}
-                          </span>
-                        </div>
-
-                        {/* Expanded multi-line content rendered as preformatted block */}
-                        {hasMultipleLines && isExpanded && (
-                          <pre className="ml-20 mt-1 text-[11px] font-mono text-slate-400 whitespace-pre-wrap leading-relaxed bg-slate-900/50 rounded p-2 border border-slate-700/50">
-                            {highlightText(
-                              entry.message.split('\n').slice(1).join('\n'),
-                              searchRegex,
-                            )}
-                          </pre>
-                        )}
-                      </div>
-                    );
-                  })
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
