@@ -85,12 +85,14 @@ const EXAMPLE_INPUT = `User sends request from Browser to API Gateway. API Gatew
 
 // ── Component ──
 
-const DiagramGenerator: React.FC = () => {
+const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialData }) => {
   // Core state
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [textInput, setTextInput] = useState('');
   const [mermaidCode, setMermaidCode] = useState('');
   const [editableCode, setEditableCode] = useState('');
+
+  useEffect(() => { if (initialData) setTextInput(initialData); }, [initialData]);
   const [diagramType, setDiagramType] = useState<DiagramType>('flowchart');
   const [viewTab, setViewTab] = useState<ViewTab>('preview');
   const [loading, setLoading] = useState(false);

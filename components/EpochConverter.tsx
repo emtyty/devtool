@@ -196,8 +196,10 @@ function getCurrentTimestamps(): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function EpochConverter() {
+export default function EpochConverter({ initialData }: { initialData?: string | null }) {
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [mode, setMode] = useState<'toDate' | 'toEpoch'>('toDate');
   const [tz, setTz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [copied, setCopied] = useState(false);

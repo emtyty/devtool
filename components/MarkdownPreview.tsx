@@ -176,8 +176,10 @@ const EXPORT_STYLES = `
     input[type="checkbox"] { margin-right: 0.4em; }
   `;
 
-export default function MarkdownPreview() {
+export default function MarkdownPreview({ initialData }: { initialData?: string | null }) {
   const [markdown, setMarkdown] = useState(DEFAULT_MARKDOWN);
+
+  useEffect(() => { if (initialData) setMarkdown(initialData); }, [initialData]);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const fileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);

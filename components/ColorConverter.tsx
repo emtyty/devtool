@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Pipette, Copy, Check, Palette, Info, Zap, Eye } from 'lucide-react';
 import ResizableSplit from './ResizableSplit';
 
@@ -339,8 +339,10 @@ function Badge({ pass, label }: { pass: boolean; label: string }) {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-export default function ColorConverter() {
+export default function ColorConverter({ initialData }: { initialData?: string | null }) {
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [copied, setCopied] = useState(false);
 
   const rgba = useMemo(() => parseColor(input), [input]);

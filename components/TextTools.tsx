@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Copy, Check, Layers, AlignLeft, Ticket, Binary, Link } from 'lucide-react';
 import ResizableSplit from './ResizableSplit';
 
@@ -127,11 +127,28 @@ function transformJiraNotes(input: string, baseUrl: string, prefix: string): str
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function TextTools() {
+export default function TextTools({ initialData }: { initialData?: string | null }) {
   const [tab, setTab] = useState<TextTab>('insights');
 
   // ── Base64 state ──
   const [b64Input, setB64Input] = useState('');
+
+  // Smart Detect passthrough — route to the most relevant tab's input
+  useEffect(() => {
+    if (!initialData) return;
+    const t = initialData.trim();
+    // Jira ticket pattern: PROJ-123 description
+    const jiraLines = t.split('\n').filter(l => /^[A-Z]{2,10}-\d+\s+.+/.test(l.trim()));
+    if (jiraLines.length >= 1) {
+      setTab('jira'); setJiraInput(initialData);
+    } else if (/^[A-Za-z0-9+\/]+=*$/.test(t) && t.length >= 4) {
+      setTab('base64'); setB64Input(initialData);
+    } else if (/%[0-9A-Fa-f]{2}/.test(initialData)) {
+      setTab('url'); setUrlInput(initialData);
+    } else {
+      setTab('insights'); setInsightsInput(initialData);
+    }
+  }, [initialData]);
   const [b64Mode, setB64Mode] = useState<'encode' | 'decode'>('encode');
   const [b64Copied, copyB64] = useCopy();
   const b64Output = useMemo(

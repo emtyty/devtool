@@ -273,8 +273,10 @@ function formatFileSize(bytes: number): string {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function LogAnalyzer() {
+export default function LogAnalyzer({ initialData }: { initialData?: string | null }) {
   const [rawInput, setRawInput] = useState('');
+
+  useEffect(() => { if (initialData) setRawInput(initialData); }, [initialData]);
   const [copied, setCopied] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(ALL_LEVELS));

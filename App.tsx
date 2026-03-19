@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2 } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -7,6 +7,7 @@ import MetadataSidebar from './components/MetadataSidebar';
 import DropZone from './components/DropZone';
 import PrivacyPage from './components/PrivacyPage';
 
+const SmartDetect         = lazy(() => import('./components/SmartDetect'));
 const QueryPlanViewer = lazy(() => import('./components/QueryPlanViewer'));
 const DataFormatter   = lazy(() => import('./components/DataFormatter'));
 const ListCleaner     = lazy(() => import('./components/ListCleaner'));
@@ -23,9 +24,10 @@ const ColorConverter        = lazy(() => import('./components/ColorConverter'));
 const CronBuilder           = lazy(() => import('./components/CronBuilder'));
 const LogAnalyzer           = lazy(() => import('./components/LogAnalyzer'));
 
-type AppMode = 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs';
+type AppMode = 'smartdetect' | 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs';
 
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
+  { id: 'smartdetect',   label: 'Smart Detect',    icon: <Wand2 size={16} /> },
   { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
   { id: 'listcleaner',   label: 'List Cleaner',    icon: <ListFilter size={16} /> },
   { id: 'sqlformatter',  label: 'SQL',             icon: <Code2 size={16} /> },
@@ -47,14 +49,34 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(() => {
     const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs'];
-    return valid.includes(saved as AppMode) ? (saved as AppMode) : 'dataformatter';
+    const valid: AppMode[] = ['smartdetect','privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs'];
+    return valid.includes(saved as AppMode) ? (saved as AppMode) : 'smartdetect';
   });
 
-  const switchMode = (next: AppMode) => {
+  const [pendingData, setPendingData] = useState<string | null>(null);
+
+  const switchMode = useCallback((next: AppMode) => {
+    setPendingData(null);
     setMode(next);
     localStorage.setItem('devtoolkit:lastTab', next);
-  };
+  }, []);
+
+  // Smart Detect → detected tool with data
+  const handleSmartDetect = useCallback((tool: string, data: string) => {
+    setPendingData(data);
+    setMode(tool as AppMode);
+    localStorage.setItem('devtoolkit:lastTab', tool);
+  }, []);
+
+  // Smart Detect → detected file (binary)
+  const handleSmartDetectFile = useCallback((tool: string, file: File) => {
+    if (tool === 'metadata') {
+      processFile(file);
+    }
+    setMode(tool as AppMode);
+    localStorage.setItem('devtoolkit:lastTab', tool);
+  }, []);
+
   const [session, setSession] = useState<ImageFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,7 +106,7 @@ const App: React.FC = () => {
     <div className="h-screen flex flex-col selection:bg-blue-500/30">
       <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-6 py-4">
         <button
-          onClick={() => switchMode('dataformatter')}
+          onClick={() => switchMode('smartdetect')}
           className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity"
           aria-label="Go to home"
         >
@@ -128,22 +150,23 @@ const App: React.FC = () => {
             <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
           </div>
         }>
-          {mode === 'privacy'        ? <PrivacyPage /> :
-           mode === 'queryplan'     ? <QueryPlanViewer /> :
-           mode === 'dataformatter' ? <DataFormatter /> :
-           mode === 'listcleaner'   ? <ListCleaner /> :
-           mode === 'sqlformatter'  ? <SqlFormatter /> :
-           mode === 'jsontools'     ? <JsonTools /> :
-           mode === 'markdown'      ? <MarkdownPreview /> :
-           mode === 'stacktrace'   ? <StackTraceFormatter /> :
+          {mode === 'smartdetect'   ? <SmartDetect onDetect={handleSmartDetect} onDetectFile={handleSmartDetectFile} onNavigate={switchMode} /> :
+           mode === 'privacy'        ? <PrivacyPage /> :
+           mode === 'queryplan'     ? <QueryPlanViewer initialData={pendingData} /> :
+           mode === 'dataformatter' ? <DataFormatter initialData={pendingData} /> :
+           mode === 'listcleaner'   ? <ListCleaner initialData={pendingData} /> :
+           mode === 'sqlformatter'  ? <SqlFormatter initialData={pendingData} /> :
+           mode === 'jsontools'     ? <JsonTools initialData={pendingData} /> :
+           mode === 'markdown'      ? <MarkdownPreview initialData={pendingData} /> :
+           mode === 'stacktrace'   ? <StackTraceFormatter initialData={pendingData} /> :
            mode === 'mockdata'     ? <MockDataGenerator /> :
-           mode === 'jwtdecode'   ? <JwtDecode /> :
-           mode === 'texttools'   ? <TextTools /> :
-           mode === 'epoch'      ? <EpochConverter /> :
-           mode === 'color'     ? <ColorConverter /> :
-           mode === 'cron'      ? <CronBuilder /> :
-           mode === 'logs'      ? <LogAnalyzer /> :
-           mode === 'diagram'    ? <DiagramGenerator /> :
+           mode === 'jwtdecode'   ? <JwtDecode initialData={pendingData} /> :
+           mode === 'texttools'   ? <TextTools initialData={pendingData} /> :
+           mode === 'epoch'      ? <EpochConverter initialData={pendingData} /> :
+           mode === 'color'     ? <ColorConverter initialData={pendingData} /> :
+           mode === 'cron'      ? <CronBuilder initialData={pendingData} /> :
+           mode === 'logs'      ? <LogAnalyzer initialData={pendingData} /> :
+           mode === 'diagram'    ? <DiagramGenerator initialData={pendingData} /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (

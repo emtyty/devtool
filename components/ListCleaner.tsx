@@ -39,11 +39,13 @@ function toDistinct(text: string, caseSensitive: boolean): { original: string; k
   return result;
 }
 
-export default function ListCleaner() {
+export default function ListCleaner({ initialData }: { initialData?: string | null }) {
   const [mode, setMode] = useState<'clean' | 'compare'>('clean');
 
   // Clean mode
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [output, setOutput] = useState('');
   const [options, setOptions] = useState<ListToolsOptions>(DEFAULT_OPTIONS);
   const [copied, setCopied] = useState(false);

@@ -24,8 +24,10 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label
   </label>
 );
 
-export default function DataFormatter() {
+export default function DataFormatter({ initialData }: { initialData?: string | null }) {
   const [rawInput, setRawInput] = useState('');
+
+  useEffect(() => { if (initialData) setRawInput(initialData); }, [initialData]);
   const [items, setItems] = useState<string[]>([]);
   const [output, setOutput] = useState('');
   const [sqlFormat, setSqlFormat] = useState<SqlFormat>(SqlFormat.IN_CLAUSE);

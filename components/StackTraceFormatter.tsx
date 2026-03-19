@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Terminal, Layers, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import ResizableSplit from './ResizableSplit';
 
@@ -236,8 +236,10 @@ const SAMPLE = `TypeError: Cannot read properties of null (reading 'value')
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function StackTraceFormatter() {
+export default function StackTraceFormatter({ initialData }: { initialData?: string | null }) {
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('user');
 

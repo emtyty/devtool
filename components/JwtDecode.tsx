@@ -122,8 +122,10 @@ function PayloadBlock({ payload }: { payload: Record<string, unknown> }) {
   );
 }
 
-export default function JwtDecode() {
+export default function JwtDecode({ initialData }: { initialData?: string | null }) {
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [decoded, setDecoded] = useState<Decoded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);

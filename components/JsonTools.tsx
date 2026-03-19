@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import ResizableSplit from './ResizableSplit';
 import {
   Braces, Layers, Copy, Check, Maximize2, Minimize2, AlertCircle,
@@ -358,11 +358,13 @@ const TAB_CLASSES = (active: boolean) =>
 
 // --- Main Component ---
 
-export default function JsonTools() {
+export default function JsonTools({ initialData }: { initialData?: string | null }) {
   const [tab, setTab] = useState<JsonTab>('format');
 
   // Format
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [output, setOutput] = useState('');
   const [outputMode, setOutputMode] = useState<OutputMode>('tree');
   const [treeParsed, setTreeParsed] = useState<any>(null);

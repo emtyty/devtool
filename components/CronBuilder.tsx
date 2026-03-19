@@ -412,8 +412,10 @@ function makeDefaultFields(): FieldState[] {
   }));
 }
 
-export default function CronBuilder() {
+export default function CronBuilder({ initialData }: { initialData?: string | null }) {
   const [cronText, setCronText] = useState(DEFAULT_CRON);
+
+  useEffect(() => { if (initialData) setCronText(initialData); }, [initialData]);
   const [fields, setFields] = useState<FieldState[]>(makeDefaultFields);
   const [copied, setCopied] = useState(false);
   const [showPresets, setShowPresets] = useState(false);

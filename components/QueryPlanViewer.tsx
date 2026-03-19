@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import * as qp from 'html-query-plan';
 import 'html-query-plan/css/qp.css';
 import { FileCode2, Play, AlertTriangle, Sparkles, SplitSquareHorizontal, Key, Eye, EyeOff, X, Check } from 'lucide-react';
@@ -127,8 +127,10 @@ function GeminiKeyModal({
 
 // --- Main Component ---
 
-export default function QueryPlanViewer() {
+export default function QueryPlanViewer({ initialData }: { initialData?: string | null }) {
   const [xmlInput, setXmlInput] = useState('');
+
+  useEffect(() => { if (initialData) setXmlInput(initialData); }, [initialData]);
   const [compareMode, setCompareMode] = useState(false);
   const [beforeXml, setBeforeXml] = useState('');
   const [afterXml, setAfterXml] = useState('');

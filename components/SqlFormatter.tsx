@@ -72,8 +72,10 @@ function highlightSql(sql: string): string {
   return result.join('');
 }
 
-export default function SqlFormatter() {
+export default function SqlFormatter({ initialData }: { initialData?: string | null }) {
   const [input, setInput] = useState('');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [output, setOutput] = useState('');
   const [copied, setCopied] = useState(false);
   const [sqlMode, setSqlMode] = useState<'format' | 'minify'>('format');
