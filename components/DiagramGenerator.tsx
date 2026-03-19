@@ -81,7 +81,7 @@ function nextId(prefix: string) {
 }
 
 // ── NLP example text ──
-const EXAMPLE_INPUT = 'User uploads image from mobile app. API validates auth, stores metadata in Postgres, pushes job to SQS, worker processes image and uploads to S3.';
+const EXAMPLE_INPUT = `User sends request from Browser to API Gateway. API Gateway routes to Auth Service. Auth Service validates token against Redis Cache. API Gateway forwards to User Service. User Service reads from Postgres. API Gateway routes to Order Service. Order Service writes to Order DB. Order Service pushes event to Kafka. Kafka delivers to Notification Service. Notification Service sends email via SES. Kafka delivers to Analytics Service. Analytics Service writes to Elasticsearch.`;
 
 // ── Component ──
 
