@@ -1,19 +1,32 @@
+export type NodeType = 'user' | 'client' | 'service' | 'database' | 'queue' | 'storage' | 'external';
+
+export interface FlowchartNode {
+  id: string;
+  label: string;
+  type: NodeType;
+  subgroup?: string;
+}
+
+export interface FlowchartEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface FlowchartSubgroup {
+  id: string;
+  name: string;
+}
+
 export type DiagramOutput = {
   sequence: {
     participants: { id: string; label: string }[];
     steps: { from: string; to: string; label: string }[];
   };
   flowchart: {
-    nodes: {
-      id: string;
-      label: string;
-      type: 'user' | 'client' | 'service' | 'database' | 'queue' | 'storage' | 'external';
-    }[];
-    edges: {
-      from: string;
-      to: string;
-      label?: string;
-    }[];
+    nodes: FlowchartNode[];
+    edges: FlowchartEdge[];
+    subgroups?: FlowchartSubgroup[];
   };
 };
 
