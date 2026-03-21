@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2 } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -77,6 +77,17 @@ const App: React.FC = () => {
     localStorage.setItem('devtoolkit:lastTab', tool);
   }, []);
 
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  const toggleTheme = useCallback(() => {
+    setDark(prev => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      localStorage.setItem('devtoolkit:theme', next ? 'dark' : 'light');
+      return next;
+    });
+  }, []);
+
   const [session, setSession] = useState<ImageFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,7 +115,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col selection:bg-blue-500/30">
-      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-6 py-4">
+      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-6 py-4 flex items-center justify-between">
         <button
           onClick={() => switchMode('smartdetect')}
           className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity"
@@ -118,6 +129,17 @@ const App: React.FC = () => {
             <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1">Local First Engine Data</p>
           </div>
         </button>
+        <button
+          onClick={toggleTheme}
+          className="theme-toggle"
+          aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={dark ? 'Light mode' : 'Dark mode'}
+        >
+          <span className="theme-toggle-knob">
+            <Sun size={12} className="theme-toggle-icon theme-toggle-sun" />
+            <Moon size={12} className="theme-toggle-icon theme-toggle-moon" />
+          </span>
+        </button>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -127,7 +149,9 @@ const App: React.FC = () => {
               key={tab.id}
               onClick={() => switchMode(tab.id)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold text-left whitespace-nowrap transition-all ${
-                mode === tab.id ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                mode === tab.id
+                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'
               }`}
             >
               {tab.icon}
@@ -136,7 +160,7 @@ const App: React.FC = () => {
           ))}
         </aside>
 
-        <div className="flex-1 overflow-y-auto flex flex-col">
+        <div className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
           <main className="flex-1 w-full px-6 py-8">
         <input
           ref={fileInputRef}

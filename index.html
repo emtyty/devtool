@@ -35,19 +35,28 @@
       --bg-secondary: #ffffff;
       --accent: #3b82f6;
     }
+    .dark {
+      --bg-primary: #0a1120;
+      --bg-secondary: #131c2e;
+      --accent: #60a5fa;
+    }
     body {
       font-family: 'Inter', sans-serif;
       background-color: var(--bg-primary);
       color: #1e293b;
       margin: 0;
       overflow-x: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
+    .dark body { color: #e2e8f0; }
     .mono { font-family: 'Fira Code', monospace; }
-    
+
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .dark ::-webkit-scrollbar-thumb { background: #1e2d45; }
+    .dark ::-webkit-scrollbar-thumb:hover { background: #2a3f5f; }
 
     @media print {
       .no-print { display: none !important; }
@@ -59,7 +68,20 @@
       backdrop-filter: blur(12px);
       border: 1px solid rgba(203, 213, 225, 0.5);
     }
+    .dark .glass {
+      background: rgba(19, 28, 46, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(30, 45, 69, 0.6);
+    }
   </style>
+  <script>
+    /* Apply dark class before paint to prevent flash */
+    (function(){
+      if (localStorage.getItem('devtoolkit:theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/index.css">
 </head>
 <body>
