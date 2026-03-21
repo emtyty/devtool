@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, MessageSquarePlus, Sparkles, Search } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
 import MetadataSidebar from './components/MetadataSidebar';
 import DropZone from './components/DropZone';
 import PrivacyPage from './components/PrivacyPage';
+import FeedbackModal from './components/FeedbackModal';
+import ChangelogModal from './components/ChangelogModal';
+import CommandPalette from './components/CommandPalette';
 
 const SmartDetect         = lazy(() => import('./components/SmartDetect'));
 const QueryPlanViewer = lazy(() => import('./components/QueryPlanViewer'));
@@ -79,7 +82,27 @@ const App: React.FC = () => {
     localStorage.setItem('devtoolkit:lastTab', tool);
   }, []);
 
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl+K — command palette
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o: boolean) => !o);
+      }
+      // Shift+? — feedback
+      if (e.shiftKey && e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        setFeedbackOpen((o: boolean) => !o);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setDark(prev => {
@@ -132,6 +155,14 @@ const App: React.FC = () => {
           </div>
         </button>
         <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-400 hover:text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-all"
+        >
+          <Search size={13} /> Jump to tool…
+          <kbd className="text-[10px] border border-slate-200 bg-slate-50 rounded px-1 py-0.5 font-semibold">Ctrl K</kbd>
+        </button>
+        <button
           onClick={toggleTheme}
           className="theme-toggle"
           aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -145,21 +176,40 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="no-print w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5">
-          {NAV_TABS.map(tab => (
+        <aside className="no-print w-52 shrink-0 border-r border-slate-200 bg-white flex flex-col">
+          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-0.5">
+            {NAV_TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => switchMode(tab.id)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold text-left whitespace-nowrap transition-all ${
+                  mode === tab.id
+                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="p-3 border-t border-slate-100 space-y-0.5">
             <button
-              key={tab.id}
-              onClick={() => switchMode(tab.id)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold text-left whitespace-nowrap transition-all ${
-                mode === tab.id
-                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'
-              }`}
+              type="button"
+              onClick={() => setChangelogOpen(true)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-all"
             >
-              {tab.icon}
-              {tab.label}
+              <Sparkles size={14} /> What's New
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+            >
+              <span className="flex items-center gap-2"><MessageSquarePlus size={14} /> Feedback</span>
+              <kbd className="text-[9px] border border-slate-200 rounded px-1 py-0.5 font-semibold">⇧?</kbd>
+            </button>
+          </div>
         </aside>
 
         <div className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
@@ -255,6 +305,23 @@ const App: React.FC = () => {
           </footer>
         </div>
       </div>
+
+      <FeedbackModal
+        isOpen={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+        currentTool={mode}
+      />
+      <ChangelogModal
+        isOpen={changelogOpen}
+        onClose={() => setChangelogOpen(false)}
+      />
+      <CommandPalette
+        isOpen={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSelect={(id) => { switchMode(id as AppMode); setPaletteOpen(false); }}
+        tabs={NAV_TABS}
+        currentMode={mode}
+      />
     </div>
   );
 };
