@@ -38,7 +38,6 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'stacktrace',   label: 'Stack Trace',     icon: <AlertTriangle size={16} /> },
   { id: 'mockdata',      label: 'Mock Data',       icon: <Database size={16} /> },
   { id: 'jwtdecode',    label: 'JWT Decode',      icon: <Key size={16} /> },
-  { id: 'uuidgen',      label: 'UUID / ULID',     icon: <Hash size={16} /> },
   { id: 'texttools',    label: 'Text Tools',      icon: <Replace size={16} /> },
   { id: 'epoch',        label: 'Epoch Converter', icon: <Clock size={16} /> },
   { id: 'color',        label: 'Color Converter', icon: <Palette size={16} /> },
@@ -48,6 +47,7 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'diagram',      label: 'Diagram Generator', icon: <Workflow size={16} /> },
   { id: 'metadata',      label: 'Binary Metadata', icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
   { id: 'queryplan',     label: 'Query Plan',      icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
+  { id: 'uuidgen',      label: 'UUID / ULID',     icon: <Hash size={16} /> },
 ];
 
 const App: React.FC = () => {
