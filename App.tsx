@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -24,8 +24,9 @@ const ColorConverter        = lazy(() => import('./components/ColorConverter'));
 const CronBuilder           = lazy(() => import('./components/CronBuilder'));
 const LogAnalyzer           = lazy(() => import('./components/LogAnalyzer'));
 const TextDiff              = lazy(() => import('./components/TextDiff'));
+const UuidGenerator         = lazy(() => import('./components/UuidGenerator'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff';
+type AppMode = 'smartdetect' | 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen';
 
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'smartdetect',   label: 'Smart Detector',   icon: <Wand2 size={16} /> },
@@ -46,12 +47,13 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'diagram',      label: 'Diagram Generator', icon: <Workflow size={16} /> },
   { id: 'metadata',      label: 'Binary Metadata', icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
   { id: 'queryplan',     label: 'Query Plan',      icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
+  { id: 'uuidgen',      label: 'UUID / ULID',     icon: <Hash size={16} /> },
 ];
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(() => {
     const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['smartdetect','privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs','textdiff'];
+    const valid: AppMode[] = ['smartdetect','privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs','textdiff','uuidgen'];
     return valid.includes(saved as AppMode) ? (saved as AppMode) : 'smartdetect';
   });
 
@@ -193,6 +195,7 @@ const App: React.FC = () => {
            mode === 'cron'      ? <CronBuilder initialData={pendingData} /> :
            mode === 'logs'      ? <LogAnalyzer initialData={pendingData} /> :
            mode === 'textdiff'  ? <TextDiff initialData={pendingData} /> :
+           mode === 'uuidgen'   ? <UuidGenerator /> :
            mode === 'diagram'    ? <DiagramGenerator initialData={pendingData} /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
@@ -236,6 +239,7 @@ const App: React.FC = () => {
                 <FooterTech icon="fa-solid fa-palette" name="Color Converter" desc="Convert between HEX, RGB, HSL, OKLCH with visual picker and WCAG contrast checker" />
                 <FooterTech icon="fa-solid fa-clock" name="Cron Builder" desc="Visual cron expression builder with human-readable descriptions and next 10 run times" />
                 <FooterTech icon="fa-solid fa-scroll" name="Log Analyzer" desc="Parse, filter, and analyze logs with auto-format detection, level filtering, and timeline view" />
+                <FooterTech icon="fa-solid fa-hashtag" name="UUID / ULID" desc="Bulk-generate UUID v1/v4/v7 and ULIDs with one-per-line, JSON array, SQL IN, or CSV output — zero dependencies" />
               </div>
               <div className="border-t border-slate-200 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.4em]">Powered by Coding4Pizza With Love</p>
