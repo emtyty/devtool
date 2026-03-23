@@ -1,54 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Key, Layers, Copy, Check, AlertCircle, Clock, ShieldCheck } from 'lucide-react';
 import ResizableSplit from './ResizableSplit';
+import {
+  base64UrlDecode, formatTimestamp, getTokenStatus, buildAnnotatedPayload,
+  KNOWN_CLAIMS, TIME_CLAIMS, type DecodedJwt,
+} from '../utils/jwtDecoder';
 
-function base64UrlDecode(str: string): string {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
-  return atob(padded);
-}
-
-function formatTimestamp(value: number): string {
-  try {
-    const date = new Date(value * 1000);
-    const offsetMin = -date.getTimezoneOffset();
-    const sign = offsetMin >= 0 ? '+' : '-';
-    const hh = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0');
-    const mm = String(Math.abs(offsetMin) % 60).padStart(2, '0');
-    const gmt = `GMT${sign}${hh}:${mm}`;
-    return `${date.toLocaleString()} ${gmt}`;
-  } catch {
-    return String(value);
-  }
-}
-
-function getTokenStatus(payload: Record<string, unknown>): { label: string; color: string } | null {
-  const exp = payload['exp'];
-  if (typeof exp !== 'number') return null;
-  const now = Math.floor(Date.now() / 1000);
-  if (exp < now) {
-    return { label: 'EXPIRED', color: 'text-red-400 bg-red-900/20 border-red-500/30' };
-  }
-  return { label: 'VALID', color: 'text-green-400 bg-green-900/20 border-green-500/30' };
-}
-
-const KNOWN_CLAIMS: Record<string, string> = {
-  iss: 'Issuer',
-  sub: 'Subject',
-  aud: 'Audience',
-  exp: 'Expires At',
-  nbf: 'Not Before',
-  iat: 'Issued At',
-  jti: 'JWT ID',
-};
-
-const TIME_CLAIMS = new Set(['exp', 'nbf', 'iat']);
-
-interface Decoded {
-  header: Record<string, unknown>;
-  payload: Record<string, unknown>;
-  signature: string;
-}
+type Decoded = DecodedJwt;
 
 function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -78,22 +36,6 @@ function JsonBlock({ data }: { data: Record<string, unknown> }) {
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
-}
-
-/** Builds a payload object with timestamp claims annotated as comments in JSON. */
-function buildAnnotatedPayload(payload: Record<string, unknown>): string {
-  const lines = JSON.stringify(payload, null, 2).split('\n');
-  return lines.map(line => {
-    const match = line.match(/^(\s*"(\w+)":\s*)(-?\d+)(,?)$/);
-    if (match) {
-      const [, prefix, key, numStr, comma] = match;
-      if (TIME_CLAIMS.has(key)) {
-        const human = formatTimestamp(Number(numStr));
-        return `${prefix}${numStr}${comma} // ${human}`;
-      }
-    }
-    return line;
-  }).join('\n');
 }
 
 function PayloadBlock({ payload }: { payload: Record<string, unknown> }) {

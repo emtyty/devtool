@@ -418,7 +418,11 @@ export function detectTextTools(input: string): number {
   // Base64 (long string of base64 chars, not JWT which is caught earlier)
   if (/^[A-Za-z0-9+\/]+=*$/.test(t) && t.length >= 20) {
     try {
-      atob(t);
+      if (typeof atob === 'function') {
+        atob(t);
+      } else {
+        Buffer.from(t, 'base64');
+      }
       score = Math.max(score, 82);
     } catch {
       // not valid base64
