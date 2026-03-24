@@ -8,6 +8,7 @@ A local-first developer toolkit. Professional-grade tools that run 100% in your 
 |------|-------------|
 | **Smart Detector** | Auto-detect input type and route to the right tool |
 | **Data Formatter** | Convert raw lists into SQL `IN` clauses, `VALUES`, `UNION ALL`, or CSV |
+| **File Converter** | Convert images (PNG/JPG/WebP/BMP/AVIF), structured data (JSON/CSV/TSV/XML/YAML), and File ↔ Base64 with batch queue + ZIP download |
 | **List Cleaner** | Deduplicate, sort, trim, and normalize plain-text lists with live unique/dupe counts |
 | **SQL Formatter** | Format or minify SQL with dialect support and highlighted parameters |
 | **JSON Tools** | Format, minify, auto-repair, diff two payloads, tree view, generate TypeScript interfaces |

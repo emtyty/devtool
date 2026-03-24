@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -26,8 +26,9 @@ const LogAnalyzer           = lazy(() => import('./components/LogAnalyzer'));
 const TextDiff              = lazy(() => import('./components/TextDiff'));
 const UuidGenerator         = lazy(() => import('./components/UuidGenerator'));
 const McpPage               = lazy(() => import('./components/McpPage'));
+const FileConverter         = lazy(() => import('./components/FileConverter'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -52,6 +53,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   logs:          'log-analyzer',
   textdiff:      'text-diff',
   uuidgen:       'uuid-generator',
+  fileconverter: 'file-converter',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -99,6 +101,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'color',         label: 'Color Converter',   icon: <Palette size={16} /> },
       { id: 'cron',          label: 'Cron Builder',      icon: <Timer size={16} /> },
       { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={16} /> },
+      { id: 'fileconverter', label: 'File Converter',    icon: <FileOutput size={16} /> },
     ],
   },
   {
@@ -279,6 +282,7 @@ const App: React.FC = () => {
            mode === 'textdiff'  ? <TextDiff initialData={pendingData} /> :
            mode === 'uuidgen'   ? <UuidGenerator /> :
            mode === 'diagram'    ? <DiagramGenerator initialData={pendingData} /> :
+           mode === 'fileconverter' ? <FileConverter /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (
@@ -404,6 +408,7 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'logs',          name: 'Log Analyzer',      icon: <ScrollText size={11} />,    desc: 'Parse, filter & analyze logs with auto-format detection & timeline view' },
   { id: 'textdiff',      name: 'Text Compare',      icon: <GitCompare size={11} />,    desc: 'Side-by-side text diff comparison with line-by-line highlighting' },
   { id: 'diagram',       name: 'Diagram',           icon: <Workflow size={11} />,      desc: 'Generate sequence diagrams & flowcharts from plain English using Mermaid.js' },
+  { id: 'fileconverter', name: 'File Converter',   icon: <FileOutput size={11} />,   desc: 'Convert images (PNG/JPG/WebP/BMP), data (JSON/CSV/XML/YAML), Markdown → HTML, File ↔ Base64' },
   { id: 'metadata',      name: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[11px]" />,       desc: 'EXIF/XMP/IPTC metadata extraction via @uswriting/exiftool + WebAssembly' },
   { id: 'queryplan',     name: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[11px]" />,   desc: 'SQL Server execution plan viewer + Gemini AI analysis via @google/genai' },
   { id: 'smartdetect',   name: 'Smart Detector',    icon: <Wand2 size={11} />,         desc: 'Auto-detect content type (JSON, SQL, JWT, cron, etc.) and route to the right tool' },
