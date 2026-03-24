@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Download, Printer, Trash2, Upload, FileText, Eye, Columns2 } from 'lucide-react';
+import { Download, Printer, Trash2, Upload, FileText, Eye, Columns2, ImageDown, Copy, Check } from 'lucide-react';
 
 // ── Mermaid diagram renderer ─────────────────────────────────────────────────
 
@@ -12,6 +12,7 @@ function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
   const [zoomed, setZoomed] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setSvg('');
@@ -32,6 +33,67 @@ function MermaidBlock({ code }: { code: string }) {
       });
   }, [code]);
 
+  const downloadSvg = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'diagram.svg'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadPng = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const canvas = await svgToCanvas();
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'diagram.png'; a.click();
+  };
+
+  const svgToCanvas = (scale = 2): Promise<HTMLCanvasElement> => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svg, 'image/svg+xml');
+    const svgEl = doc.querySelector('svg')!;
+    const vb = svgEl.viewBox.baseVal;
+    const w = vb.width || parseFloat(svgEl.getAttribute('width') || '0') || 800;
+    const h = vb.height || parseFloat(svgEl.getAttribute('height') || '0') || 600;
+    svgEl.setAttribute('width', String(w));
+    svgEl.setAttribute('height', String(h));
+    const serialized = new XMLSerializer().serializeToString(svgEl);
+    const blob = new Blob([serialized], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = w * scale;
+        canvas.height = h * scale;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
+
+  const copyPng = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const canvas = await svgToCanvas();
+      canvas.toBlob(async blob => {
+        if (!blob) return;
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }, 'image/png');
+    } catch { /* clipboard API not available */ }
+  };
+
   if (error) {
     return (
       <div className="my-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs font-mono">
@@ -42,34 +104,81 @@ function MermaidBlock({ code }: { code: string }) {
   if (!svg) return <div className="my-4 text-slate-400 text-xs italic">Rendering diagram…</div>;
   return (
     <>
-      <div
-        className="my-4 flex justify-center overflow-x-auto rounded-lg p-2 transition-opacity hover:opacity-90"
-        style={{ cursor: 'zoom-in', background: 'transparent' }}
-        title="Click to zoom"
-        onClick={() => setZoomed(true)}
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      <div className="my-4 group relative">
+        <div
+          className="flex justify-center overflow-x-auto rounded-lg p-2 transition-opacity hover:opacity-90"
+          style={{ cursor: 'zoom-in', background: 'transparent' }}
+          title="Click to zoom"
+          onClick={() => setZoomed(true)}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={copyPng}
+            title="Copy as PNG"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+          >
+            {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+          <button
+            onClick={downloadSvg}
+            title="Download SVG"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+          >
+            <Download size={11} /> SVG
+          </button>
+          <button
+            onClick={downloadPng}
+            title="Download PNG"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+          >
+            <ImageDown size={11} /> PNG
+          </button>
+        </div>
+      </div>
       {zoomed && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => setZoomed(false)}
         >
           <div
-            className="relative w-[60vw] h-[60vh] bg-white rounded-2xl shadow-2xl p-8 overflow-auto"
+            className="relative w-[60vw] h-[60vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             <button
               onClick={() => setZoomed(false)}
-              className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl font-bold leading-none"
+              className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl font-bold leading-none z-10"
               aria-label="Close"
             >
               ×
             </button>
             <div
-              className="flex justify-center items-center w-full h-full"
+              className="flex-1 flex justify-center items-center p-8 overflow-auto"
               dangerouslySetInnerHTML={{ __html: svg }}
             />
-            <p className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-slate-400 uppercase tracking-widest">Click outside to close</p>
+            <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={copyPng}
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+              >
+                {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <button
+                onClick={downloadSvg}
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+              >
+                <Download size={11} /> SVG
+              </button>
+              <button
+                onClick={downloadPng}
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+              >
+                <ImageDown size={11} /> PNG
+              </button>
+              <span className="text-[10px] text-slate-400 uppercase tracking-widest">· Click outside to close</span>
+            </div>
           </div>
         </div>
       )}
