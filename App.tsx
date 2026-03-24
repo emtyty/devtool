@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Cpu } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -24,10 +24,52 @@ const ColorConverter        = lazy(() => import('./components/ColorConverter'));
 const CronBuilder           = lazy(() => import('./components/CronBuilder'));
 const LogAnalyzer           = lazy(() => import('./components/LogAnalyzer'));
 const TextDiff              = lazy(() => import('./components/TextDiff'));
+const UuidGenerator         = lazy(() => import('./components/UuidGenerator'));
 const McpPage               = lazy(() => import('./components/McpPage'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen';
 
+// ── URL routing ──────────────────────────────────────────────────
+const MODE_TO_SLUG: Record<AppMode, string> = {
+  smartdetect:   '',
+  privacy:       'privacy',
+  mcp:           'mcp-server',
+  metadata:      'binary-metadata',
+  queryplan:     'query-plan',
+  dataformatter: 'data-formatter',
+  listcleaner:   'list-cleaner',
+  sqlformatter:  'sql-formatter',
+  jsontools:     'json',
+  markdown:      'markdown',
+  stacktrace:    'stack-trace',
+  mockdata:      'mock-data',
+  jwtdecode:     'jwt-decoder',
+  texttools:     'text-tools',
+  diagram:       'diagram',
+  epoch:         'epoch-converter',
+  color:         'color-converter',
+  cron:          'cron-builder',
+  logs:          'log-analyzer',
+  textdiff:      'text-diff',
+  uuidgen:       'uuid-generator',
+};
+
+const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
+  Object.entries(MODE_TO_SLUG).map(([mode, slug]) => [slug, mode as AppMode])
+);
+
+function getModeFromPath(): AppMode {
+  const slug = window.location.pathname.replace(/^\//, '');
+  if (!slug) return 'smartdetect';
+  const mode = SLUG_TO_MODE[slug];
+  if (!mode) {
+    window.history.replaceState({}, '', '/');
+    return 'smartdetect';
+  }
+  return mode;
+}
+
+// ── Sidebar navigation (grouped) ─────────────────────────────────
 type NavItem = { id: AppMode; label: string; icon: React.ReactNode };
 type NavSection = { title?: string; items: NavItem[] };
 
@@ -52,6 +94,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Generate & Convert',
     items: [
       { id: 'mockdata',      label: 'Mock Data',         icon: <Database size={16} /> },
+      { id: 'uuidgen',       label: 'UUID / ULID',       icon: <Hash size={16} /> },
       { id: 'epoch',         label: 'Epoch Converter',   icon: <Clock size={16} /> },
       { id: 'color',         label: 'Color Converter',   icon: <Palette size={16} /> },
       { id: 'cron',          label: 'Cron Builder',      icon: <Timer size={16} /> },
@@ -77,35 +120,37 @@ const NAV_SECTIONS: NavSection[] = [
 ];
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<AppMode>(() => {
-    const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['smartdetect','privacy','mcp','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs','textdiff'];
-    return valid.includes(saved as AppMode) ? (saved as AppMode) : 'smartdetect';
-  });
+  const [mode, setMode] = useState<AppMode>(getModeFromPath);
 
   const [pendingData, setPendingData] = useState<string | null>(null);
 
   const switchMode = useCallback((next: AppMode) => {
     setPendingData(null);
     setMode(next);
-    localStorage.setItem('devtoolkit:lastTab', next);
+    const slug = MODE_TO_SLUG[next];
+    window.history.pushState({}, '', slug ? `/${slug}` : '/');
+  }, []);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const onPopState = () => setMode(getModeFromPath());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Smart Detect → detected tool with data
   const handleSmartDetect = useCallback((tool: string, data: string) => {
     setPendingData(data);
-    setMode(tool as AppMode);
-    localStorage.setItem('devtoolkit:lastTab', tool);
-  }, []);
+    switchMode(tool as AppMode);
+  }, [switchMode]);
 
   // Smart Detect → detected file (binary)
   const handleSmartDetectFile = useCallback((tool: string, file: File) => {
     if (tool === 'metadata') {
       processFile(file);
     }
-    setMode(tool as AppMode);
-    localStorage.setItem('devtoolkit:lastTab', tool);
-  }, []);
+    switchMode(tool as AppMode);
+  }, [switchMode]);
 
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
@@ -232,6 +277,7 @@ const App: React.FC = () => {
            mode === 'cron'      ? <CronBuilder initialData={pendingData} /> :
            mode === 'logs'      ? <LogAnalyzer initialData={pendingData} /> :
            mode === 'textdiff'  ? <TextDiff initialData={pendingData} /> :
+           mode === 'uuidgen'   ? <UuidGenerator /> :
            mode === 'diagram'    ? <DiagramGenerator initialData={pendingData} /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
@@ -349,6 +395,7 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'markdown',      name: 'Markdown',          icon: <FileText size={11} />,      desc: 'Live preview with react-markdown + remark-gfm (GFM tables, tasks)' },
   { id: 'stacktrace',    name: 'Stack Trace',       icon: <AlertTriangle size={11} />, desc: 'Parse & highlight stack traces for JS, Java, Python, .NET, Go, Ruby' },
   { id: 'mockdata',      name: 'Mock Data',         icon: <Database size={11} />,      desc: 'Generate fake data (JSON/CSV/SQL) via @faker-js/faker with 63+ field types' },
+  { id: 'uuidgen',       name: 'UUID / ULID',       icon: <Hash size={11} />,          desc: 'Bulk-generate UUID v1/v4/v7 and ULIDs with multiple output formats' },
   { id: 'jwtdecode',     name: 'JWT Decode',        icon: <Key size={11} />,           desc: 'Decode JWT tokens — header, payload, signature & expiration status' },
   { id: 'texttools',     name: 'Text Tools',        icon: <Replace size={11} />,       desc: 'CloudWatch Log Insights pattern builder & Jira release note formatter' },
   { id: 'epoch',         name: 'Epoch Converter',   icon: <Clock size={11} />,         desc: 'Convert between Unix epoch timestamps and human-readable dates' },
@@ -356,7 +403,7 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'cron',          name: 'Cron Builder',      icon: <Timer size={11} />,         desc: 'Visual cron expression builder with human-readable descriptions & next 10 runs' },
   { id: 'logs',          name: 'Log Analyzer',      icon: <ScrollText size={11} />,    desc: 'Parse, filter & analyze logs with auto-format detection & timeline view' },
   { id: 'textdiff',      name: 'Text Compare',      icon: <GitCompare size={11} />,    desc: 'Side-by-side text diff comparison with line-by-line highlighting' },
-  { id: 'diagram',       name: 'Diagram Generator', icon: <Workflow size={11} />,      desc: 'Generate sequence diagrams & flowcharts from plain English using Mermaid.js' },
+  { id: 'diagram',       name: 'Diagram',           icon: <Workflow size={11} />,      desc: 'Generate sequence diagrams & flowcharts from plain English using Mermaid.js' },
   { id: 'metadata',      name: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[11px]" />,       desc: 'EXIF/XMP/IPTC metadata extraction via @uswriting/exiftool + WebAssembly' },
   { id: 'queryplan',     name: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[11px]" />,   desc: 'SQL Server execution plan viewer + Gemini AI analysis via @google/genai' },
   { id: 'smartdetect',   name: 'Smart Detector',    icon: <Wand2 size={11} />,         desc: 'Auto-detect content type (JSON, SQL, JWT, cron, etc.) and route to the right tool' },
