@@ -15,6 +15,7 @@ const TOOL_CATEGORIES = [
       { name: 'csv_transform', desc: 'Parse, filter, sort, aggregate CSV data' },
       { name: 'yaml_json', desc: 'Convert between YAML and JSON' },
       { name: 'json_to_types', desc: 'JSON → TypeScript interfaces, Zod schemas, JSON Schema' },
+      { name: 'generate_diagram', desc: 'Plain English → Mermaid flowchart & sequence diagram' },
     ],
   },
   {
@@ -146,15 +147,66 @@ const COMPARISON = [
   { capability: 'Line-by-line diff', ai: 'Misses changes', mcp: 'LCS algorithm' },
 ];
 
-const EXAMPLES = [
-  'Hash "hello world" with SHA-256',
-  'Decode this JWT: eyJhbGciOiJIUzI1NiIs...',
-  'Convert 0xFF3A to binary',
-  'Generate 5 UUID v7',
-  'What is 2024-01-15 + 90 days?',
-  'Calculate subnet for 192.168.1.0/24',
-  'Convert getUserHTTPResponse to snake_case',
-  'Generate 20 mock users with id, name, email as CSV',
+type ExampleGroup = { category: string; items: { prompt: string; tool: string }[] };
+
+const EXAMPLE_GROUPS: ExampleGroup[] = [
+  {
+    category: 'Data Transform',
+    items: [
+      { prompt: 'Fix this broken JSON: {name: "John", age: 30,}',             tool: 'repair_json' },
+      { prompt: 'Format this SQL: select * from users where id in (1,2,3)',    tool: 'format_sql' },
+      { prompt: 'Convert this list to SQL IN clause: apple banana cherry',     tool: 'format_list' },
+      { prompt: 'Deduplicate: foo bar foo baz bar',                            tool: 'clean_list' },
+      { prompt: 'Generate 20 mock users with id, name, email as CSV',         tool: 'generate_mock_data' },
+      { prompt: 'Parse CSV and filter rows where age > 30',                    tool: 'csv_transform' },
+      { prompt: 'Convert this YAML to JSON: name: John\\nage: 30',            tool: 'yaml_json' },
+      { prompt: 'Convert {"id":1,"name":"John"} to TypeScript interface',      tool: 'json_to_types' },
+      { prompt: 'Draw: User sends request to API Gateway, forwards to Auth Service, queries Postgres', tool: 'generate_diagram' },
+    ],
+  },
+  {
+    category: 'Decode & Parse',
+    items: [
+      { prompt: 'Decode this JWT: eyJhbGciOiJIUzI1NiIs...dozjgNryP4J3jV',     tool: 'decode_jwt' },
+      { prompt: 'Explain this cron: */15 9-17 * * 1-5',                        tool: 'parse_cron' },
+      { prompt: 'Convert epoch 1711929600 to human date',                      tool: 'convert_epoch' },
+      { prompt: 'Convert #3B82F6 to RGB and check contrast with white',       tool: 'convert_color' },
+      { prompt: 'Parse URL: https://example.com/api/users?page=2&limit=10',   tool: 'url_parse' },
+      { prompt: 'What is HTTP status 429?',                                    tool: 'http_status' },
+    ],
+  },
+  {
+    category: 'Crypto & Random',
+    items: [
+      { prompt: 'Hash "hello world" with SHA-256',                             tool: 'hash_text' },
+      { prompt: 'Base64 encode: {"token":"secret123"}',                        tool: 'encode_decode' },
+      { prompt: 'Generate 5 UUID v7',                                          tool: 'uuid_generate' },
+      { prompt: 'Generate a 24-char password with symbols',                    tool: 'password_generate' },
+    ],
+  },
+  {
+    category: 'Dev Utilities',
+    items: [
+      { prompt: 'Test regex (\\d{4})-(\\d{2})-(\\d{2}) against "2024-03-15"', tool: 'regex_test' },
+      { prompt: 'Convert 0xFF3A to binary',                                    tool: 'number_base_convert' },
+      { prompt: 'Diff: "hello world" vs "hello mars"',                         tool: 'diff_text' },
+      { prompt: 'Convert getUserHTTPResponse to snake_case',                   tool: 'string_case' },
+      { prompt: 'Calculate subnet for 192.168.1.0/24',                         tool: 'ip_subnet' },
+      { prompt: 'What is 2024-01-15 + 90 days?',                              tool: 'timestamp_calc' },
+    ],
+  },
+];
+
+const FEATURED_EXAMPLES = [
+  { prompt: 'Hash "hello world" with SHA-256',                             tool: 'hash_text' },
+  { prompt: 'Decode this JWT: eyJhbGciOiJIUzI1NiIs...dozjgNryP4J3jV',     tool: 'decode_jwt' },
+  { prompt: 'Convert 0xFF3A to binary',                                    tool: 'number_base_convert' },
+  { prompt: 'Generate 5 UUID v7',                                          tool: 'uuid_generate' },
+  { prompt: 'What is 2024-01-15 + 90 days?',                              tool: 'timestamp_calc' },
+  { prompt: 'Calculate subnet for 192.168.1.0/24',                         tool: 'ip_subnet' },
+  { prompt: 'Convert getUserHTTPResponse to snake_case',                   tool: 'string_case' },
+  { prompt: 'Generate 20 mock users with id, name, email as CSV',         tool: 'generate_mock_data' },
+  { prompt: 'Draw diagram: User → API Gateway → Auth → Redis → Postgres', tool: 'generate_diagram' },
 ];
 
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string; badge: string }> = {
@@ -178,7 +230,7 @@ function CopyBlock({ text, language }: { text: string; language: string }) {
         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-500 uppercase">{language}</span>
         <button
           onClick={handleCopy}
-          className="p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+          className="p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
         </button>
@@ -192,6 +244,7 @@ function CopyBlock({ text, language }: { text: string; language: string }) {
 
 const McpPage: React.FC = () => {
   const [activeConfig, setActiveConfig] = useState('claude-desktop');
+  const [showAllExamples, setShowAllExamples] = useState(false);
   const config = CONFIGS.find(c => c.id === activeConfig)!;
 
   return (
@@ -207,7 +260,7 @@ const McpPage: React.FC = () => {
             devtoolkit-mcp
           </h2>
           <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            25 developer utilities as an MCP server for AI-assisted workflows.
+            26 developer utilities as an MCP server for AI-assisted workflows.
             Give your AI assistant <strong className="text-slate-700 dark:text-slate-200">real tools</strong> instead of guessing.
           </p>
         </div>
@@ -263,7 +316,7 @@ const McpPage: React.FC = () => {
       <section className="space-y-6">
         <div className="text-center">
           <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-2">Available Tools</div>
-          <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">25 Tools. 5 Categories.</h3>
+          <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">26 Tools. 5 Categories.</h3>
         </div>
         <div className="space-y-4">
           {TOOL_CATEGORIES.map(cat => {
@@ -306,7 +359,7 @@ const McpPage: React.FC = () => {
               <button
                 key={c.id}
                 onClick={() => setActiveConfig(c.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 transition-colors cursor-pointer ${
                   activeConfig === c.id
                     ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-white dark:bg-transparent'
                     : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
@@ -372,14 +425,62 @@ const McpPage: React.FC = () => {
           <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-2">Usage</div>
           <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Just ask in natural language.</h3>
         </div>
+
+        {/* Featured (always visible) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {EXAMPLES.map((ex, i) => (
+          {FEATURED_EXAMPLES.map((ex, i) => (
             <div key={i} className="flex items-start gap-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 shadow-sm">
-              <Terminal size={14} className="text-blue-500 shrink-0 mt-0.5" />
-              <span className="text-xs text-slate-600 dark:text-slate-300 font-mono leading-relaxed">{ex}</span>
+              <Terminal size={14} className="text-blue-500 shrink-0 mt-1" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-slate-600 dark:text-slate-300 font-mono leading-relaxed">{ex.prompt}</span>
+                <div className="mt-1.5">
+                  <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded font-mono">{ex.tool}</span>
+                </div>
+              </div>
             </div>
           ))}
         </div>
+
+        {/* Expand / Collapse */}
+        {!showAllExamples ? (
+          <div className="text-center">
+            <button
+              onClick={() => setShowAllExamples(true)}
+              className="text-xs font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors cursor-pointer"
+            >
+              Show all 25 examples by category →
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {EXAMPLE_GROUPS.map(group => (
+              <div key={group.category}>
+                <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.15em] mb-2">{group.category}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {group.items.map((ex, i) => (
+                    <div key={i} className="flex items-start gap-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 shadow-sm">
+                      <Terminal size={12} className="text-blue-500 shrink-0 mt-1" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[11px] text-slate-600 dark:text-slate-300 font-mono leading-relaxed">{ex.prompt}</span>
+                        <div className="mt-1">
+                          <span className="text-[9px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded font-mono">{ex.tool}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="text-center">
+              <button
+                onClick={() => setShowAllExamples(false)}
+                className="text-xs font-bold text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+              >
+                ← Show less
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* CTA */}
@@ -387,7 +488,7 @@ const McpPage: React.FC = () => {
         <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Get Started</div>
         <p className="text-white font-bold text-lg leading-snug">
           Give your AI real developer tools.<br />
-          <span className="text-slate-400 font-normal text-sm">One command. 25 tools. Zero config.</span>
+          <span className="text-slate-400 font-normal text-sm">One command. 26 tools. Zero config.</span>
         </p>
         <div className="inline-flex items-center gap-3 bg-slate-800 rounded-xl px-5 py-3">
           <code className="text-sm text-emerald-400 font-mono font-bold">npx -y devtoolkit-mcp</code>
@@ -411,17 +512,8 @@ const McpPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Footer link */}
-      <div className="text-center text-xs text-slate-400 dark:text-slate-500">
-        Built by{' '}
-        <a href="https://coding4pizza.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 font-semibold">
-          Coding4Pizza
-        </a>
-        {' · '}
-        <a href="https://github.com/emtyty/devtool" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 font-semibold">
-          Source on GitHub
-        </a>
-      </div>
+      {/* Spacer before app footer */}
+      <div className="h-4" />
     </div>
   );
 };

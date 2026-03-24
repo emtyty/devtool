@@ -1,7 +1,7 @@
 {
   "name": "devtoolkit-mcp",
-  "version": "0.1.1",
-  "description": "25+ developer utilities as an MCP server — JSON repair, SQL format, hash, encode/decode, UUID, regex, CSV transform, subnet calc, and more. No API keys. Runs locally.",
+  "version": "0.2.0",
+  "description": "26 developer utilities as an MCP server — JSON repair, SQL format, hash, encode/decode, UUID, regex, CSV, subnet calc, diagram generation, and more. No API keys. Runs locally.",
   "type": "module",
   "bin": {
     "devtoolkit-mcp": "./dist/index.js"
@@ -34,6 +34,8 @@
     "base64",
     "jwt",
     "cron",
+    "diagram",
+    "mermaid",
     "ai-tools",
     "claude",
     "coding4pizza"

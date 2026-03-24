@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { detectAll, detectFile, getExtHint, DetectResult } from '../utils/smartDetect';
-import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare } from 'lucide-react';
+import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare, Hash } from 'lucide-react';
 
 interface SmartDetectProps {
   onDetect: (tool: string, data: string) => void;
@@ -16,6 +16,7 @@ const TOOL_GRID: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: 'markdown',      label: 'Markdown',          icon: <FileText size={18} /> },
   { id: 'stacktrace',    label: 'Stack Trace',       icon: <AlertTriangle size={18} /> },
   { id: 'mockdata',      label: 'Mock Data',         icon: <Database size={18} /> },
+  { id: 'uuidgen',       label: 'UUID / ULID',       icon: <Hash size={18} /> },
   { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={18} /> },
   { id: 'texttools',     label: 'Text Tools',        icon: <Replace size={18} /> },
   { id: 'textdiff',      label: 'Text Compare',      icon: <GitCompare size={18} /> },

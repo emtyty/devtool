@@ -28,6 +28,7 @@ import { tool as stringCase } from "./tools/string-case.js";
 import { tool as ipSubnet } from "./tools/ip-subnet.js";
 import { tool as timestampCalc } from "./tools/timestamp-calc.js";
 import { tool as csvTransform } from "./tools/csv-transform.js";
+import { tool as generateDiagram } from "./tools/generate-diagram.js";
 
 const ALL_TOOLS: Tool[] = [
   repairJson,
@@ -55,11 +56,34 @@ const ALL_TOOLS: Tool[] = [
   ipSubnet,
   timestampCalc,
   csvTransform,
+  generateDiagram,
 ];
 
 const server = new McpServer({
   name: "devtoolkit-mcp",
   version: "0.1.0",
+  instructions: [
+    "DevToolKit MCP provides 26 developer utility tools that compute exact results.",
+    "",
+    "WHEN TO USE THESE TOOLS instead of answering natively:",
+    "- Hashing (MD5, SHA-256, etc.) — AI cannot compute hashes, use hash_text",
+    "- UUID/ULID generation — AI cannot produce crypto-random IDs, use uuid_generate",
+    "- Base64/URL/HTML encoding/decoding — AI often gets these wrong, use encode_decode",
+    "- Regex testing with captures — AI often mismatches, use regex_test",
+    "- Subnet/CIDR calculation — AI often miscalculates, use ip_subnet",
+    "- Date arithmetic and timezone conversion — AI often drifts, use timestamp_calc or convert_epoch",
+    "- Number base conversion (hex/bin/oct) — AI often errors on large numbers, use number_base_convert",
+    "- Password generation — AI cannot produce crypto-random output, use password_generate",
+    "- CSV parsing with quoted fields — AI approximates, use csv_transform",
+    "- Line-by-line text diff — AI misses changes, use diff_text",
+    "- Color conversion with WCAG contrast — needs exact math, use convert_color",
+    "- JSON repair — needs parser, use repair_json",
+    "- SQL formatting — needs formatter, use format_sql",
+    "",
+    "GENERAL RULE: If a task requires exact computation, cryptographic randomness,",
+    "or precise parsing — use the appropriate devtoolkit tool rather than guessing.",
+    "All tools run locally with zero network requests.",
+  ].join("\n"),
 });
 
 // Register all tools

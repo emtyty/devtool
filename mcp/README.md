@@ -1,6 +1,6 @@
 # devtoolkit-mcp
 
-25+ developer utilities as an MCP server for AI-assisted workflows. JSON repair, SQL formatting, hashing, encoding, UUID generation, regex testing, CSV transforms, subnet calculation, and more.
+26 developer utilities as an MCP server for AI-assisted workflows. JSON repair, SQL formatting, hashing, encoding, UUID generation, regex testing, CSV transforms, subnet calculation, diagram generation, and more.
 
 **No API keys. No network requests. Everything runs locally.**
 
@@ -91,7 +91,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-## Available Tools (25)
+## Available Tools (26)
 
 ### Data Transform
 | Tool | Description |
@@ -104,6 +104,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 | `csv_transform` | Parse, filter, sort, aggregate, convert CSV data |
 | `yaml_json` | Convert between YAML and JSON |
 | `json_to_types` | Convert JSON to TypeScript interfaces, Zod schemas, or JSON Schema |
+| `generate_diagram` | Generate Mermaid flowcharts and sequence diagrams from plain English descriptions |
 
 ### Decode & Parse
 | Tool | Description |
@@ -182,6 +183,10 @@ Convert this JSON to TypeScript: {"id": 1, "name": "John", "tags": ["admin"]}
 Generate 20 mock users with id, name, email, salary as CSV, then filter salary > 60000
 ```
 
+```
+Draw diagram: User sends request to API Gateway, forwards to Auth Service, queries Postgres
+```
+
 ## Why MCP Tools vs Native AI?
 
 These tools provide capabilities that AI models **cannot do natively**:
@@ -196,6 +201,7 @@ These tools provide capabilities that AI models **cannot do natively**:
 | Date arithmetic | Often wrong | Millisecond exact |
 | CSV parsing (quoted fields) | Approximates | RFC-compliant |
 | Line-by-line diff | Misses changes | LCS algorithm |
+| Diagram generation | Approximates syntax | Valid Mermaid output |
 
 ## Requirements
 
