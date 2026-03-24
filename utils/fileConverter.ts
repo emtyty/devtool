@@ -1,6 +1,13 @@
 // ── Image conversion (Canvas API) ──
 
 export type ImageFormat = 'png' | 'jpeg' | 'webp' | 'bmp' | 'avif';
+export type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+
+export interface ImageConvertOptions {
+  watermarkText?: string;
+  watermarkOpacity?: number;
+  watermarkPosition?: WatermarkPosition;
+}
 
 const IMAGE_MIME: Record<ImageFormat, string> = {
   png: 'image/png',
@@ -187,6 +194,57 @@ function utf8ToBase64(text: string): string {
   return btoa(binary);
 }
 
+function drawTextWatermark(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+  opacity: number,
+  position: WatermarkPosition,
+): void {
+  const content = text.trim();
+  if (!content) return;
+
+  const fontSize = Math.max(14, Math.round(Math.min(width, height) * 0.04));
+  const padding = Math.max(10, Math.round(fontSize * 0.65));
+  ctx.save();
+  ctx.font = `600 ${fontSize}px "SF Pro Display", "Segoe UI", sans-serif`;
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(content);
+  const textWidth = Math.ceil(metrics.width);
+  const textHeight = Math.ceil((metrics.actualBoundingBoxAscent || fontSize * 0.72) + (metrics.actualBoundingBoxDescent || fontSize * 0.28));
+
+  let x = padding;
+  let y = padding;
+
+  if (position === 'top-right' || position === 'bottom-right') {
+    x = width - textWidth - padding;
+  } else if (position === 'center') {
+    x = Math.round((width - textWidth) / 2);
+  }
+
+  if (position === 'bottom-left' || position === 'bottom-right') {
+    y = height - textHeight - padding;
+  } else if (position === 'center') {
+    y = Math.round((height - textHeight) / 2);
+  }
+
+  const tx = Math.max(0, x);
+  const ty = Math.max(0, y);
+  const boxWidth = Math.min(width - tx, textWidth + padding);
+  const boxHeight = Math.min(height - ty, textHeight + Math.round(padding * 0.5));
+
+  ctx.globalAlpha = Math.min(0.95, Math.max(0.05, opacity));
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(tx - Math.round(padding * 0.35), ty - Math.round(padding * 0.2), boxWidth, boxHeight);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = Math.min(1, Math.max(0.1, opacity + 0.1));
+  ctx.fillText(content, tx, ty + Math.round(boxHeight / 2));
+  ctx.restore();
+}
+
 async function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
@@ -335,6 +393,7 @@ export async function convertImage(
   quality: number = 0.92,
   maxWidth?: number,
   maxHeight?: number,
+  options: ImageConvertOptions = {},
 ): Promise<{ blob: Blob; width: number; height: number }> {
   let bitmap: ImageBitmap;
   try {
@@ -396,6 +455,17 @@ export async function convertImage(
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
 
+  if (options.watermarkText?.trim()) {
+    drawTextWatermark(
+      ctx,
+      w,
+      h,
+      options.watermarkText,
+      options.watermarkOpacity ?? 0.22,
+      options.watermarkPosition ?? 'bottom-right',
+    );
+  }
+
   let blob: Blob;
   try {
     blob = await canvas.convertToBlob({
@@ -420,9 +490,108 @@ export async function convertImage(
 // ── Data format conversion ──
 
 export type DataFormat = 'json' | 'csv' | 'xml' | 'yaml' | 'tsv';
+export type CsvDelimiter = ',' | ';' | '|' | '\t';
+export type CsvQuoteChar = '"' | "'";
 
-// CSV parser (handles quoted fields)
-function parseCsv(text: string, delimiter = ','): string[][] {
+export interface DataConvertOptions {
+  csvDelimiter?: CsvDelimiter;
+  csvQuoteChar?: CsvQuoteChar;
+  csvHasHeader?: boolean;
+  flattenJsonForTabular?: boolean;
+}
+
+type DataErrorLocation = {
+  line?: number;
+  column?: number;
+};
+
+export class DataConversionError extends Error {
+  source: DataFormat;
+  line?: number;
+  column?: number;
+  detailMessage: string;
+
+  constructor(source: DataFormat, detailMessage: string, location?: DataErrorLocation) {
+    const line = location?.line;
+    const column = location?.column;
+    const withLocation = line && column
+      ? `${detailMessage} (line ${line}, column ${column})`
+      : detailMessage;
+    super(withLocation);
+    this.name = 'DataConversionError';
+    this.source = source;
+    this.line = line;
+    this.column = column;
+    this.detailMessage = detailMessage;
+  }
+}
+
+function offsetToLineColumn(text: string, offset: number): DataErrorLocation {
+  const safeOffset = Math.max(0, Math.min(offset, text.length));
+  let line = 1;
+  let column = 1;
+
+  for (let i = 0; i < safeOffset; i++) {
+    if (text[i] === '\n') {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
+  }
+
+  return { line, column };
+}
+
+function extractJsonErrorLocation(message: string, input: string): DataErrorLocation {
+  const match = message.match(/\bposition\s+(\d+)/i);
+  if (!match) return {};
+  const offset = Number(match[1]);
+  if (!Number.isFinite(offset)) return {};
+  return offsetToLineColumn(input, offset);
+}
+
+function extractXmlErrorLocation(message: string): DataErrorLocation {
+  const lineColumn = message.match(/line\s+(\d+)\D+column\s+(\d+)/i);
+  if (lineColumn) {
+    const line = Number(lineColumn[1]);
+    const column = Number(lineColumn[2]);
+    if (Number.isFinite(line) && Number.isFinite(column)) return { line, column };
+  }
+
+  const lineOnly = message.match(/line\s+(\d+)/i);
+  if (lineOnly) {
+    const line = Number(lineOnly[1]);
+    if (Number.isFinite(line)) return { line };
+  }
+
+  return {};
+}
+
+function normalizeDataParseError(error: unknown, input: string, source: DataFormat): DataConversionError {
+  if (error instanceof DataConversionError) return error;
+  const raw = error instanceof Error ? error.message : 'Unknown parser error';
+  let detail = raw;
+  let location: DataErrorLocation = {};
+
+  if (source === 'json') {
+    location = extractJsonErrorLocation(raw, input);
+    detail = raw.replace(/\s+in JSON at position \d+/i, '').trim();
+    if (!detail) detail = 'Invalid JSON input.';
+  } else if (source === 'xml') {
+    location = extractXmlErrorLocation(raw);
+    detail = raw.replace(/^Invalid XML:\s*/i, '').trim() || 'Invalid XML input.';
+  } else if (source === 'yaml') {
+    detail = raw.trim() || 'Invalid YAML input.';
+  } else if (source === 'csv' || source === 'tsv') {
+    detail = raw.trim() || `Invalid ${source.toUpperCase()} input.`;
+  }
+
+  return new DataConversionError(source, detail, location);
+}
+
+// Delimited parser (handles custom quote chars and escaped quotes)
+function parseDelimited(text: string, delimiter: string, quoteChar: CsvQuoteChar): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -430,17 +599,18 @@ function parseCsv(text: string, delimiter = ','): string[][] {
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
+
     if (inQuote) {
-      if (ch === '"' && text[i + 1] === '"') {
-        field += '"';
+      if (ch === quoteChar && text[i + 1] === quoteChar) {
+        field += quoteChar;
         i++;
-      } else if (ch === '"') {
+      } else if (ch === quoteChar) {
         inQuote = false;
       } else {
         field += ch;
       }
     } else {
-      if (ch === '"') {
+      if (ch === quoteChar) {
         inQuote = true;
       } else if (ch === delimiter) {
         row.push(field);
@@ -456,35 +626,148 @@ function parseCsv(text: string, delimiter = ','): string[][] {
       }
     }
   }
+
   row.push(field);
   if (row.some(c => c !== '')) rows.push(row);
   return rows;
 }
 
-function csvToObjects(text: string, delimiter = ','): Record<string, string>[] {
-  const rows = parseCsv(text, delimiter);
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  return rows.slice(1).map(row => {
+function csvToObjects(
+  text: string,
+  delimiter: string,
+  quoteChar: CsvQuoteChar,
+  hasHeader: boolean,
+): Record<string, string>[] {
+  const rows = parseDelimited(text, delimiter, quoteChar);
+  if (rows.length === 0) return [];
+
+  const firstRow = rows[0] ?? [];
+  const maxColumns = Math.max(...rows.map(r => r.length), firstRow.length, 1);
+  const headers = hasHeader
+    ? Array.from({ length: maxColumns }, (_, i) => (firstRow[i] || `column_${i + 1}`).trim() || `column_${i + 1}`)
+    : Array.from({ length: maxColumns }, (_, i) => `column_${i + 1}`);
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  return dataRows.map(row => {
     const obj: Record<string, string> = {};
-    headers.forEach((h, i) => { obj[h.trim()] = (row[i] || '').trim(); });
+    headers.forEach((h, i) => { obj[h] = (row[i] || '').trim(); });
     return obj;
-  });
+  }).filter(record => Object.values(record).some(value => value !== ''));
 }
 
-function objectsToCsv(data: Record<string, unknown>[], delimiter = ','): string {
+function normalizeCellValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function objectsToDelimited(
+  data: Record<string, unknown>[],
+  delimiter: string,
+  quoteChar: CsvQuoteChar,
+  includeHeader: boolean,
+): string {
   if (data.length === 0) return '';
-  const headers = Object.keys(data[0]);
+
+  const headers = Array.from(data.reduce((set, row) => {
+    Object.keys(row).forEach(key => set.add(key));
+    return set;
+  }, new Set<string>()));
+
+  if (headers.length === 0) return '';
+
   const escape = (v: unknown) => {
-    const s = String(v ?? '');
-    return s.includes(delimiter) || s.includes('"') || s.includes('\n')
-      ? `"${s.replace(/"/g, '""')}"` : s;
+    const s = normalizeCellValue(v);
+    const needsQuote = s.includes(delimiter) || s.includes(quoteChar) || s.includes('\n') || s.includes('\r');
+    if (!needsQuote) return s;
+    const escapedQuote = quoteChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const normalized = s.replace(new RegExp(escapedQuote, 'g'), `${quoteChar}${quoteChar}`);
+    return `${quoteChar}${normalized}${quoteChar}`;
   };
-  const lines = [headers.map(escape).join(delimiter)];
+
+  const lines: string[] = [];
+  if (includeHeader) {
+    lines.push(headers.map(escape).join(delimiter));
+  }
+
   for (const row of data) {
     lines.push(headers.map(h => escape(row[h])).join(delimiter));
   }
+
   return lines.join('\n');
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function flattenRecordValue(
+  value: unknown,
+  prefix: string,
+  out: Record<string, unknown>,
+): void {
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      out[prefix] = '{}';
+      return;
+    }
+    entries.forEach(([key, nested]) => {
+      flattenRecordValue(nested, prefix ? `${prefix}.${key}` : key, out);
+    });
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      out[prefix] = '[]';
+      return;
+    }
+    const primitiveOnly = value.every(item => !isPlainObject(item) && !Array.isArray(item));
+    if (primitiveOnly) {
+      out[prefix] = value.map(normalizeCellValue).join('|');
+      return;
+    }
+    value.forEach((item, index) => {
+      flattenRecordValue(item, prefix ? `${prefix}.${index}` : String(index), out);
+    });
+    return;
+  }
+
+  out[prefix || 'value'] = value;
+}
+
+function flattenRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  Object.entries(record).forEach(([key, value]) => flattenRecordValue(value, key, out));
+  return out;
+}
+
+function toTabularRows(data: unknown, flattenJsonForTabular: boolean): Record<string, unknown>[] {
+  if (Array.isArray(data)) {
+    return data.map((item) => {
+      if (isPlainObject(item)) {
+        return flattenJsonForTabular ? flattenRecord(item) : item;
+      }
+      if (Array.isArray(item)) {
+        return { value: flattenJsonForTabular ? item.map(normalizeCellValue).join('|') : item };
+      }
+      return { value: item };
+    });
+  }
+
+  if (isPlainObject(data)) {
+    return [flattenJsonForTabular ? flattenRecord(data) : data];
+  }
+
+  if (data === null || data === undefined) return [];
+  return [{ value: data }];
 }
 
 // Simple YAML serializer (flat + arrays)
@@ -637,28 +920,41 @@ function xmlNodeToJson(node: Element): unknown {
 
 // ── Main data converter ──
 
-export function convertData(input: string, from: DataFormat, to: DataFormat): string {
+export function convertData(
+  input: string,
+  from: DataFormat,
+  to: DataFormat,
+  options: DataConvertOptions = {},
+): string {
   if (from === to) return input;
+  const csvDelimiter = options.csvDelimiter ?? ',';
+  const csvQuoteChar = options.csvQuoteChar ?? '"';
+  const csvHasHeader = options.csvHasHeader ?? true;
+  const flattenJsonForTabular = options.flattenJsonForTabular ?? true;
 
   // Step 1: parse input to intermediate JSON-like structure
   let data: unknown;
 
-  switch (from) {
-    case 'json':
-      data = JSON.parse(input);
-      break;
-    case 'csv':
-      data = csvToObjects(input, ',');
-      break;
-    case 'tsv':
-      data = csvToObjects(input, '\t');
-      break;
-    case 'xml':
-      data = xmlToJson(input);
-      break;
-    case 'yaml':
-      data = yamlToJson(input);
-      break;
+  try {
+    switch (from) {
+      case 'json':
+        data = JSON.parse(input);
+        break;
+      case 'csv':
+        data = csvToObjects(input, csvDelimiter, csvQuoteChar, csvHasHeader);
+        break;
+      case 'tsv':
+        data = csvToObjects(input, '\t', csvQuoteChar, csvHasHeader);
+        break;
+      case 'xml':
+        data = xmlToJson(input);
+        break;
+      case 'yaml':
+        data = yamlToJson(input);
+        break;
+    }
+  } catch (error) {
+    throw normalizeDataParseError(error, input, from);
   }
 
   // Step 2: serialize to target format
@@ -666,11 +962,19 @@ export function convertData(input: string, from: DataFormat, to: DataFormat): st
     case 'json':
       return JSON.stringify(data, null, 2);
     case 'csv':
-      if (Array.isArray(data)) return objectsToCsv(data as Record<string, unknown>[], ',');
-      return objectsToCsv([data as Record<string, unknown>], ',');
+      return objectsToDelimited(
+        toTabularRows(data, flattenJsonForTabular),
+        csvDelimiter,
+        csvQuoteChar,
+        csvHasHeader,
+      );
     case 'tsv':
-      if (Array.isArray(data)) return objectsToCsv(data as Record<string, unknown>[], '\t');
-      return objectsToCsv([data as Record<string, unknown>], '\t');
+      return objectsToDelimited(
+        toTabularRows(data, flattenJsonForTabular),
+        '\t',
+        csvQuoteChar,
+        csvHasHeader,
+      );
     case 'xml':
       return `<?xml version="1.0" encoding="UTF-8"?>\n${jsonToXml(data, 'root')}`;
     case 'yaml':

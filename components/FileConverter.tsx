@@ -1,11 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import JSZip from 'jszip';
 import {
-  Upload, Download, X, Image, Code2, Binary,
-  RefreshCw, Loader2, CheckCircle2, AlertCircle, Copy, Check,
+  Upload, Download, X, Image, Code2, Binary, Archive, Clipboard, Link2, History,
+  RefreshCw, Loader2, CheckCircle2, AlertCircle, Copy, Check, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import {
   convertImage, convertData, fileToBase64, base64ToBlob, formatSize,
-  type ImageFormat, type DataFormat,
+  DataConversionError,
+  type ImageFormat, type DataFormat, type CsvDelimiter, type CsvQuoteChar, type DataConvertOptions, type WatermarkPosition,
 } from '../utils/fileConverter';
 
 // ── Types ──
@@ -31,6 +33,16 @@ interface QueueItem {
   error?: string;
   result?: ConvertedFile;
   dataFormat?: DataFormat;
+}
+
+interface ConversionHistoryItem {
+  id: string;
+  category: ConversionCategory;
+  inputName: string;
+  outputName: string;
+  outputSize: number;
+  createdAt: string;
+  resultId?: string;
 }
 
 // ── Constants ──
@@ -76,6 +88,101 @@ const DATA_MIME: Record<DataFormat, string> = {
   xml: 'application/xml;charset=utf-8',
   yaml: 'application/x-yaml;charset=utf-8',
 };
+
+const STORAGE_SETTINGS_KEY = 'devtoolkit:file-converter:settings:v1';
+const STORAGE_HISTORY_KEY = 'devtoolkit:file-converter:history:v1';
+
+const IMAGE_SIZE_PRESETS: Array<{ value: string; label: string; width?: number; height?: number }> = [
+  { value: 'original', label: 'Original' },
+  { value: 'web-hero', label: 'Web Hero 1920×1080', width: 1920, height: 1080 },
+  { value: 'instagram-square', label: 'Instagram 1080×1080', width: 1080, height: 1080 },
+  { value: 'instagram-story', label: 'Story 1080×1920', width: 1080, height: 1920 },
+  { value: 'thumbnail', label: 'Thumbnail 320×320', width: 320, height: 320 },
+];
+
+const DELIMITER_OPTIONS: Array<{ value: CsvDelimiter; label: string }> = [
+  { value: ',', label: 'Comma (,)' },
+  { value: ';', label: 'Semicolon (;)' },
+  { value: '|', label: 'Pipe (|)' },
+  { value: '\t', label: 'Tab (\\t)' },
+];
+
+const WATERMARK_POSITIONS: Array<{ value: WatermarkPosition; label: string }> = [
+  { value: 'bottom-right', label: 'Bottom Right' },
+  { value: 'bottom-left', label: 'Bottom Left' },
+  { value: 'top-right', label: 'Top Right' },
+  { value: 'top-left', label: 'Top Left' },
+  { value: 'center', label: 'Center' },
+];
+
+function csvDelimiterLabel(delimiter: CsvDelimiter): string {
+  if (delimiter === '\t') return 'Tab';
+  if (delimiter === ';') return 'Semicolon';
+  if (delimiter === '|') return 'Pipe';
+  return 'Comma';
+}
+
+function parseDelimitedPreview(
+  text: string,
+  delimiter: string,
+  quoteChar: CsvQuoteChar,
+  maxRows: number,
+): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuote = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuote) {
+      if (ch === quoteChar && text[i + 1] === quoteChar) {
+        field += quoteChar;
+        i++;
+      } else if (ch === quoteChar) {
+        inQuote = false;
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === quoteChar) {
+      inQuote = true;
+      continue;
+    }
+
+    if (ch === delimiter) {
+      row.push(field);
+      field = '';
+      continue;
+    }
+
+    if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) {
+      row.push(field);
+      field = '';
+      if (row.some(cell => cell !== '')) rows.push(row);
+      row = [];
+      if (rows.length >= maxRows) break;
+      if (ch === '\r') i++;
+      continue;
+    }
+
+    field += ch;
+  }
+
+  if (rows.length < maxRows) {
+    row.push(field);
+    if (row.some(cell => cell !== '')) rows.push(row);
+  }
+
+  return rows.slice(0, maxRows);
+}
+
+function truncateName(name: string, max = 80): string {
+  if (name.length <= max) return name;
+  return `${name.slice(0, max - 3)}...`;
+}
 
 const CATEGORIES: { id: ConversionCategory; label: string; icon: React.ReactNode; desc: string }[] = [
   { id: 'image', label: 'Image', icon: <Image size={16} />, desc: 'PNG, JPG, WebP, BMP' },
@@ -170,12 +277,25 @@ const FileConverter: React.FC = () => {
 
   // Image options
   const [imgTarget, setImgTarget] = useState<ImageFormat>('webp');
+  const [imgTargets, setImgTargets] = useState<ImageFormat[]>(['webp']);
+  const [imgMultiOutput, setImgMultiOutput] = useState(false);
   const [imgQuality, setImgQuality] = useState(92);
   const [imgMaxWidth, setImgMaxWidth] = useState<number | ''>('');
   const [imgMaxHeight, setImgMaxHeight] = useState<number | ''>('');
+  const [imgResizePreset, setImgResizePreset] = useState('original');
+  const [imgStripExif, setImgStripExif] = useState(true);
+  const [imgWatermarkText, setImgWatermarkText] = useState('');
+  const [imgWatermarkOpacity, setImgWatermarkOpacity] = useState(22);
+  const [imgWatermarkPosition, setImgWatermarkPosition] = useState<WatermarkPosition>('bottom-right');
 
   // Data options
   const [dataTo, setDataTo] = useState<DataFormat>('csv');
+  const [dataTargets, setDataTargets] = useState<DataFormat[]>(['csv']);
+  const [dataMultiOutput, setDataMultiOutput] = useState(false);
+  const [dataDelimiter, setDataDelimiter] = useState<CsvDelimiter>(',');
+  const [dataQuoteChar, setDataQuoteChar] = useState<CsvQuoteChar>('"');
+  const [dataHasHeader, setDataHasHeader] = useState(true);
+  const [dataFlattenJson, setDataFlattenJson] = useState(true);
 
   // Encode options
   const [encodeMode, setEncodeMode] = useState<'toBase64' | 'fromBase64'>('toBase64');
@@ -186,6 +306,16 @@ const FileConverter: React.FC = () => {
   const [dataTextInput, setDataTextInput] = useState('');
   const [dataTextOutput, setDataTextOutput] = useState('');
   const [copiedDataOutput, setCopiedDataOutput] = useState(false);
+  const [dataPreviewSource, setDataPreviewSource] = useState<string>('');
+  const [dataPreviewFormat, setDataPreviewFormat] = useState<DataFormat>('json');
+  const [dataErrorInfo, setDataErrorInfo] = useState<{ message: string; line?: number; column?: number } | null>(null);
+
+  const [history, setHistory] = useState<ConversionHistoryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [zipping, setZipping] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [showDataAdvanced, setShowDataAdvanced] = useState(false);
+  const [showImageAdvanced, setShowImageAdvanced] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -237,6 +367,114 @@ const FileConverter: React.FC = () => {
     }
   }, [supportsAvifOutput, imgTarget]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const rawSettings = window.localStorage.getItem(STORAGE_SETTINGS_KEY);
+      if (rawSettings) {
+        const saved = JSON.parse(rawSettings) as Partial<{
+          imgTarget: ImageFormat;
+          imgTargets: ImageFormat[];
+          imgMultiOutput: boolean;
+          imgQuality: number;
+          imgMaxWidth: number | '';
+          imgMaxHeight: number | '';
+          imgResizePreset: string;
+          imgStripExif: boolean;
+          imgWatermarkText: string;
+          imgWatermarkOpacity: number;
+          imgWatermarkPosition: WatermarkPosition;
+          dataTo: DataFormat;
+          dataTargets: DataFormat[];
+          dataMultiOutput: boolean;
+          dataDelimiter: CsvDelimiter;
+          dataQuoteChar: CsvQuoteChar;
+          dataHasHeader: boolean;
+          dataFlattenJson: boolean;
+        }>;
+
+        if (saved.imgTarget) setImgTarget(saved.imgTarget);
+        if (Array.isArray(saved.imgTargets) && saved.imgTargets.length > 0) setImgTargets(saved.imgTargets);
+        if (typeof saved.imgMultiOutput === 'boolean') setImgMultiOutput(saved.imgMultiOutput);
+        if (typeof saved.imgQuality === 'number' && Number.isFinite(saved.imgQuality)) setImgQuality(Math.max(10, Math.min(100, Math.round(saved.imgQuality))));
+        if (saved.imgMaxWidth === '' || typeof saved.imgMaxWidth === 'number') setImgMaxWidth(saved.imgMaxWidth);
+        if (saved.imgMaxHeight === '' || typeof saved.imgMaxHeight === 'number') setImgMaxHeight(saved.imgMaxHeight);
+        if (typeof saved.imgResizePreset === 'string') setImgResizePreset(saved.imgResizePreset);
+        if (typeof saved.imgStripExif === 'boolean') setImgStripExif(saved.imgStripExif);
+        if (typeof saved.imgWatermarkText === 'string') setImgWatermarkText(saved.imgWatermarkText);
+        if (typeof saved.imgWatermarkOpacity === 'number' && Number.isFinite(saved.imgWatermarkOpacity)) {
+          setImgWatermarkOpacity(Math.max(5, Math.min(70, Math.round(saved.imgWatermarkOpacity))));
+        }
+        if (saved.imgWatermarkPosition) setImgWatermarkPosition(saved.imgWatermarkPosition);
+
+        if (saved.dataTo) setDataTo(saved.dataTo);
+        if (Array.isArray(saved.dataTargets) && saved.dataTargets.length > 0) setDataTargets(saved.dataTargets);
+        if (typeof saved.dataMultiOutput === 'boolean') setDataMultiOutput(saved.dataMultiOutput);
+        if (saved.dataDelimiter) setDataDelimiter(saved.dataDelimiter);
+        if (saved.dataQuoteChar) setDataQuoteChar(saved.dataQuoteChar);
+        if (typeof saved.dataHasHeader === 'boolean') setDataHasHeader(saved.dataHasHeader);
+        if (typeof saved.dataFlattenJson === 'boolean') setDataFlattenJson(saved.dataFlattenJson);
+      }
+    } catch {
+      // ignore corrupted local settings
+    }
+
+    try {
+      const rawHistory = window.localStorage.getItem(STORAGE_HISTORY_KEY);
+      if (rawHistory) {
+        const savedHistory = JSON.parse(rawHistory) as ConversionHistoryItem[];
+        if (Array.isArray(savedHistory)) {
+          setHistory(savedHistory.slice(0, 40));
+        }
+      }
+    } catch {
+      // ignore corrupted history
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(STORAGE_SETTINGS_KEY, JSON.stringify({
+        imgTarget,
+        imgTargets,
+        imgMultiOutput,
+        imgQuality,
+        imgMaxWidth,
+        imgMaxHeight,
+        imgResizePreset,
+        imgStripExif,
+        imgWatermarkText,
+        imgWatermarkOpacity,
+        imgWatermarkPosition,
+        dataTo,
+        dataTargets,
+        dataMultiOutput,
+        dataDelimiter,
+        dataQuoteChar,
+        dataHasHeader,
+        dataFlattenJson,
+      }));
+    } catch {
+      // local storage may be unavailable
+    }
+  }, [
+    imgTarget, imgTargets, imgMultiOutput, imgQuality, imgMaxWidth, imgMaxHeight,
+    imgResizePreset, imgStripExif,
+    imgWatermarkText, imgWatermarkOpacity, imgWatermarkPosition,
+    dataTo, dataTargets, dataMultiOutput, dataDelimiter, dataQuoteChar, dataHasHeader, dataFlattenJson,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(history.slice(0, 40)));
+    } catch {
+      // local storage may be unavailable
+    }
+  }, [history]);
+
   const queuedDataFormats = useMemo<DataFormat[]>(() => {
     if (category !== 'data') return [];
     const detected = queue
@@ -251,6 +489,14 @@ const FileConverter: React.FC = () => {
     return DATA_FORMATS.filter(option => queuedDataFormats.every(input => input !== option.value));
   }, [queuedDataFormats]);
 
+  const supportedImageTargets = useMemo(
+    () => IMAGE_OUTPUT_OPTIONS
+      .filter((option): option is { id: string; label: string; value: ImageFormat } => Boolean(option.value))
+      .filter(option => !(option.value === 'avif' && !supportsAvifOutput))
+      .map(option => option.value),
+    [supportsAvifOutput],
+  );
+
   useEffect(() => {
     if (category !== 'data') return;
     if (dataOutputOptions.length === 0) return;
@@ -258,6 +504,44 @@ const FileConverter: React.FC = () => {
       setDataTo(dataOutputOptions[0].value);
     }
   }, [category, dataOutputOptions, dataTo]);
+
+  useEffect(() => {
+    if (!supportedImageTargets.includes(imgTarget)) {
+      setImgTarget(supportedImageTargets[0] ?? 'webp');
+    }
+  }, [imgTarget, supportedImageTargets]);
+
+  useEffect(() => {
+    const allowed = new Set(dataOutputOptions.map(option => option.value));
+    setDataTargets(prev => {
+      const filtered = prev.filter(target => allowed.has(target));
+      if (filtered.length > 0) return filtered;
+      if (dataOutputOptions.length > 0) return [dataOutputOptions[0].value];
+      return [];
+    });
+  }, [dataOutputOptions]);
+
+  useEffect(() => {
+    const allowed = new Set(supportedImageTargets);
+    setImgTargets(prev => {
+      const filtered = prev.filter(target => allowed.has(target));
+      if (filtered.length > 0) return filtered;
+      if (supportedImageTargets.length > 0) return [supportedImageTargets[0]];
+      return [];
+    });
+  }, [supportedImageTargets]);
+
+  useEffect(() => {
+    const preset = IMAGE_SIZE_PRESETS.find(item => item.value === imgResizePreset);
+    if (!preset) return;
+    if (!preset.width || !preset.height) {
+      setImgMaxWidth('');
+      setImgMaxHeight('');
+      return;
+    }
+    setImgMaxWidth(preset.width);
+    setImgMaxHeight(preset.height);
+  }, [imgResizePreset]);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const items: QueueItem[] = Array.from(files).map(file => {
@@ -295,10 +579,12 @@ const FileConverter: React.FC = () => {
   const clearAll = () => {
     setQueue([]);
     setConversionProgress(0);
+    setDataErrorInfo(null);
     setResults(prev => {
       prev.forEach(r => r.previewUrl && URL.revokeObjectURL(r.previewUrl));
       return [];
     });
+    setDataPreviewSource('');
   };
 
   // ── Drop handler ──
@@ -310,6 +596,11 @@ const FileConverter: React.FC = () => {
     }
   }, [addFiles]);
 
+  const appendHistory = useCallback((entries: ConversionHistoryItem[]) => {
+    if (entries.length === 0) return;
+    setHistory(prev => [...entries, ...prev].slice(0, 80));
+  }, []);
+
   // ── Conversion ──
 
   const handleConvert = async () => {
@@ -317,62 +608,129 @@ const FileConverter: React.FC = () => {
     if (pending.length === 0) return;
     setConverting(true);
     setConversionProgress(0);
+    setDataErrorInfo(null);
     const totalItems = pending.length;
     let completedItems = 0;
+    let previewAssigned = false;
     const pendingIds = new Set(pending.map(item => item.id));
     setQueue(prev => prev.map(q => pendingIds.has(q.id) ? { ...q, status: 'converting' } : q));
-    const outcomes: Array<{ id: string; converted?: ConvertedFile; error?: string }> = [];
+    const outcomes: Array<{ id: string; converted: ConvertedFile[]; error?: string }> = [];
+    const dataOptions: DataConvertOptions = {
+      csvDelimiter: dataDelimiter,
+      csvQuoteChar: dataQuoteChar,
+      csvHasHeader: dataHasHeader,
+      flattenJsonForTabular: dataFlattenJson,
+    };
 
     for (const item of pending) {
       try {
-        let resultBlob: Blob;
-        let resultName: string;
+        const convertedFiles: ConvertedFile[] = [];
 
         if (category === 'image') {
-          const { blob } = await convertImage(
-            item.file,
-            imgTarget,
-            imgQuality / 100,
-            imgMaxWidth || undefined,
-            imgMaxHeight || undefined,
-          );
-          resultBlob = blob;
+          const targets = imgMultiOutput ? imgTargets : [imgTarget];
+          if (targets.length === 0) {
+            throw new Error('Select at least one output format.');
+          }
           const baseName = item.file.name.replace(/\.[^.]+$/, '');
-          const ext = IMAGE_FORMATS.find(f => f.value === imgTarget)!.ext;
-          resultName = `${baseName}${ext}`;
+
+          for (const target of targets) {
+            if (
+              !imgStripExif
+              && !imgWatermarkText.trim()
+              && !imgMaxWidth
+              && !imgMaxHeight
+              && item.file.type === `image/${target === 'jpeg' ? 'jpeg' : target}`
+            ) {
+              const preservedBlob = item.file.slice(0, item.file.size, item.file.type);
+              const preservedName = `${baseName}${IMAGE_FORMATS.find(f => f.value === target)?.ext || ''}`;
+              convertedFiles.push({
+                id: uid(),
+                originalName: item.file.name,
+                originalSize: item.file.size,
+                resultBlob: preservedBlob,
+                resultName: preservedName,
+                resultSize: preservedBlob.size,
+                status: 'done',
+                previewUrl: URL.createObjectURL(preservedBlob),
+              });
+              continue;
+            }
+
+            const { blob } = await convertImage(
+              item.file,
+              target,
+              imgQuality / 100,
+              imgMaxWidth || undefined,
+              imgMaxHeight || undefined,
+              {
+                watermarkText: imgWatermarkText.trim(),
+                watermarkOpacity: imgWatermarkOpacity / 100,
+                watermarkPosition: imgWatermarkPosition,
+              },
+            );
+            const ext = IMAGE_FORMATS.find(f => f.value === target)!.ext;
+            const resultName = `${baseName}${ext}`;
+            convertedFiles.push({
+              id: uid(),
+              originalName: item.file.name,
+              originalSize: item.file.size,
+              resultBlob: blob,
+              resultName,
+              resultSize: blob.size,
+              status: 'done',
+              previewUrl: URL.createObjectURL(blob),
+            });
+          }
         } else if (category === 'data') {
           const text = await item.file.text();
           const detectedFrom = item.dataFormat ?? detectDataFormatFromFile(item.file) ?? detectDataFormatFromText(text);
           if (!detectedFrom) {
             throw new Error(`Cannot detect input format for "${item.file.name}".`);
           }
-          if (detectedFrom === dataTo) {
-            throw new Error(`"${item.file.name}" is already ${detectedFrom.toUpperCase()}. Choose another output format.`);
+
+          const selectedTargets = (dataMultiOutput ? dataTargets : [dataTo]).filter(target => target !== detectedFrom);
+          if (selectedTargets.length === 0) {
+            throw new Error(`"${item.file.name}" has no compatible output target selected.`);
           }
-          const output = convertData(text, detectedFrom, dataTo);
-          const ext = DATA_FORMATS.find(f => f.value === dataTo)!.ext;
-          resultBlob = new Blob([output], { type: DATA_MIME[dataTo] });
+
           const baseName = item.file.name.replace(/\.[^.]+$/, '');
-          resultName = `${baseName}${ext}`;
+          for (const target of selectedTargets) {
+            const output = convertData(text, detectedFrom, target, dataOptions);
+            const ext = DATA_FORMATS.find(f => f.value === target)!.ext;
+            const resultBlob = new Blob([output], { type: DATA_MIME[target] });
+            const resultName = `${baseName}${ext}`;
+            convertedFiles.push({
+              id: uid(),
+              originalName: item.file.name,
+              originalSize: item.file.size,
+              resultBlob,
+              resultName,
+              resultSize: resultBlob.size,
+              status: 'done',
+            });
+
+            if (!previewAssigned) {
+              setDataPreviewSource(output);
+              setDataPreviewFormat(target);
+              previewAssigned = true;
+            }
+          }
         } else {
           throw new Error('Unsupported category');
         }
 
-        const converted: ConvertedFile = {
-          id: uid(),
-          originalName: item.file.name,
-          originalSize: item.file.size,
-          resultBlob,
-          resultName,
-          resultSize: resultBlob.size,
-          status: 'done',
-          previewUrl: category === 'image' ? URL.createObjectURL(resultBlob) : undefined,
-        };
-
-        outcomes.push({ id: item.id, converted });
+        outcomes.push({ id: item.id, converted: convertedFiles });
       } catch (err) {
-        const error = err instanceof Error ? err.message : 'Conversion failed';
-        outcomes.push({ id: item.id, error });
+        let errorMessage = err instanceof Error ? err.message : 'Conversion failed';
+        if (err instanceof DataConversionError) {
+          setDataErrorInfo({
+            message: err.detailMessage,
+            line: err.line,
+            column: err.column,
+          });
+          errorMessage = err.message;
+        }
+        outcomes.push({ id: item.id, converted: [], error: errorMessage });
       } finally {
         completedItems += 1;
         setConversionProgress(Math.min(100, Math.round((completedItems / totalItems) * 100)));
@@ -381,18 +739,26 @@ const FileConverter: React.FC = () => {
 
     const outcomeById = new Map(outcomes.map(outcome => [outcome.id, outcome]));
     const convertedResults = outcomes
-      .map(outcome => outcome.converted)
-      .filter((result): result is ConvertedFile => Boolean(result));
+      .flatMap(outcome => outcome.converted);
 
     if (convertedResults.length > 0) {
       setResults(prev => [...prev, ...convertedResults]);
+      appendHistory(convertedResults.map(result => ({
+        id: uid(),
+        category,
+        inputName: truncateName(result.originalName),
+        outputName: truncateName(result.resultName),
+        outputSize: result.resultSize,
+        createdAt: new Date().toISOString(),
+        resultId: result.id,
+      })));
     }
 
     setQueue(prev => prev.map(q => {
       const outcome = outcomeById.get(q.id);
       if (!outcome) return q;
-      if (outcome.converted) {
-        return { ...q, status: 'done', result: outcome.converted, error: undefined };
+      if (outcome.converted.length > 0) {
+        return { ...q, status: 'done', result: outcome.converted[0], error: undefined };
       }
       return { ...q, status: 'error', error: outcome.error ?? 'Conversion failed' };
     }));
@@ -420,20 +786,34 @@ const FileConverter: React.FC = () => {
   const handleDataTextConvert = () => {
     const input = dataTextInput ?? '';
     try {
+      setDataErrorInfo(null);
       const detectedFrom = detectDataFormatFromText(input);
       if (!detectedFrom) {
         throw new Error('Cannot detect input format. Paste valid JSON, CSV, TSV, XML, or YAML.');
       }
-      if (detectedFrom === dataTo) {
+      const preferredTarget = dataMultiOutput
+        ? dataTargets.find(target => target !== detectedFrom)
+        : dataTo;
+      if (!preferredTarget) {
+        throw new Error('Select at least one compatible output format.');
+      }
+      if (detectedFrom === preferredTarget) {
         throw new Error(`Input is already ${detectedFrom.toUpperCase()}. Choose another output format.`);
       }
 
-      const output = convertData(input, detectedFrom, dataTo);
+      const output = convertData(input, detectedFrom, preferredTarget, {
+        csvDelimiter: dataDelimiter,
+        csvQuoteChar: dataQuoteChar,
+        csvHasHeader: dataHasHeader,
+        flattenJsonForTabular: dataFlattenJson,
+      });
       setDataTextOutput(output);
+      setDataPreviewSource(output);
+      setDataPreviewFormat(preferredTarget);
 
       const fromExt = DATA_FORMATS.find(f => f.value === detectedFrom)?.ext || '.txt';
-      const toExt = DATA_FORMATS.find(f => f.value === dataTo)?.ext || '.txt';
-      const resultBlob = new Blob([output], { type: DATA_MIME[dataTo] || 'text/plain;charset=utf-8' });
+      const toExt = DATA_FORMATS.find(f => f.value === preferredTarget)?.ext || '.txt';
+      const resultBlob = new Blob([output], { type: DATA_MIME[preferredTarget] || 'text/plain;charset=utf-8' });
 
       const converted: ConvertedFile = {
         id: uid(),
@@ -446,7 +826,23 @@ const FileConverter: React.FC = () => {
       };
 
       setResults(prev => [converted, ...prev]);
+      appendHistory([{
+        id: uid(),
+        category: 'data',
+        inputName: 'pasted-input',
+        outputName: converted.resultName,
+        outputSize: converted.resultSize,
+        createdAt: new Date().toISOString(),
+        resultId: converted.id,
+      }]);
     } catch (err) {
+      if (err instanceof DataConversionError) {
+        setDataErrorInfo({
+          message: err.detailMessage,
+          line: err.line,
+          column: err.column,
+        });
+      }
       setDataTextOutput(`Error: ${err instanceof Error ? err.message : 'Conversion failed'}`);
     }
   };
@@ -504,12 +900,159 @@ const FileConverter: React.FC = () => {
     for (const r of results) downloadResult(r);
   };
 
+  const downloadAllAsZip = async () => {
+    if (results.length === 0) return;
+    try {
+      setZipping(true);
+      const zip = new JSZip();
+      const seen = new Map<string, number>();
+
+      for (const result of results) {
+        const current = seen.get(result.resultName) ?? 0;
+        seen.set(result.resultName, current + 1);
+        const finalName = current === 0
+          ? result.resultName
+          : `${result.resultName.replace(/(\.[^.]+)?$/, `-${current + 1}$1`)}`;
+        zip.file(finalName, await result.resultBlob.arrayBuffer());
+      }
+
+      const archive = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      });
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const url = URL.createObjectURL(archive);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `converted-files-${stamp}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to create ZIP archive.';
+      window.alert(msg);
+    } finally {
+      setZipping(false);
+    }
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+  };
+
+  const inferExtensionFromMime = (mime: string, fallback = 'bin') => {
+    const normalized = mime.toLowerCase();
+    if (normalized.includes('jpeg')) return 'jpg';
+    if (normalized.includes('svg')) return 'svg';
+    if (normalized.includes('yaml')) return 'yaml';
+    if (normalized.includes('json')) return 'json';
+    if (normalized.includes('csv')) return 'csv';
+    if (normalized.includes('xml')) return 'xml';
+    if (normalized.includes('webp')) return 'webp';
+    if (normalized.includes('png')) return 'png';
+    if (normalized.includes('bmp')) return 'bmp';
+    if (normalized.includes('gif')) return 'gif';
+    if (normalized.includes('tiff')) return 'tiff';
+    return fallback;
+  };
+
+  const inferMimeFromCategory = () => {
+    if (category === 'image') return 'image/png';
+    if (category === 'data') return 'application/octet-stream';
+    return 'application/octet-stream';
+  };
+
+  const handleImportFromUrl = async () => {
+    const input = window.prompt('Paste file URL');
+    if (!input) return;
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(input.trim());
+    } catch {
+      window.alert('Invalid URL.');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const response = await fetch(parsedUrl.toString());
+      if (!response.ok) {
+        throw new Error(`Request failed with ${response.status}.`);
+      }
+
+      const blob = await response.blob();
+      const pathnameName = decodeURIComponent(parsedUrl.pathname.split('/').filter(Boolean).pop() || '');
+      const ext = inferExtensionFromMime(blob.type || inferMimeFromCategory(), category === 'data' ? 'txt' : 'bin');
+      const guessedName = pathnameName || `imported-${Date.now()}.${ext}`;
+      const finalName = /\.[a-z0-9]+$/i.test(guessedName) ? guessedName : `${guessedName}.${ext}`;
+      addFiles([new File([blob], finalName, { type: blob.type || inferMimeFromCategory() })]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not import from URL.';
+      window.alert(`Import failed. ${message} If this is a CORS-protected URL, use direct upload instead.`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handlePasteFromClipboard = async () => {
+    if (!navigator.clipboard?.read) {
+      window.alert('Clipboard read is not supported in this browser.');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const clipboardItems = await navigator.clipboard.read();
+      const imported: File[] = [];
+
+      for (const item of clipboardItems) {
+        for (const type of item.types) {
+          if (category === 'image' && type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            const ext = inferExtensionFromMime(type, 'png');
+            imported.push(new File([blob], `clipboard-${Date.now()}-${imported.length + 1}.${ext}`, { type }));
+            continue;
+          }
+
+          if (category === 'data' && type === 'text/plain') {
+            const blob = await item.getType(type);
+            const text = await blob.text();
+            const detected = detectDataFormatFromText(text);
+            const ext = DATA_FORMATS.find(format => format.value === detected)?.ext || '.txt';
+            imported.push(new File([text], `clipboard-${Date.now()}-${imported.length + 1}${ext}`, { type: 'text/plain' }));
+            continue;
+          }
+
+          if (category === 'encode') {
+            const blob = await item.getType(type);
+            const ext = inferExtensionFromMime(type, 'bin');
+            imported.push(new File([blob], `clipboard-${Date.now()}-${imported.length + 1}.${ext}`, { type }));
+            continue;
+          }
+        }
+      }
+
+      if (imported.length === 0) {
+        window.alert('No compatible clipboard content found.');
+        return;
+      }
+      addFiles(imported);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Clipboard import failed.';
+      window.alert(message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const clearResults = () => {
     setResults(prev => {
       prev.forEach(r => r.previewUrl && URL.revokeObjectURL(r.previewUrl));
       return [];
     });
     setBase64Output('');
+    setDataPreviewSource('');
   };
 
   // ── Accept string for file input ──
@@ -527,7 +1070,14 @@ const FileConverter: React.FC = () => {
   const pendingCount = queue.filter(q => q.status === 'pending').length;
   const queueHasPending = pendingCount > 0;
   const hasAnyResults = results.length > 0 || Boolean(base64Output);
-  const canConvertDataBatch = category !== 'data' || !queueHasPending || dataOutputOptions.length > 0;
+  const selectedDataTargets = (dataMultiOutput ? dataTargets : [dataTo])
+    .filter(target => dataOutputOptions.some(option => option.value === target));
+  const selectedImageTargets = (imgMultiOutput ? imgTargets : [imgTarget])
+    .filter(target => supportedImageTargets.includes(target));
+  const effectiveDataTextTarget = dataMultiOutput ? selectedDataTargets[0] : dataTo;
+  const canConvertDataBatch = category !== 'data' || !queueHasPending || selectedDataTargets.length > 0;
+  const canConvertImageBatch = category !== 'image' || !queueHasPending || selectedImageTargets.length > 0;
+  const canConvertCurrentBatch = canConvertDataBatch && canConvertImageBatch;
   const imageFormatMeta = IMAGE_FORMATS.find(f => f.value === imgTarget);
   const dataOutputMeta = DATA_FORMATS.find(f => f.value === dataTo);
   const dataInputLabel = queuedDataFormats.length === 0
@@ -541,7 +1091,8 @@ const FileConverter: React.FC = () => {
   );
   const canConvertPastedData = Boolean(normalizedDataTextInput.trim())
     && Boolean(detectedTextInputFormat)
-    && detectedTextInputFormat !== dataTo;
+    && Boolean(effectiveDataTextTarget)
+    && detectedTextInputFormat !== effectiveDataTextTarget;
   const supportedImageOutputOptions = IMAGE_OUTPUT_OPTIONS.filter(
     (option): option is { id: string; label: string; value: ImageFormat } => Boolean(option.value)
       && !(option.value === 'avif' && !supportsAvifOutput),
@@ -549,6 +1100,24 @@ const FileConverter: React.FC = () => {
   const advancedImageOutputOptions = IMAGE_OUTPUT_OPTIONS.filter(option =>
     !option.value || (option.value === 'avif' && !supportsAvifOutput),
   );
+  const previewRows = useMemo(() => {
+    if (!dataPreviewSource) return [] as string[];
+    return dataPreviewSource.split(/\r?\n/).slice(0, 20);
+  }, [dataPreviewSource]);
+  const previewTable = useMemo(() => {
+    if (!dataPreviewSource) return null as { headers: string[]; rows: string[][] } | null;
+    if (dataPreviewFormat !== 'csv' && dataPreviewFormat !== 'tsv') return null;
+    const delimiter = dataPreviewFormat === 'tsv' ? '\t' : dataDelimiter;
+    const rows = parseDelimitedPreview(dataPreviewSource, delimiter, dataQuoteChar, 21);
+    if (rows.length === 0) return null;
+    const [headers, ...body] = rows;
+    return {
+      headers: headers.map((header, index) => header || `column_${index + 1}`),
+      rows: body,
+    };
+  }, [dataPreviewSource, dataPreviewFormat, dataDelimiter, dataQuoteChar]);
+  const imagePresetLabel = IMAGE_SIZE_PRESETS.find(p => p.value === imgResizePreset)?.label || 'Custom';
+  const needsImageQualityControl = (imgMultiOutput ? selectedImageTargets : [imgTarget]).some(target => target !== 'png' && target !== 'bmp');
   const cardClass = 'rounded-[26px] border border-slate-200/70 dark:border-slate-700/70 bg-white/75 dark:bg-slate-900/65 backdrop-blur-xl shadow-[0_28px_60px_-38px_rgba(15,23,42,0.65)]';
   const sectionLabelClass = 'text-[10px] font-semibold tracking-[0.18em] uppercase text-slate-500 dark:text-slate-400';
   const inputBaseClass = 'w-full text-sm border border-slate-200/80 dark:border-slate-700/80 rounded-xl px-3 py-2.5 bg-white/85 dark:bg-slate-900/70 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400 transition';
@@ -613,50 +1182,121 @@ const FileConverter: React.FC = () => {
           <div className={`${cardClass} p-5 space-y-4`}>
             <div className="flex items-center justify-between">
               <h3 className={sectionLabelClass}>Settings</h3>
-              {category === 'encode' && (
-                <button
-                  onClick={loadBase64Example}
-                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-                >
-                  Load Example
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {category !== 'encode' && (
+                  <>
+                    <button
+                      onClick={handleImportFromUrl}
+                      disabled={importing}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:opacity-80 disabled:opacity-40 transition-opacity"
+                    >
+                      <Link2 size={12} />
+                      Import URL
+                    </button>
+                    <button
+                      onClick={handlePasteFromClipboard}
+                      disabled={importing}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:opacity-80 disabled:opacity-40 transition-opacity"
+                    >
+                      <Clipboard size={12} />
+                      Paste
+                    </button>
+                  </>
+                )}
+                {category === 'encode' && (
+                  <button
+                    onClick={loadBase64Example}
+                    className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                  >
+                    Load Example
+                  </button>
+                )}
+              </div>
             </div>
 
             {category === 'image' && (
               <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">Output Format</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_108px] gap-2">
-                    <select
-                      value={imgTarget}
-                      onChange={e => setImgTarget(e.target.value as ImageFormat)}
-                      className={compactSelectClass}
-                    >
-                      <optgroup label="Browser Supported">
-                        {supportedImageOutputOptions.map(option => (
-                          <option key={option.id} value={option.value}>{option.label}</option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Advanced (Not Available Here)">
-                        {advancedImageOutputOptions.map(option => (
-                          <option key={option.id} value={`unsupported:${option.id}`} disabled>
-                            {!option.value && option.label}
-                            {option.value === 'avif' && 'AVIF (Not Supported In This Browser)'}
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
-                    <div className="h-11 self-end rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/70 px-3 flex items-center justify-between">
-                      <p className="text-[9px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Ext</p>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{imageFormatMeta?.ext || '.img'}</p>
+                <div className="flex items-center justify-between rounded-xl border border-slate-200/70 dark:border-slate-700/70 bg-slate-50/70 dark:bg-slate-800/40 px-3 py-2.5">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Output Mode</p>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">
+                      {imgMultiOutput ? `${selectedImageTargets.length} formats selected` : 'Single format'}
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={imgMultiOutput}
+                      onChange={e => setImgMultiOutput(e.target.checked)}
+                      className="rounded border-slate-300 dark:border-slate-600"
+                    />
+                    Multi-output
+                  </label>
+                </div>
+
+                {!imgMultiOutput && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">Output Format</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_108px] gap-2">
+                      <select
+                        value={imgTarget}
+                        onChange={e => setImgTarget(e.target.value as ImageFormat)}
+                        className={compactSelectClass}
+                      >
+                        <optgroup label="Browser Supported">
+                          {supportedImageOutputOptions.map(option => (
+                            <option key={option.id} value={option.value}>{option.label}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Advanced (Not Available Here)">
+                          {advancedImageOutputOptions.map(option => (
+                            <option key={option.id} value={`unsupported:${option.id}`} disabled>
+                              {!option.value && option.label}
+                              {option.value === 'avif' && 'AVIF (Not Supported In This Browser)'}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                      <div className="h-11 self-end rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/70 px-3 flex items-center justify-between">
+                        <p className="text-[9px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Ext</p>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{imageFormatMeta?.ext || '.img'}</p>
+                      </div>
                     </div>
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                    In-browser output supports PNG, JPG/JPEG, WEBP only when browser encoder is available.
-                  </p>
-                </div>
-                {imgTarget !== 'png' && imgTarget !== 'bmp' && (
+                )}
+
+                {imgMultiOutput && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">Output Formats</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {supportedImageOutputOptions.map(option => {
+                        const checked = imgTargets.includes(option.value);
+                        return (
+                          <label
+                            key={option.id}
+                            className={`inline-flex items-center justify-center rounded-xl border px-2.5 py-2 text-xs font-semibold cursor-pointer transition ${
+                              checked
+                                ? 'border-blue-400/70 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                                : 'border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/50 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setImgTargets(prev => checked ? prev.filter(v => v !== option.value) : [...prev, option.value]);
+                              }}
+                              className="sr-only"
+                            />
+                            {option.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {needsImageQualityControl && (
                   <div>
                     <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">
                       Quality <span className="text-slate-900 dark:text-slate-100">{imgQuality}%</span>
@@ -671,7 +1311,19 @@ const FileConverter: React.FC = () => {
                     />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">Resize Preset</label>
+                    <select
+                      value={imgResizePreset}
+                      onChange={e => setImgResizePreset(e.target.value)}
+                      className={inputBaseClass}
+                    >
+                      {IMAGE_SIZE_PRESETS.map(preset => (
+                        <option key={preset.value} value={preset.value}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">Max Width</label>
                     <input
@@ -693,38 +1345,228 @@ const FileConverter: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                <div className="rounded-xl border border-slate-200/70 dark:border-slate-700/70 overflow-hidden">
+                  <button
+                    onClick={() => setShowImageAdvanced(prev => !prev)}
+                    className="w-full px-3 py-2.5 text-left flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40"
+                  >
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-[0.12em]">
+                      Advanced Image Tools
+                    </span>
+                    {showImageAdvanced ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                  </button>
+                  {showImageAdvanced && (
+                    <div className="px-3 py-3 space-y-3 bg-white/50 dark:bg-slate-900/35">
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <label className="inline-flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={imgStripExif}
+                            onChange={e => setImgStripExif(e.target.checked)}
+                            className="rounded border-slate-300 dark:border-slate-600"
+                          />
+                          Strip EXIF metadata
+                        </label>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block">Watermark Text</label>
+                        <input
+                          type="text"
+                          value={imgWatermarkText}
+                          onChange={e => setImgWatermarkText(e.target.value)}
+                          placeholder="Optional watermark"
+                          className={inputBaseClass}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">
+                            Watermark Opacity {imgWatermarkOpacity}%
+                          </label>
+                          <input
+                            type="range"
+                            min={5}
+                            max={70}
+                            value={imgWatermarkOpacity}
+                            onChange={e => setImgWatermarkOpacity(Number(e.target.value))}
+                            className="w-full accent-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">Watermark Position</label>
+                          <select
+                            value={imgWatermarkPosition}
+                            onChange={e => setImgWatermarkPosition(e.target.value as WatermarkPosition)}
+                            className={inputBaseClass}
+                          >
+                            {WATERMARK_POSITIONS.map(position => (
+                              <option key={position.value} value={position.value}>{position.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Preset: {imagePresetLabel}. Canvas conversion strips metadata by default. Turn off strip to keep original file only when no transform is needed.
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  In-browser output supports PNG, JPG/JPEG, WEBP, BMP, AVIF (if browser encoder is available).
+                </p>
               </div>
             )}
 
             {category === 'data' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_108px] gap-2">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200/70 dark:border-slate-700/70 bg-slate-50/70 dark:bg-slate-800/40 px-3 py-2.5">
                   <div>
-                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">Output Format</label>
-                    <select
-                      value={dataOutputOptions.length > 0 ? dataTo : ''}
-                      onChange={e => setDataTo(e.target.value as DataFormat)}
-                      className={compactSelectClass}
-                      disabled={dataOutputOptions.length === 0}
-                    >
-                      {dataOutputOptions.length === 0 && (
-                        <option value="" disabled>No compatible output format</option>
-                      )}
-                      {dataOutputOptions.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                    </select>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Output Mode</p>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">
+                      {dataMultiOutput ? `${selectedDataTargets.length} formats selected` : 'Single format'}
+                    </p>
                   </div>
-                  <div className="h-11 self-end rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/70 px-3 flex items-center justify-between">
-                    <p className="text-[9px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Ext</p>
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{dataOutputMeta?.ext || '.txt'}</p>
-                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={dataMultiOutput}
+                      onChange={e => setDataMultiOutput(e.target.checked)}
+                      className="rounded border-slate-300 dark:border-slate-600"
+                    />
+                    Multi-output
+                  </label>
                 </div>
+
+                {!dataMultiOutput && (
+                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_108px] gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">Output Format</label>
+                      <select
+                        value={dataOutputOptions.length > 0 ? dataTo : ''}
+                        onChange={e => setDataTo(e.target.value as DataFormat)}
+                        className={compactSelectClass}
+                        disabled={dataOutputOptions.length === 0}
+                      >
+                        {dataOutputOptions.length === 0 && (
+                          <option value="" disabled>No compatible output format</option>
+                        )}
+                        {dataOutputOptions.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="h-11 self-end rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-800/70 px-3 flex items-center justify-between">
+                      <p className="text-[9px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Ext</p>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{dataOutputMeta?.ext || '.txt'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {dataMultiOutput && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">Output Formats</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {dataOutputOptions.map(option => {
+                        const checked = dataTargets.includes(option.value);
+                        return (
+                          <label
+                            key={option.value}
+                            className={`inline-flex items-center justify-center rounded-xl border px-2.5 py-2 text-xs font-semibold cursor-pointer transition ${
+                              checked
+                                ? 'border-blue-400/70 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                                : 'border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/50 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setDataTargets(prev => checked ? prev.filter(v => v !== option.value) : [...prev, option.value]);
+                              }}
+                              className="sr-only"
+                            />
+                            {option.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="rounded-xl border border-slate-200/70 dark:border-slate-700/70 bg-slate-50/70 dark:bg-slate-800/40 px-3 py-2.5">
                   <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Detected Input</p>
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">{dataInputLabel}</p>
                 </div>
+
+                <div className="rounded-xl border border-slate-200/70 dark:border-slate-700/70 overflow-hidden">
+                  <button
+                    onClick={() => setShowDataAdvanced(prev => !prev)}
+                    className="w-full px-3 py-2.5 text-left flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40"
+                  >
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-[0.12em]">
+                      Advanced Data Options
+                    </span>
+                    {showDataAdvanced ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                  </button>
+                  {showDataAdvanced && (
+                    <div className="px-3 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white/50 dark:bg-slate-900/35">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">CSV Delimiter</label>
+                        <select
+                          value={dataDelimiter}
+                          onChange={e => setDataDelimiter(e.target.value as CsvDelimiter)}
+                          className={inputBaseClass}
+                        >
+                          {DELIMITER_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">Quote Character</label>
+                        <select
+                          value={dataQuoteChar}
+                          onChange={e => setDataQuoteChar(e.target.value as CsvQuoteChar)}
+                          className={inputBaseClass}
+                        >
+                          <option value={'"'}>"</option>
+                          <option value={"'"}>'</option>
+                        </select>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={dataHasHeader}
+                          onChange={e => setDataHasHeader(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600"
+                        />
+                        First row is header
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={dataFlattenJson}
+                          onChange={e => setDataFlattenJson(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600"
+                        />
+                        Flatten JSON when exporting CSV/TSV
+                      </label>
+                    </div>
+                  )}
+                </div>
+
                 {dataOutputOptions.length === 0 && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400">
                     Current queue has mixed formats that cannot share one output target. Remove some files or split the batch.
+                  </p>
+                )}
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  CSV options: {csvDelimiterLabel(dataDelimiter)} delimiter, quote {dataQuoteChar}, header {dataHasHeader ? 'on' : 'off'}.
+                </p>
+                {dataErrorInfo && (
+                  <p className="text-[11px] text-red-600 dark:text-red-400">
+                    Last parse error: {dataErrorInfo.message}
+                    {dataErrorInfo.line && dataErrorInfo.column ? ` (line ${dataErrorInfo.line}, column ${dataErrorInfo.column})` : ''}
                   </p>
                 )}
               </div>
@@ -781,7 +1623,7 @@ const FileConverter: React.FC = () => {
                 <>
                   <div className="px-5 py-2.5 bg-emerald-50/70 dark:bg-emerald-900/20 border-y border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between">
                     <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-[0.16em]">
-                      Output ({DATA_FORMATS.find(f => f.value === dataTo)?.label})
+                      Output ({DATA_FORMATS.find(f => f.value === effectiveDataTextTarget)?.label || 'Data'})
                     </span>
                     <button
                       onClick={handleCopyDataOutput}
@@ -795,6 +1637,52 @@ const FileConverter: React.FC = () => {
                     {dataTextOutput}
                   </pre>
                 </>
+              )}
+            </div>
+          )}
+
+          {category === 'data' && dataPreviewSource && (
+            <div className={`${cardClass} overflow-hidden`}>
+              <div className="px-5 py-3 border-b border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between">
+                <span className={sectionLabelClass}>Preview (First 20 Rows)</span>
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">
+                  {dataPreviewFormat.toUpperCase()}
+                </span>
+              </div>
+              {previewTable ? (
+                <div className="overflow-auto max-h-64">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-800/70">
+                      <tr>
+                        {previewTable.headers.map((header, idx) => (
+                          <th key={`${header}-${idx}`} className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200/70 dark:border-slate-700/70">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewTable.rows.map((row, rowIndex) => (
+                        <tr key={`row-${rowIndex}`} className="odd:bg-white/60 dark:odd:bg-slate-900/20">
+                          {previewTable.headers.map((_, colIndex) => (
+                            <td key={`cell-${rowIndex}-${colIndex}`} className="px-3 py-1.5 text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800">
+                              {row[colIndex] ?? ''}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="max-h-64 overflow-auto px-5 py-4 bg-slate-50/70 dark:bg-slate-800/35">
+                  {previewRows.map((line, idx) => (
+                    <div key={`preview-line-${idx}`} className="grid grid-cols-[44px_1fr] gap-3 text-xs font-mono">
+                      <span className="text-slate-400 dark:text-slate-500">{idx + 1}</span>
+                      <span className="text-slate-700 dark:text-slate-200 break-words whitespace-pre-wrap">{line}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -908,7 +1796,7 @@ const FileConverter: React.FC = () => {
           {(queueHasPending || converting) && (
             <button
               onClick={category === 'encode' ? handleBase64Convert : handleConvert}
-              disabled={converting || !canConvertDataBatch}
+              disabled={converting || !canConvertCurrentBatch}
               className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-sm font-semibold tracking-wide bg-gradient-to-b from-slate-900 to-slate-700 dark:from-blue-500 dark:to-indigo-500 text-white hover:opacity-95 transition-opacity shadow-[0_16px_36px_-24px_rgba(15,23,42,0.9)] disabled:opacity-45"
             >
               {converting ? (
@@ -925,6 +1813,16 @@ const FileConverter: React.FC = () => {
             <div className="px-5 py-3 border-b border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between">
               <span className={sectionLabelClass}>Results {results.length > 0 && `(${results.length})`}</span>
               <div className="flex items-center gap-3">
+                {results.length > 1 && (
+                  <button
+                    onClick={downloadAllAsZip}
+                    disabled={zipping}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-40 transition-colors"
+                  >
+                    {zipping ? <Loader2 size={12} className="animate-spin" /> : <Archive size={12} />}
+                    Download ZIP
+                  </button>
+                )}
                 {results.length > 1 && (
                   <button
                     onClick={downloadAll}
@@ -1003,6 +1901,51 @@ const FileConverter: React.FC = () => {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className={`${cardClass} overflow-hidden`}>
+            <div className="px-5 py-3 border-b border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between">
+              <button
+                onClick={() => setHistoryOpen(prev => !prev)}
+                className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-[0.14em]"
+              >
+                <History size={13} />
+                History {history.length > 0 && `(${history.length})`}
+              </button>
+              {history.length > 0 && (
+                <button onClick={clearHistory} className={subtleButtonClass}>Clear</button>
+              )}
+            </div>
+            {historyOpen && (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto">
+                {history.length === 0 && (
+                  <div className="px-5 py-4 text-xs text-slate-500 dark:text-slate-400">
+                    No history yet.
+                  </div>
+                )}
+                {history.map(item => {
+                  const result = results.find(r => r.id === item.resultId);
+                  return (
+                    <div key={item.id} className="px-5 py-3 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{item.outputName}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {new Date(item.createdAt).toLocaleString()} · {formatSize(item.outputSize)} · {item.category}
+                        </p>
+                      </div>
+                      {result && (
+                        <button
+                          onClick={() => downloadResult(result)}
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-900 text-white dark:bg-blue-500 hover:opacity-90 transition-opacity"
+                        >
+                          Download
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

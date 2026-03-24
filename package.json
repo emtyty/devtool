@@ -28,6 +28,7 @@
     "heic2any": "^0.0.4",
     "html-query-plan": "^2.6.1",
     "jsonrepair": "^3.13.2",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.576.0",
     "mermaid": "^11.13.0",
     "react": "^19.2.4",
