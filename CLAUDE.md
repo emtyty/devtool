@@ -65,11 +65,36 @@ npm run test:e2e     # Playwright (e2e tests)
 
 ## Architecture
 
-- **SPA with tab-based routing** — `App.tsx` manages `AppMode` state, renders selected tool via conditional rendering
+- **SPA with URL routing** — `App.tsx` manages `AppMode` state, renders selected tool via conditional rendering
 - **Lazy loading** — All tool components use `React.lazy()` + `Suspense` for code splitting
-- **Tab persistence** — Last active tab saved to `localStorage` (`devtoolkit:lastTab`)
-- **No router library** — Navigation is state-driven, no URL routing
+- **URL routing** — HTML5 History API (`window.history.pushState`) maps each tool to a clean path (e.g. `/sql-formatter`). Unknown paths redirect to `/` (Smart Detector). Browser back/forward supported via `popstate` event.
+- **No router library** — Navigation is state-driven with a `MODE_TO_SLUG` / `SLUG_TO_MODE` map in `App.tsx`
 - **Path alias** — `@/*` maps to project root
+
+### URL Route Map
+
+| Path | Tool |
+|------|------|
+| `/` | Smart Detector (default) |
+| `/sql-formatter` | SQL Formatter |
+| `/json` | JSON Tools |
+| `/jwt-decoder` | JWT Decoder |
+| `/data-formatter` | Data Formatter |
+| `/list-cleaner` | List Cleaner |
+| `/markdown` | Markdown Preview |
+| `/stack-trace` | Stack Trace Formatter |
+| `/mock-data` | Mock Data Generator |
+| `/text-tools` | Text Tools |
+| `/epoch-converter` | Epoch Converter |
+| `/color-converter` | Color Converter |
+| `/cron-builder` | Cron Builder |
+| `/log-analyzer` | Log Analyzer |
+| `/text-diff` | Text Compare |
+| `/diagram` | Diagram Generator |
+| `/binary-metadata` | Binary Metadata |
+| `/query-plan` | Query Plan Viewer |
+| `/uuid-generator` | UUID / ULID |
+| `/privacy` | Privacy Policy |
 
 ## Key Libraries
 

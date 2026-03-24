@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -24,60 +24,133 @@ const ColorConverter        = lazy(() => import('./components/ColorConverter'));
 const CronBuilder           = lazy(() => import('./components/CronBuilder'));
 const LogAnalyzer           = lazy(() => import('./components/LogAnalyzer'));
 const TextDiff              = lazy(() => import('./components/TextDiff'));
+const UuidGenerator         = lazy(() => import('./components/UuidGenerator'));
+const McpPage               = lazy(() => import('./components/McpPage'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen';
 
-const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
-  { id: 'smartdetect',   label: 'Smart Detector',   icon: <Wand2 size={16} /> },
-  { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
-  { id: 'listcleaner',   label: 'List Cleaner',    icon: <ListFilter size={16} /> },
-  { id: 'sqlformatter',  label: 'SQL',             icon: <Code2 size={16} /> },
-  { id: 'jsontools',     label: 'JSON',            icon: <Braces size={16} /> },
-  { id: 'markdown',      label: 'Markdown',        icon: <FileText size={16} /> },
-  { id: 'stacktrace',   label: 'Stack Trace',     icon: <AlertTriangle size={16} /> },
-  { id: 'mockdata',      label: 'Mock Data',       icon: <Database size={16} /> },
-  { id: 'jwtdecode',    label: 'JWT Decode',      icon: <Key size={16} /> },
-  { id: 'texttools',    label: 'Text Tools',      icon: <Replace size={16} /> },
-  { id: 'epoch',        label: 'Epoch Converter', icon: <Clock size={16} /> },
-  { id: 'color',        label: 'Color Converter', icon: <Palette size={16} /> },
-  { id: 'cron',         label: 'Cron Builder',    icon: <Timer size={16} /> },
-  { id: 'logs',         label: 'Log Analyzer',    icon: <ScrollText size={16} /> },
-  { id: 'textdiff',    label: 'Text Compare',    icon: <GitCompare size={16} /> },
-  { id: 'diagram',      label: 'Diagram Generator', icon: <Workflow size={16} /> },
-  { id: 'metadata',      label: 'Binary Metadata', icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
-  { id: 'queryplan',     label: 'Query Plan',      icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
+// ── URL routing ──────────────────────────────────────────────────
+const MODE_TO_SLUG: Record<AppMode, string> = {
+  smartdetect:   '',
+  privacy:       'privacy',
+  mcp:           'mcp-server',
+  metadata:      'binary-metadata',
+  queryplan:     'query-plan',
+  dataformatter: 'data-formatter',
+  listcleaner:   'list-cleaner',
+  sqlformatter:  'sql-formatter',
+  jsontools:     'json',
+  markdown:      'markdown',
+  stacktrace:    'stack-trace',
+  mockdata:      'mock-data',
+  jwtdecode:     'jwt-decoder',
+  texttools:     'text-tools',
+  diagram:       'diagram',
+  epoch:         'epoch-converter',
+  color:         'color-converter',
+  cron:          'cron-builder',
+  logs:          'log-analyzer',
+  textdiff:      'text-diff',
+  uuidgen:       'uuid-generator',
+};
+
+const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
+  Object.entries(MODE_TO_SLUG).map(([mode, slug]) => [slug, mode as AppMode])
+);
+
+function getModeFromPath(): AppMode {
+  const slug = window.location.pathname.replace(/^\//, '');
+  if (!slug) return 'smartdetect';
+  const mode = SLUG_TO_MODE[slug];
+  if (!mode) {
+    window.history.replaceState({}, '', '/');
+    return 'smartdetect';
+  }
+  return mode;
+}
+
+// ── Sidebar navigation (grouped) ─────────────────────────────────
+type NavItem = { id: AppMode; label: string; icon: React.ReactNode };
+type NavSection = { title?: string; items: NavItem[] };
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    items: [
+      { id: 'smartdetect',   label: 'Smart Detector',    icon: <Wand2 size={16} /> },
+    ],
+  },
+  {
+    title: 'Format & Parse',
+    items: [
+      { id: 'dataformatter', label: 'Data Formatter',    icon: <Filter size={16} /> },
+      { id: 'listcleaner',   label: 'List Cleaner',      icon: <ListFilter size={16} /> },
+      { id: 'sqlformatter',  label: 'SQL Formatter',     icon: <Code2 size={16} /> },
+      { id: 'jsontools',     label: 'JSON Tools',        icon: <Braces size={16} /> },
+      { id: 'markdown',      label: 'Markdown',          icon: <FileText size={16} /> },
+      { id: 'stacktrace',    label: 'Stack Trace',       icon: <AlertTriangle size={16} /> },
+    ],
+  },
+  {
+    title: 'Generate & Convert',
+    items: [
+      { id: 'mockdata',      label: 'Mock Data',         icon: <Database size={16} /> },
+      { id: 'uuidgen',       label: 'UUID / ULID',       icon: <Hash size={16} /> },
+      { id: 'epoch',         label: 'Epoch Converter',   icon: <Clock size={16} /> },
+      { id: 'color',         label: 'Color Converter',   icon: <Palette size={16} /> },
+      { id: 'cron',          label: 'Cron Builder',      icon: <Timer size={16} /> },
+      { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={16} /> },
+    ],
+  },
+  {
+    title: 'Decode & Analyze',
+    items: [
+      { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={16} /> },
+      { id: 'texttools',     label: 'Text Tools',        icon: <Replace size={16} /> },
+      { id: 'textdiff',      label: 'Text Compare',      icon: <GitCompare size={16} /> },
+      { id: 'logs',          label: 'Log Analyzer',      icon: <ScrollText size={16} /> },
+      { id: 'metadata',      label: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
+      { id: 'queryplan',     label: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
+    ],
+  },
+  {
+    items: [
+      { id: 'mcp',           label: 'MCP Server',        icon: <Cpu size={16} /> },
+    ],
+  },
 ];
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<AppMode>(() => {
-    const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['smartdetect','privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs','textdiff'];
-    return valid.includes(saved as AppMode) ? (saved as AppMode) : 'smartdetect';
-  });
+  const [mode, setMode] = useState<AppMode>(getModeFromPath);
 
   const [pendingData, setPendingData] = useState<string | null>(null);
 
   const switchMode = useCallback((next: AppMode) => {
     setPendingData(null);
     setMode(next);
-    localStorage.setItem('devtoolkit:lastTab', next);
+    const slug = MODE_TO_SLUG[next];
+    window.history.pushState({}, '', slug ? `/${slug}` : '/');
+  }, []);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const onPopState = () => setMode(getModeFromPath());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Smart Detect → detected tool with data
   const handleSmartDetect = useCallback((tool: string, data: string) => {
     setPendingData(data);
-    setMode(tool as AppMode);
-    localStorage.setItem('devtoolkit:lastTab', tool);
-  }, []);
+    switchMode(tool as AppMode);
+  }, [switchMode]);
 
   // Smart Detect → detected file (binary)
   const handleSmartDetectFile = useCallback((tool: string, file: File) => {
     if (tool === 'metadata') {
       processFile(file);
     }
-    setMode(tool as AppMode);
-    localStorage.setItem('devtoolkit:lastTab', tool);
-  }, []);
+    switchMode(tool as AppMode);
+  }, [switchMode]);
 
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
@@ -120,7 +193,7 @@ const App: React.FC = () => {
       <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-6 py-4 flex items-center justify-between">
         <button
           onClick={() => switchMode('smartdetect')}
-          className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity"
+          className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
           aria-label="Go to home"
         >
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -146,19 +219,29 @@ const App: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="no-print w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5">
-          {NAV_TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => switchMode(tab.id)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold text-left whitespace-nowrap transition-all ${
-                mode === tab.id
-                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
+          {NAV_SECTIONS.map((section, si) => (
+            <React.Fragment key={si}>
+              {si > 0 && <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />}
+              {section.title && (
+                <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
+                  {section.title}
+                </div>
+              )}
+              {section.items.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => switchMode(tab.id)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-bold text-left whitespace-nowrap transition-all cursor-pointer ${
+                    mode === tab.id
+                      ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </React.Fragment>
           ))}
         </aside>
 
@@ -178,6 +261,7 @@ const App: React.FC = () => {
         }>
           {mode === 'smartdetect'   ? <SmartDetect onDetect={handleSmartDetect} onDetectFile={handleSmartDetectFile} onNavigate={switchMode} /> :
            mode === 'privacy'        ? <PrivacyPage /> :
+           mode === 'mcp'            ? <McpPage /> :
            mode === 'queryplan'     ? <QueryPlanViewer initialData={pendingData} /> :
            mode === 'dataformatter' ? <DataFormatter initialData={pendingData} /> :
            mode === 'listcleaner'   ? <ListCleaner initialData={pendingData} /> :
@@ -193,6 +277,7 @@ const App: React.FC = () => {
            mode === 'cron'      ? <CronBuilder initialData={pendingData} /> :
            mode === 'logs'      ? <LogAnalyzer initialData={pendingData} /> :
            mode === 'textdiff'  ? <TextDiff initialData={pendingData} /> :
+           mode === 'uuidgen'   ? <UuidGenerator /> :
            mode === 'diagram'    ? <DiagramGenerator initialData={pendingData} /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
@@ -219,38 +304,79 @@ const App: React.FC = () => {
         </Suspense>
           </main>
 
-          <footer className="no-print border-t border-slate-200 bg-slate-50">
-            <div className="w-full px-6 py-8">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
-                <FooterTech icon="fa-solid fa-fingerprint" name="ExifTool" desc="Binary metadata extraction via @uswriting/exiftool + WebAssembly" />
-                <FooterTech icon="fa-solid fa-diagram-project" name="SQL Plan Viewer" desc="html-query-plan renderer + Gemini AI analysis via @google/genai" />
-                <FooterTech icon="fa-solid fa-filter" name="Data Formatter" desc="SQL IN clause, VALUES, UNION, CSV generator with sql-formatter" />
-                <FooterTech icon="fa-solid fa-list-check" name="List Cleaner" desc="Dedup, sort, trim, natural sort for plain text lists" />
-                <FooterTech icon="fa-solid fa-braces" name="JSON Tools" desc="Format, minify, auto-repair (jsonrepair), diff & tree view" />
-                <FooterTech icon="fa-solid fa-file-lines" name="Markdown" desc="Live preview with react-markdown + remark-gfm (GFM tables, tasks)" />
-                <FooterTech icon="fa-solid fa-triangle-exclamation" name="Stack Trace" desc="Parse, highlight and filter stack traces for JS, Java, Python, .NET, Go, Ruby" />
-                <FooterTech icon="fa-solid fa-database" name="Mock Data" desc="Generate fake test data (JSON/CSV/SQL) via @faker-js/faker with 60+ field types" />
-                <FooterTech icon="fa-solid fa-code" name="SQL Tool" desc="Format, minify and beautify SQL queries with sql-formatter — supports MySQL, PostgreSQL, and more" />
-                <FooterTech icon="fa-solid fa-right-left" name="Text Tools" desc="Log Insights pattern builder (CloudWatch) and Jira release note formatter with configurable base URL" />
-                <FooterTech icon="fa-solid fa-diagram-project" name="Diagram Generator" desc="Generate sequence diagrams and system flowcharts from plain English descriptions using Mermaid.js" />
-                <FooterTech icon="fa-solid fa-palette" name="Color Converter" desc="Convert between HEX, RGB, HSL, OKLCH with visual picker and WCAG contrast checker" />
-                <FooterTech icon="fa-solid fa-clock" name="Cron Builder" desc="Visual cron expression builder with human-readable descriptions and next 10 run times" />
-                <FooterTech icon="fa-solid fa-scroll" name="Log Analyzer" desc="Parse, filter, and analyze logs with auto-format detection, level filtering, and timeline view" />
-              </div>
-              <div className="border-t border-slate-200 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.4em]">Powered by Coding4Pizza With Love</p>
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-                  {['React 19', 'TypeScript', 'Vite', 'Tailwind CSS', 'Lucide Icons'].map(t => (
-                    <span key={t} className="text-[10px] text-slate-400 font-semibold">{t}</span>
+          <footer className="no-print border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0d1424]">
+            <div className="w-full px-6 py-8 space-y-6">
+
+              {/* Tools grid — clickable, compact */}
+              <div>
+                <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-4">All Tools</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2">
+                  {FOOTER_TOOLS.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => switchMode(t.id)}
+                      title={t.desc}
+                      className="flex items-center gap-2 text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors group cursor-pointer"
+                    >
+                      <span className="text-blue-500 dark:text-blue-400 text-[11px] shrink-0 w-4 text-center">{t.icon}</span>
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors truncate">{t.name}</span>
+                    </button>
                   ))}
+                </div>
+              </div>
+
+              {/* MCP callout */}
+              <button
+                onClick={() => switchMode('mcp')}
+                className="w-full flex items-center justify-between gap-4 bg-gradient-to-r from-blue-600/5 to-violet-600/5 dark:from-blue-500/10 dark:to-violet-500/10 border border-blue-200/50 dark:border-blue-500/20 rounded-xl px-5 py-3 hover:from-blue-600/10 hover:to-violet-600/10 dark:hover:from-blue-500/15 dark:hover:to-violet-500/15 transition-all group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-violet-600 rounded-lg flex items-center justify-center shrink-0">
+                    <Cpu size={14} className="text-white" />
+                  </div>
+                  <div className="text-left">
+                    <span className="text-xs font-black text-slate-700 dark:text-slate-200">devtoolkit-mcp</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-2">25 tools as an MCP server for AI workflows</span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-blue-500 dark:text-blue-400 group-hover:text-blue-600 dark:group-hover:text-blue-300 whitespace-nowrap transition-colors">
+                  Learn more →
+                </span>
+              </button>
+
+              {/* Bottom bar */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-[0.4em]">Powered by Coding4Pizza With Love</p>
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                  {['React 19', 'TypeScript', 'Vite', 'Tailwind CSS'].map(t => (
+                    <span key={t} className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{t}</span>
+                  ))}
+                  <span className="text-slate-300 dark:text-slate-700">|</span>
+                  <a
+                    href="https://www.npmjs.com/package/devtoolkit-mcp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-bold transition-colors"
+                  >
+                    npm
+                  </a>
+                  <a
+                    href="https://github.com/emtyty/devtool"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-bold transition-colors"
+                  >
+                    GitHub
+                  </a>
                   <button
                     onClick={() => switchMode('privacy')}
-                    className="text-[10px] text-blue-400 hover:text-blue-600 font-bold transition-colors"
+                    className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-bold transition-colors cursor-pointer"
                   >
-                    Privacy Policy
+                    Privacy
                   </button>
                 </div>
               </div>
+
             </div>
           </footer>
         </div>
@@ -261,14 +387,24 @@ const App: React.FC = () => {
 
 export default App;
 
-function FooterTech({ icon, name, desc }: { icon: string; name: string; desc: string }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <i className={`${icon} text-blue-500 text-xs`}></i>
-        <span className="text-xs font-black text-slate-600">{name}</span>
-      </div>
-      <p className="text-[10px] text-slate-400 leading-relaxed">{desc}</p>
-    </div>
-  );
-}
+const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: string }[] = [
+  { id: 'dataformatter', name: 'Data Formatter',    icon: <Filter size={11} />,        desc: 'SQL IN clause, VALUES, UNION, CSV generator with sql-formatter' },
+  { id: 'listcleaner',   name: 'List Cleaner',      icon: <ListFilter size={11} />,    desc: 'Dedup, sort, trim, natural sort for plain text lists' },
+  { id: 'sqlformatter',  name: 'SQL Formatter',     icon: <Code2 size={11} />,         desc: 'Format & minify SQL — MySQL, PostgreSQL, and 18+ dialects' },
+  { id: 'jsontools',     name: 'JSON Tools',        icon: <Braces size={11} />,        desc: 'Format, minify, auto-repair (jsonrepair), diff, tree view & TS interface gen' },
+  { id: 'markdown',      name: 'Markdown',          icon: <FileText size={11} />,      desc: 'Live preview with react-markdown + remark-gfm (GFM tables, tasks)' },
+  { id: 'stacktrace',    name: 'Stack Trace',       icon: <AlertTriangle size={11} />, desc: 'Parse & highlight stack traces for JS, Java, Python, .NET, Go, Ruby' },
+  { id: 'mockdata',      name: 'Mock Data',         icon: <Database size={11} />,      desc: 'Generate fake data (JSON/CSV/SQL) via @faker-js/faker with 63+ field types' },
+  { id: 'uuidgen',       name: 'UUID / ULID',       icon: <Hash size={11} />,          desc: 'Bulk-generate UUID v1/v4/v7 and ULIDs with multiple output formats' },
+  { id: 'jwtdecode',     name: 'JWT Decode',        icon: <Key size={11} />,           desc: 'Decode JWT tokens — header, payload, signature & expiration status' },
+  { id: 'texttools',     name: 'Text Tools',        icon: <Replace size={11} />,       desc: 'CloudWatch Log Insights pattern builder & Jira release note formatter' },
+  { id: 'epoch',         name: 'Epoch Converter',   icon: <Clock size={11} />,         desc: 'Convert between Unix epoch timestamps and human-readable dates' },
+  { id: 'color',         name: 'Color Converter',   icon: <Palette size={11} />,       desc: 'HEX, RGB, HSL, OKLCH conversion with visual picker & WCAG contrast checker' },
+  { id: 'cron',          name: 'Cron Builder',      icon: <Timer size={11} />,         desc: 'Visual cron expression builder with human-readable descriptions & next 10 runs' },
+  { id: 'logs',          name: 'Log Analyzer',      icon: <ScrollText size={11} />,    desc: 'Parse, filter & analyze logs with auto-format detection & timeline view' },
+  { id: 'textdiff',      name: 'Text Compare',      icon: <GitCompare size={11} />,    desc: 'Side-by-side text diff comparison with line-by-line highlighting' },
+  { id: 'diagram',       name: 'Diagram',           icon: <Workflow size={11} />,      desc: 'Generate sequence diagrams & flowcharts from plain English using Mermaid.js' },
+  { id: 'metadata',      name: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[11px]" />,       desc: 'EXIF/XMP/IPTC metadata extraction via @uswriting/exiftool + WebAssembly' },
+  { id: 'queryplan',     name: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[11px]" />,   desc: 'SQL Server execution plan viewer + Gemini AI analysis via @google/genai' },
+  { id: 'smartdetect',   name: 'Smart Detector',    icon: <Wand2 size={11} />,         desc: 'Auto-detect content type (JSON, SQL, JWT, cron, etc.) and route to the right tool' },
+];

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { detectAll, detectFile, getExtHint, DetectResult } from '../utils/smartDetect';
-import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X } from 'lucide-react';
+import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare } from 'lucide-react';
 
 interface SmartDetectProps {
   onDetect: (tool: string, data: string) => void;
@@ -11,18 +11,19 @@ interface SmartDetectProps {
 const TOOL_GRID: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: 'dataformatter', label: 'Data Formatter',    icon: <Filter size={18} /> },
   { id: 'listcleaner',   label: 'List Cleaner',      icon: <ListFilter size={18} /> },
-  { id: 'sqlformatter',  label: 'SQL',               icon: <Code2 size={18} /> },
-  { id: 'jsontools',     label: 'JSON',              icon: <Braces size={18} /> },
+  { id: 'sqlformatter',  label: 'SQL Formatter',     icon: <Code2 size={18} /> },
+  { id: 'jsontools',     label: 'JSON Tools',        icon: <Braces size={18} /> },
   { id: 'markdown',      label: 'Markdown',          icon: <FileText size={18} /> },
   { id: 'stacktrace',    label: 'Stack Trace',       icon: <AlertTriangle size={18} /> },
   { id: 'mockdata',      label: 'Mock Data',         icon: <Database size={18} /> },
   { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={18} /> },
   { id: 'texttools',     label: 'Text Tools',        icon: <Replace size={18} /> },
+  { id: 'textdiff',      label: 'Text Compare',      icon: <GitCompare size={18} /> },
   { id: 'epoch',         label: 'Epoch Converter',   icon: <Clock size={18} /> },
   { id: 'color',         label: 'Color Converter',   icon: <Palette size={18} /> },
   { id: 'cron',          label: 'Cron Builder',      icon: <Timer size={18} /> },
   { id: 'logs',          label: 'Log Analyzer',      icon: <ScrollText size={18} /> },
-  { id: 'diagram',       label: 'Diagram Generator', icon: <Workflow size={18} /> },
+  { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={18} /> },
   { id: 'metadata',      label: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[18px]" /> },
   { id: 'queryplan',     label: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[18px]" /> },
 ];
@@ -173,7 +174,7 @@ export default function SmartDetect({ onDetect, onDetectFile, onNavigate }: Smar
             <pre className="p-5 pr-12 text-sm font-mono text-slate-700 whitespace-pre-wrap break-all max-h-48 overflow-auto leading-relaxed">{input}</pre>
             <button
               onClick={() => { setInput(''); setResults([]); }}
-              className="absolute top-3 right-3 p-1.5 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-500 transition-all z-20"
+              className="absolute top-3 right-3 p-1.5 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-500 transition-all z-20 cursor-pointer"
               title="Clear"
             >
               <X size={14} />
@@ -204,7 +205,7 @@ export default function SmartDetect({ onDetect, onDetectFile, onNavigate }: Smar
         <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 relative z-20">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="text-xs text-slate-400 hover:text-blue-600 font-semibold transition-colors flex items-center gap-1.5"
+            className="text-xs text-slate-400 hover:text-blue-600 font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Upload size={12} />
             Upload file
@@ -234,7 +235,7 @@ export default function SmartDetect({ onDetect, onDetectFile, onNavigate }: Smar
               <button
                 key={r.tool}
                 onClick={() => onDetect(r.tool, input)}
-                className="flex items-center justify-between px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group text-left"
+                className="flex items-center justify-between px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group text-left cursor-pointer"
               >
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{r.label}</span>
@@ -261,7 +262,7 @@ export default function SmartDetect({ onDetect, onDetectFile, onNavigate }: Smar
             <button
               key={tool.id}
               onClick={() => onNavigate(tool.id)}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group text-left"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group text-left cursor-pointer"
             >
               <span className="text-slate-400 group-hover:text-blue-500 transition-colors">{tool.icon}</span>
               <span className="text-xs font-bold text-slate-600 group-hover:text-blue-600 transition-colors truncate">{tool.label}</span>
