@@ -28,6 +28,44 @@ const UuidGenerator         = lazy(() => import('./components/UuidGenerator'));
 
 type AppMode = 'smartdetect' | 'privacy' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen';
 
+const MODE_TO_SLUG: Record<AppMode, string> = {
+  smartdetect:   '',
+  privacy:       'privacy',
+  metadata:      'binary-metadata',
+  queryplan:     'query-plan',
+  dataformatter: 'data-formatter',
+  listcleaner:   'list-cleaner',
+  sqlformatter:  'sql-formatter',
+  jsontools:     'json',
+  markdown:      'markdown',
+  stacktrace:    'stack-trace',
+  mockdata:      'mock-data',
+  jwtdecode:     'jwt-decoder',
+  texttools:     'text-tools',
+  diagram:       'diagram',
+  epoch:         'epoch-converter',
+  color:         'color-converter',
+  cron:          'cron-builder',
+  logs:          'log-analyzer',
+  textdiff:      'text-diff',
+  uuidgen:       'uuid-generator',
+};
+
+const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
+  Object.entries(MODE_TO_SLUG).map(([mode, slug]) => [slug, mode as AppMode])
+);
+
+function getModeFromPath(): AppMode {
+  const slug = window.location.pathname.replace(/^\//, '');
+  if (!slug) return 'smartdetect';
+  const mode = SLUG_TO_MODE[slug];
+  if (!mode) {
+    window.history.replaceState({}, '', '/');
+    return 'smartdetect';
+  }
+  return mode;
+}
+
 const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: 'smartdetect',   label: 'Smart Detector',   icon: <Wand2 size={16} /> },
   { id: 'dataformatter', label: 'Data Formatter',  icon: <Filter size={16} /> },
@@ -51,35 +89,37 @@ const NAV_TABS: { id: AppMode; label: string; icon: React.ReactNode }[] = [
 ];
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<AppMode>(() => {
-    const saved = localStorage.getItem('devtoolkit:lastTab');
-    const valid: AppMode[] = ['smartdetect','privacy','metadata','queryplan','dataformatter','listcleaner','sqlformatter','jsontools','markdown','stacktrace','mockdata','jwtdecode','texttools','diagram','epoch','color','cron','logs','textdiff','uuidgen'];
-    return valid.includes(saved as AppMode) ? (saved as AppMode) : 'smartdetect';
-  });
+  const [mode, setMode] = useState<AppMode>(getModeFromPath);
 
   const [pendingData, setPendingData] = useState<string | null>(null);
 
   const switchMode = useCallback((next: AppMode) => {
     setPendingData(null);
     setMode(next);
-    localStorage.setItem('devtoolkit:lastTab', next);
+    const slug = MODE_TO_SLUG[next];
+    window.history.pushState({}, '', slug ? `/${slug}` : '/');
+  }, []);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const onPopState = () => setMode(getModeFromPath());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Smart Detect → detected tool with data
   const handleSmartDetect = useCallback((tool: string, data: string) => {
     setPendingData(data);
-    setMode(tool as AppMode);
-    localStorage.setItem('devtoolkit:lastTab', tool);
-  }, []);
+    switchMode(tool as AppMode);
+  }, [switchMode]);
 
   // Smart Detect → detected file (binary)
   const handleSmartDetectFile = useCallback((tool: string, file: File) => {
     if (tool === 'metadata') {
       processFile(file);
     }
-    setMode(tool as AppMode);
-    localStorage.setItem('devtoolkit:lastTab', tool);
-  }, []);
+    switchMode(tool as AppMode);
+  }, [switchMode]);
 
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
