@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { detectAll, detectFile, getExtHint, DetectResult } from '../utils/smartDetect';
-import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare, Hash } from 'lucide-react';
+import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare, Hash, Shield } from 'lucide-react';
 
 interface SmartDetectProps {
   onDetect: (tool: string, data: string) => void;
@@ -25,6 +25,7 @@ const TOOL_GRID: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: 'cron',          label: 'Cron Builder',      icon: <Timer size={18} /> },
   { id: 'logs',          label: 'Log Analyzer',      icon: <ScrollText size={18} /> },
   { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={18} /> },
+  { id: 'csptools',      label: 'CSP Tools',          icon: <Shield size={18} /> },
   { id: 'metadata',      label: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[18px]" /> },
   { id: 'queryplan',     label: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[18px]" /> },
 ];
