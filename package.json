@@ -23,6 +23,7 @@
     "@6over3/zeroperl-ts": "^1.0.10",
     "@faker-js/faker": "^10.3.0",
     "@google/genai": "^1.43.0",
+    "@types/papaparse": "^5.5.2",
     "@uswriting/exiftool": "^1.0.9",
     "ag-psd": "^20.2.3",
     "heic2any": "^0.0.4",
@@ -31,12 +32,14 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.576.0",
     "mermaid": "^11.13.0",
+    "papaparse": "^5.5.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sql-formatter": "^15.7.2",
-    "utif": "^3.1.0"
+    "utif": "^3.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
