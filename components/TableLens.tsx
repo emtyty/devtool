@@ -1,9 +1,13 @@
-import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Trash2, Download, Search, ChevronDown, X } from 'lucide-react';
+import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2 } from 'lucide-react';
 
 type Row = Record<string, string>;
 
+const ROW_H = 33;   // px — must match actual row height
+const OVERSCAN = 25;
+
+// ── Utilities ────────────────────────────────────────────────────
 function toCSV(cols: string[], rows: Row[]): string {
   const e = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map(e).join(','), ...rows.map(r => cols.map(c => e(r[c])).join(','))].join('\n');
@@ -16,17 +20,30 @@ function downloadCSV(name: string, content: string) {
   a.click();
 }
 
-// ── Filter input with dropdown of distinct values ─────────────────
+function useDebounce<T>(value: T, ms: number): T {
+  const [dv, setDv] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDv(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return dv;
+}
+
+// ── FilterCell — lazy distinct values, only computed on dropdown open ──
 interface FilterCellProps {
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  getOptions: () => string[];
   active: boolean;
 }
 
-const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, options, active }) => {
+const PAGE = 60; // items per page in dropdown
+
+const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, active }) => {
   const [open, setOpen] = useState(false);
+  const [options, setOptions] = useState<string[]>([]);
   const [dropRect, setDropRect] = useState<DOMRect | null>(null);
+  const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -35,37 +52,40 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, options, activ
     return q ? options.filter(o => o.toLowerCase().includes(q)) : options;
   }, [options, value]);
 
+  const visible = filtered.slice(0, page * PAGE);
+  const hasMore = filtered.length > visible.length;
+
   const openDrop = () => {
-    if (inputRef.current) {
-      setDropRect(inputRef.current.getBoundingClientRect());
-      setOpen(true);
-    }
+    if (!inputRef.current) return;
+    setDropRect(inputRef.current.getBoundingClientRect());
+    setOptions(getOptions()); // lazy — computed only here
+    setPage(1);
+    setOpen(true);
   };
 
-  // Close on outside click
+  // Reset page when search text changes
+  useEffect(() => { setPage(1); }, [value]);
+
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!inputRef.current?.contains(e.target as Node) && !dropRef.current?.contains(e.target as Node)) {
+    const close = (e: MouseEvent) => {
+      if (!inputRef.current?.contains(e.target as Node) && !dropRef.current?.contains(e.target as Node))
         setOpen(false);
-      }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
-  // Close on scroll (re-open would need repositioning)
   useEffect(() => {
     if (!open) return;
-    const handler = () => setOpen(false);
-    window.addEventListener('scroll', handler, true);
-    return () => window.removeEventListener('scroll', handler, true);
+    // Only close on scroll that happens OUTSIDE the dropdown
+    const close = (e: Event) => {
+      if (dropRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
   }, [open]);
-
-  const select = (v: string) => {
-    onChange(value === v ? '' : v);
-    setOpen(false);
-  };
 
   return (
     <div className="relative">
@@ -92,23 +112,14 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, options, activ
             <X size={10} />
           </button>
         ) : (
-          <ChevronDown
-            size={10}
-            className={`absolute right-1.5 pointer-events-none transition-transform ${open ? 'rotate-180' : ''} text-slate-300 dark:text-slate-600`}
-          />
+          <ChevronDown size={10} className={`absolute right-1.5 pointer-events-none transition-transform ${open ? 'rotate-180' : ''} text-slate-300 dark:text-slate-600`} />
         )}
       </div>
 
       {open && dropRect && filtered.length > 0 && createPortal(
         <div
           ref={dropRef}
-          style={{
-            position: 'fixed',
-            top: dropRect.bottom + 2,
-            left: dropRect.left,
-            width: Math.max(dropRect.width, 180),
-            zIndex: 9999,
-          }}
+          style={{ position: 'fixed', top: dropRect.bottom + 2, left: dropRect.left, width: Math.max(dropRect.width, 180), zIndex: 9999 }}
           className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-52 overflow-y-auto py-1"
         >
           {value && !options.includes(value) && (
@@ -116,10 +127,10 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, options, activ
               Freetext: "{value}"
             </div>
           )}
-          {filtered.map(v => (
+          {visible.map((v: string) => (
             <button
               key={v}
-              onMouseDown={e => { e.preventDefault(); select(v); }}
+              onMouseDown={e => { e.preventDefault(); onChange(value === v ? '' : v); setOpen(false); }}
               className={`w-full text-left px-3 py-1.5 text-xs cursor-pointer truncate transition-colors ${
                 value === v
                   ? 'bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold'
@@ -130,6 +141,14 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, options, activ
               {v === '' ? <span className="italic text-slate-400 dark:text-slate-500">(empty)</span> : v}
             </button>
           ))}
+          {hasMore && (
+            <button
+              onMouseDown={e => { e.preventDefault(); setPage(p => p + 1); }}
+              className="w-full px-3 py-2 text-[11px] font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 cursor-pointer border-t border-slate-100 dark:border-slate-700 transition-colors"
+            >
+              Load {Math.min(PAGE, filtered.length - visible.length)} more ({filtered.length - visible.length} remaining)
+            </button>
+          )}
         </div>,
         document.body
       )}
@@ -142,44 +161,82 @@ const TableLens: React.FC = () => {
   const [rawData, setRawData] = useState<Row[]>([]);
   const [data, setData] = useState<Row[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
-  const [filters, setFilters] = useState<Record<string, string>>({});
+
+  // filterInputs = immediate (for controlled inputs)
+  // debouncedFilters = 300ms delayed (for actual row filtering)
+  const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
+  const debouncedFilters = useDebounce(filterInputs, 300);
+  const isFiltering = JSON.stringify(filterInputs) !== JSON.stringify(debouncedFilters);
+
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editCell, setEditCell] = useState<{ row: number; col: string } | null>(null);
   const [editVal, setEditVal] = useState('');
   const [distinctCol, setDistinctCol] = useState('');
+  const [distinctValues, setDistinctValues] = useState<string[]>([]);
+  const [distinctLoading, setDistinctLoading] = useState(false);
+  const [distinctPage, setDistinctPage] = useState(1);
+  const DISTINCT_PAGE = 50;
   const [batchCol, setBatchCol] = useState('');
   const [batchVal, setBatchVal] = useState('');
   const [fileName, setFileName] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadMsg, setLoadMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Virtual scroll
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerH, setContainerH] = useState(500);
 
   const hasData = data.length > 0;
 
-  // All distinct values per column (for FilterCell dropdowns)
-  const columnOptions = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    for (const col of columns) {
-      map[col] = Array.from<string>(new Set(data.map((r: Row) => String(r[col] ?? '')))).sort();
-    }
-    return map;
-  }, [data, columns]);
+  // Track container height for virtual scroll
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setContainerH(e.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasData]);
 
+  // Reset scroll when filters change
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [debouncedFilters]);
+
+  // Filtered rows — uses debounced filters
   const filteredRows = useMemo(() =>
     data
       .map((row, idx) => ({ idx, row }))
       .filter(({ row }) =>
         columns.every(col => {
-          const f = (filters[col] || '').toLowerCase();
+          const f = (debouncedFilters[col] || '').toLowerCase();
           return !f || String(row[col] ?? '').toLowerCase().includes(f);
         })
       ),
-    [data, filters, columns]
+    [data, debouncedFilters, columns]
   );
 
-  const distinctValues = useMemo(() => {
-    if (!distinctCol) return [];
-    return Array.from(new Set(data.map(r => String(r[distinctCol] ?? '')))).sort();
-  }, [data, distinctCol]);
+  // Virtual scroll window
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const endIdx = Math.min(filteredRows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
+  const visibleRows = filteredRows.slice(startIdx, endIdx);
+  const padTop = startIdx * ROW_H;
+  const padBot = Math.max(0, (filteredRows.length - endIdx) * ROW_H);
+
+  useEffect(() => {
+    if (!distinctCol) { setDistinctValues([]); setDistinctPage(1); return; }
+    setDistinctLoading(true);
+    setDistinctPage(1);
+    const t = setTimeout(() => {
+      const vals = Array.from<string>(new Set(data.map((r: Row) => String(r[distinctCol] ?? '')))).sort();
+      setDistinctValues(vals);
+      setDistinctLoading(false);
+    }, 30);
+    return () => clearTimeout(t);
+  }, [distinctCol, data]);
 
   const modifiedSet = useMemo(() =>
     new Set(
@@ -195,32 +252,61 @@ const TableLens: React.FC = () => {
     setColumns(cols);
     setRawData(rows.map(r => ({ ...r })));
     setData(rows.map(r => ({ ...r })));
-    setFilters({});
+    setFilterInputs({});
     setSelected(new Set());
     setEditCell(null);
     setDistinctCol('');
     setBatchCol(cols[0] || '');
     setFileName(name);
+    setScrollTop(0);
   }, []);
 
   const loadFile = useCallback(async (file: File) => {
+    setLoading(true);
     const name = file.name;
-    if (/\.(xlsx|xls)$/i.test(name)) {
-      const XLSX = await import('xlsx');
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const arr = XLSX.utils.sheet_to_json<Row>(ws, { defval: '' });
-      if (!arr.length) return;
-      const cols = Object.keys(arr[0]);
-      loadParsed(cols, arr.map(r => Object.fromEntries(cols.map(c => [c, String(r[c] ?? '')]))), name);
-    } else {
-      const Papa = await import('papaparse');
-      const text = await file.text();
-      const result = Papa.default.parse<Row>(text, { header: true, skipEmptyLines: true });
-      const cols = result.meta.fields || [];
-      const rows = (result.data as Row[]).map(r => Object.fromEntries(cols.map(c => [c, String(r[c] ?? '')])));
-      loadParsed(cols, rows, name);
+
+    // Yield to paint the loading UI before heavy work
+    await new Promise(r => setTimeout(r, 30));
+
+    try {
+      if (/\.(xlsx|xls)$/i.test(name)) {
+        setLoadMsg('Reading XLSX...');
+        await new Promise(r => setTimeout(r, 16));
+        const XLSX = await import('xlsx');
+        const buffer = await file.arrayBuffer();
+        setLoadMsg('Parsing rows...');
+        await new Promise(r => setTimeout(r, 16));
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const arr = XLSX.utils.sheet_to_json<Row>(ws, { defval: '' });
+        if (!arr.length) return;
+        const cols = Object.keys(arr[0]);
+        setLoadMsg(`Loading ${arr.length.toLocaleString()} rows...`);
+        await new Promise(r => setTimeout(r, 16));
+        loadParsed(cols, arr.map(r => Object.fromEntries(cols.map(c => [c, String(r[c] ?? '')]))), name);
+      } else {
+        setLoadMsg('Parsing CSV...');
+        const Papa = await import('papaparse');
+        await new Promise<void>(resolve => {
+          Papa.default.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            worker: false,
+            complete: (result: { meta: { fields?: string[] }; data: Row[] }) => {
+              const cols = result.meta.fields || [];
+              const rows = result.data.map(r => Object.fromEntries(cols.map(c => [c, String(r[c] ?? '')])));
+              setLoadMsg(`Loading ${rows.length.toLocaleString()} rows...`);
+              setTimeout(() => {
+                loadParsed(cols, rows, name);
+                resolve();
+              }, 16);
+            },
+          });
+        });
+      }
+    } finally {
+      setLoading(false);
+      setLoadMsg('');
     }
   }, [loadParsed]);
 
@@ -251,9 +337,8 @@ const TableLens: React.FC = () => {
     );
   }, [filteredRows]);
 
-  const clearFilter = (col: string) => setFilters(prev => ({ ...prev, [col]: '' }));
-
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'export';
+  const activeFilters = columns.filter(c => filterInputs[c]);
 
   // ── Drop zone ────────────────────────────────────────────────────
   if (!hasData) {
@@ -265,29 +350,41 @@ const TableLens: React.FC = () => {
             Import CSV or XLSX — filter, edit cells, batch edit, and export your data. Fully local, nothing uploaded.
           </p>
         </div>
+
         <div
           onDrop={e => { e.preventDefault(); setDragging(false); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); }}
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
-          onClick={() => fileRef.current?.click()}
-          className={`border-2 border-dashed rounded-2xl p-16 flex flex-col items-center gap-4 cursor-pointer transition-all ${
-            dragging
-              ? 'border-blue-400 bg-blue-50 dark:bg-blue-500/10'
-              : 'border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:bg-slate-50 dark:hover:bg-white/[0.03]'
+          onClick={() => !loading && fileRef.current?.click()}
+          className={`border-2 border-dashed rounded-2xl p-16 flex flex-col items-center gap-4 transition-all ${
+            loading
+              ? 'border-blue-300 bg-blue-50 dark:bg-blue-500/10 cursor-default'
+              : dragging
+              ? 'border-blue-400 bg-blue-50 dark:bg-blue-500/10 cursor-copy'
+              : 'border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:bg-slate-50 dark:hover:bg-white/[0.03] cursor-pointer'
           }`}
         >
-          <div className="w-16 h-16 bg-blue-50 dark:bg-blue-500/10 rounded-2xl flex items-center justify-center">
-            <Upload size={28} className="text-blue-500" />
-          </div>
-          <div className="text-center">
-            <p className="text-base font-bold text-slate-700 dark:text-slate-200">Drop a CSV or XLSX file here</p>
-            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">or click to browse</p>
-          </div>
-          <div className="flex gap-2 mt-2">
-            {['CSV', 'XLSX', 'XLS'].map(f => (
-              <span key={f} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-500 dark:text-slate-400">{f}</span>
-            ))}
-          </div>
+          {loading ? (
+            <>
+              <Loader2 size={32} className="text-blue-500 animate-spin" />
+              <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{loadMsg || 'Loading...'}</p>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-blue-50 dark:bg-blue-500/10 rounded-2xl flex items-center justify-center">
+                <Upload size={28} className="text-blue-500" />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-bold text-slate-700 dark:text-slate-200">Drop a CSV or XLSX file here</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">or click to browse</p>
+              </div>
+              <div className="flex gap-2 mt-2">
+                {['CSV', 'XLSX', 'XLS'].map(f => (
+                  <span key={f} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-500 dark:text-slate-400">{f}</span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
           onChange={e => { e.target.files?.[0] && loadFile(e.target.files[0]); e.target.value = ''; }}
@@ -297,7 +394,6 @@ const TableLens: React.FC = () => {
   }
 
   const allFilteredSelected = filteredRows.length > 0 && filteredRows.every(r => selected.has(r.idx));
-  const activeFilters = columns.filter(c => filters[c]);
 
   // ── Main table view ─────────────────────────────────────────────
   return (
@@ -314,17 +410,20 @@ const TableLens: React.FC = () => {
                 {activeFilters.length} filter{activeFilters.length > 1 ? 's' : ''} active
               </span>
               <button
-                onClick={() => setFilters({})}
+                onClick={() => setFilterInputs({})}
                 className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer shrink-0"
               >
                 <X size={11} /> Clear all
               </button>
             </>
           )}
+          {isFiltering && (
+            <Loader2 size={12} className="text-blue-400 animate-spin shrink-0" />
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setData([]); setColumns([]); setRawData([]); setFileName(''); setFilters({}); setSelected(new Set()); }}
+            onClick={() => { setData([]); setColumns([]); setRawData([]); setFileName(''); setFilterInputs({}); setSelected(new Set()); }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
           >
             <Trash2 size={12} /> Clear
@@ -377,16 +476,10 @@ const TableLens: React.FC = () => {
               placeholder="New value..."
               className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-36 focus:outline-none focus:border-blue-400"
             />
-            <button
-              onClick={applyBatch}
-              className="text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all cursor-pointer"
-            >
+            <button onClick={applyBatch} className="text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all cursor-pointer">
               Apply to all
             </button>
-            <button
-              onClick={() => setSelected(new Set())}
-              className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1.5 cursor-pointer transition-colors"
-            >
+            <button onClick={() => setSelected(new Set())} className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1.5 cursor-pointer transition-colors">
               Deselect
             </button>
           </div>
@@ -415,27 +508,31 @@ const TableLens: React.FC = () => {
               <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
           </div>
-
           <div className="flex-1 overflow-y-auto p-2">
             {!distinctCol ? (
               <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-6 px-2 leading-relaxed">
                 Select a column above to see all its unique values.
               </p>
+            ) : distinctLoading ? (
+              <div className="flex flex-col items-center gap-2 py-8">
+                <Loader2 size={16} className="animate-spin text-blue-400" />
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">Computing...</span>
+              </div>
             ) : (
               <>
-                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 px-1 py-1">
-                  {distinctValues.length} unique value{distinctValues.length !== 1 ? 's' : ''}
-                  {filters[distinctCol] && (
-                    <button onClick={() => clearFilter(distinctCol)} className="ml-2 text-blue-500 hover:text-blue-600 cursor-pointer">clear</button>
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 px-1 py-1 flex items-center justify-between">
+                  <span>{distinctValues.length} unique value{distinctValues.length !== 1 ? 's' : ''}</span>
+                  {filterInputs[distinctCol] && (
+                    <button onClick={() => setFilterInputs(p => ({ ...p, [distinctCol]: '' }))} className="text-blue-500 hover:text-blue-600 cursor-pointer">clear</button>
                   )}
                 </div>
                 <div className="space-y-0.5">
-                  {distinctValues.map(v => (
+                  {distinctValues.slice(0, distinctPage * DISTINCT_PAGE).map(v => (
                     <button
                       key={v}
-                      onClick={() => setFilters(prev => ({ ...prev, [distinctCol]: prev[distinctCol] === v ? '' : v }))}
+                      onClick={() => setFilterInputs(prev => ({ ...prev, [distinctCol]: prev[distinctCol] === v ? '' : v }))}
                       className={`w-full text-left text-xs px-2 py-1 rounded-lg transition-all cursor-pointer font-medium ${
-                        filters[distinctCol] === v
+                        filterInputs[distinctCol] === v
                           ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
                           : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
@@ -447,6 +544,17 @@ const TableLens: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                {distinctValues.length > distinctPage * DISTINCT_PAGE && (
+                  <button
+                    onClick={() => setDistinctPage(p => p + 1)}
+                    className="w-full mt-1 py-1.5 text-[11px] font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Load {Math.min(DISTINCT_PAGE, distinctValues.length - distinctPage * DISTINCT_PAGE)} more
+                    <span className="text-slate-400 font-normal ml-1">
+                      ({distinctValues.length - distinctPage * DISTINCT_PAGE} remaining)
+                    </span>
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -454,45 +562,57 @@ const TableLens: React.FC = () => {
 
         {/* Table */}
         <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-          <div className="flex-1 overflow-auto">
-            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-                  <th className="w-9 px-3 py-2 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={allFilteredSelected}
-                      onChange={toggleAll}
-                      className="cursor-pointer accent-blue-600"
-                    />
+
+          {/* Sticky header — outside the scroll container */}
+          <div className="overflow-x-auto shrink-0 border-b border-slate-200 dark:border-slate-700">
+            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }} id="tl-header">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800">
+                  <th className="w-9 px-3 py-2 border-r border-slate-200 dark:border-slate-700">
+                    <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} className="cursor-pointer accent-blue-600" />
                   </th>
-                  <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">#</th>
+                  <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-slate-200 dark:border-slate-700">#</th>
                   {columns.map(col => (
-                    <th key={col} className="px-3 py-2 text-left border-r border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px] bg-slate-50 dark:bg-slate-800">
+                    <th key={col} className="px-3 py-2 text-left border-r border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px]">
                       <div className="font-black text-slate-600 dark:text-slate-300 truncate mb-1.5 text-[11px] uppercase tracking-wide">{col}</div>
                       <FilterCell
-                        value={filters[col] || ''}
-                        onChange={v => setFilters(prev => ({ ...prev, [col]: v }))}
-                        options={columnOptions[col] || []}
-                        active={!!(filters[col])}
+                        value={filterInputs[col] || ''}
+                        onChange={v => setFilterInputs(prev => ({ ...prev, [col]: v }))}
+                        getOptions={() => Array.from<string>(new Set(data.map((r: Row) => String(r[col] ?? '')))).sort()}
+                        active={!!(debouncedFilters[col])}
                       />
                     </th>
                   ))}
                 </tr>
               </thead>
+            </table>
+          </div>
+
+          {/* Scrollable body — virtual scroll */}
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-auto"
+            onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+          >
+            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
               <tbody>
+                {/* top padding */}
+                {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={columns.length + 2} /></tr>}
+
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length + 2} className="text-center py-12 text-sm text-slate-400 dark:text-slate-500">
                       No rows match the current filters.
                     </td>
                   </tr>
-                ) : filteredRows.map(({ idx, row }, displayIdx) => {
+                ) : visibleRows.map(({ idx, row }, vi) => {
+                  const displayIdx = startIdx + vi;
                   const isModified = modifiedSet.has(idx);
                   const isSelected = selected.has(idx);
                   return (
                     <tr
                       key={idx}
+                      style={{ height: ROW_H }}
                       className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${
                         isSelected
                           ? 'bg-blue-50 dark:bg-blue-500/[0.08]'
@@ -503,15 +623,10 @@ const TableLens: React.FC = () => {
                           : 'bg-slate-50/40 dark:bg-slate-800/20'
                       } hover:bg-blue-50/40 dark:hover:bg-blue-500/[0.04]`}
                     >
-                      <td className="px-3 py-1.5 border-r border-slate-100 dark:border-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleRow(idx)}
-                          className="cursor-pointer accent-blue-600"
-                        />
+                      <td className="w-9 px-3 border-r border-slate-100 dark:border-slate-800">
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleRow(idx)} className="cursor-pointer accent-blue-600" />
                       </td>
-                      <td className="px-3 py-1.5 text-right border-r border-slate-100 dark:border-slate-800 font-medium">
+                      <td className="w-10 px-3 text-right border-r border-slate-100 dark:border-slate-800 font-medium">
                         {isModified
                           ? <span className="text-amber-500 font-bold">{displayIdx + 1}</span>
                           : <span className="text-slate-400 dark:text-slate-500">{displayIdx + 1}</span>
@@ -524,10 +639,8 @@ const TableLens: React.FC = () => {
                           <td
                             key={col}
                             onClick={() => { setEditCell({ row: idx, col }); setEditVal(row[col] ?? ''); }}
-                            className={`px-3 py-1.5 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer max-w-[240px] ${
-                              cellModified
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-slate-700 dark:text-slate-300'
+                            className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer max-w-[240px] min-w-[140px] ${
+                              cellModified ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
                             }`}
                           >
                             {isEditing ? (
@@ -536,10 +649,7 @@ const TableLens: React.FC = () => {
                                 value={editVal}
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') commitEdit();
-                                  if (e.key === 'Escape') setEditCell(null);
-                                }}
+                                onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditCell(null); }}
                                 onClick={e => e.stopPropagation()}
                                 className="w-full bg-white dark:bg-slate-800 border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none text-slate-700 dark:text-slate-200 min-w-[80px]"
                               />
@@ -552,19 +662,22 @@ const TableLens: React.FC = () => {
                     </tr>
                   );
                 })}
+
+                {/* bottom padding */}
+                {padBot > 0 && <tr style={{ height: padBot }}><td colSpan={columns.length + 2} /></tr>}
               </tbody>
             </table>
           </div>
 
-          {/* Table footer */}
+          {/* Footer */}
           <div className="shrink-0 border-t border-slate-200 dark:border-slate-700 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between gap-4">
             <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-              Showing {filteredRows.length} of {data.length} rows
-              {selected.size > 0 && <span className="ml-2 text-blue-500">· {selected.size} selected</span>}
+              Showing {filteredRows.length.toLocaleString()} of {data.length.toLocaleString()} rows
+              {selected.size > 0 && <span className="ml-2 text-blue-500">· {selected.size.toLocaleString()} selected</span>}
             </span>
             {modifiedSet.size > 0 && (
               <span className="text-[11px] font-bold text-amber-500">
-                ● {modifiedSet.size} modified row{modifiedSet.size > 1 ? 's' : ''}
+                ● {modifiedSet.size.toLocaleString()} modified row{modifiedSet.size > 1 ? 's' : ''}
               </span>
             )}
           </div>
