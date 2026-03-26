@@ -26,6 +26,8 @@ A local-first developer toolkit. Professional-grade tools that run 100% in your 
 | **Binary Metadata** | Drop any file to extract EXIF/XMP/IPTC tags via WebAssembly ExifTool |
 | **SQL Query Plan** | Visualize SQL Server execution plans with optional Gemini AI analysis |
 | **UUID / ULID** | Bulk-generate UUID v1/v4/v7 and ULIDs with one-per-line, JSON array, SQL IN, or CSV output |
+| **Table Lens** | Import CSV/XLSX files — filter, inline edit, batch edit, find distinct values, and export changes |
+| **CSP Tools** | Analyze CSP headers for security issues, parse browser console violations, and merge domains into existing policies |
 
 ## Getting Started
 

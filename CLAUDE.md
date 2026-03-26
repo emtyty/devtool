@@ -46,6 +46,9 @@ npm run test:e2e     # Playwright (e2e tests)
 │   ├── MetadataSidebar.tsx  # Metadata sidebar panel
 │   ├── DropZone.tsx         # File drop zone for metadata tool
 │   ├── MetadataCard.tsx     # Metadata card component
+│   ├── FileConverter.tsx    # Convert images, data formats, File ↔ Base64
+│   ├── TableLens.tsx        # CSV/XLSX viewer with filter, inline/batch edit, export
+│   ├── CspTools.tsx         # CSP analyzer, console violation parser, domain builder
 │   ├── CopyButton.tsx       # Reusable copy-to-clipboard button
 │   ├── ResizableSplit.tsx   # Resizable split pane component
 │   ├── LandingPage.tsx      # (unused) Landing page
@@ -54,7 +57,9 @@ npm run test:e2e     # Playwright (e2e tests)
 │   ├── exifParser.ts        # EXIF/metadata extraction via WebAssembly
 │   ├── formatter.ts         # Formatting utilities
 │   ├── metadataUtils.ts     # Metadata helper functions
-│   └── mockDataGenerator.ts # Faker.js data generation logic
+│   ├── mockDataGenerator.ts # Faker.js data generation logic
+│   ├── cspEvaluator.ts      # CSP policy parser and security evaluator
+│   └── cspUtils.ts          # Console violation parser, suggestion builder, domain merger
 ├── lib/
 │   └── SQLPlanAnalyzer.ts   # SQL execution plan parser/analyzer
 └── tests/
@@ -94,6 +99,9 @@ npm run test:e2e     # Playwright (e2e tests)
 | `/binary-metadata` | Binary Metadata |
 | `/query-plan` | Query Plan Viewer |
 | `/uuid-generator` | UUID / ULID |
+| `/file-converter` | File Converter |
+| `/table-lens` | Table Lens |
+| `/csp-tools` | CSP Tools |
 | `/privacy` | Privacy Policy |
 
 ## Key Libraries

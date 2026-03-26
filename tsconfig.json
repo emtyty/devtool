@@ -25,5 +25,11 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "tmp",
+    "mcp",
+    "node_modules",
+    "dist"
+  ]
 }
