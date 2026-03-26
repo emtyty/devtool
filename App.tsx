@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -27,9 +27,10 @@ const TextDiff              = lazy(() => import('./components/TextDiff'));
 const UuidGenerator         = lazy(() => import('./components/UuidGenerator'));
 const McpPage               = lazy(() => import('./components/McpPage'));
 const FileConverter         = lazy(() => import('./components/FileConverter'));
-const TableLens             = lazy(() => import('./components/TableLens'));
+const TableLens                  = lazy(() => import('./components/TableLens'));
+const NetworkWaterfallAnalyzer   = lazy(() => import('./components/NetworkWaterfallAnalyzer'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -54,8 +55,9 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   logs:          'log-analyzer',
   textdiff:      'text-diff',
   uuidgen:       'uuid-generator',
-  fileconverter: 'file-converter',
-  tablelens:     'table-lens',
+  fileconverter:      'file-converter',
+  tablelens:          'table-lens',
+  networkwaterfall:   'network-waterfall',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -113,9 +115,10 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={16} /> },
       { id: 'texttools',     label: 'Text Tools',        icon: <Replace size={16} /> },
       { id: 'textdiff',      label: 'Text Compare',      icon: <GitCompare size={16} /> },
-      { id: 'logs',          label: 'Log Analyzer',      icon: <ScrollText size={16} /> },
-      { id: 'metadata',      label: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
-      { id: 'queryplan',     label: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
+      { id: 'logs',              label: 'Log Analyzer',      icon: <ScrollText size={16} /> },
+      { id: 'networkwaterfall', label: 'Network Waterfall', icon: <Waves size={16} /> },
+      { id: 'metadata',         label: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
+      { id: 'queryplan',        label: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[16px]" /> },
     ],
   },
   {
@@ -286,7 +289,8 @@ const App: React.FC = () => {
            mode === 'uuidgen'   ? <UuidGenerator /> :
            mode === 'diagram'    ? <DiagramGenerator initialData={pendingData} /> :
            mode === 'fileconverter' ? <FileConverter /> :
-           mode === 'tablelens'    ? <TableLens /> :
+           mode === 'tablelens'         ? <TableLens /> :
+           mode === 'networkwaterfall'  ? <NetworkWaterfallAnalyzer /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (
@@ -414,7 +418,8 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'diagram',       name: 'Diagram',           icon: <Workflow size={11} />,      desc: 'Generate sequence diagrams & flowcharts from plain English using Mermaid.js' },
   { id: 'fileconverter', name: 'File Converter',   icon: <FileOutput size={11} />,   desc: 'Convert images (PNG/JPG/WebP/BMP), data (JSON/CSV/XML/YAML), Markdown → HTML, File ↔ Base64' },
   { id: 'tablelens',     name: 'Table Lens',       icon: <Sheet size={11} />,         desc: 'Import CSV/XLSX — filter, inline edit, batch edit, find distinct values, export changes' },
-  { id: 'metadata',      name: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[11px]" />,       desc: 'EXIF/XMP/IPTC metadata extraction via @uswriting/exiftool + WebAssembly' },
+  { id: 'networkwaterfall', name: 'Network Waterfall', icon: <Waves size={11} />, desc: 'HAR file analyzer — waterfall timeline, rule engine, console log correlation' },
+  { id: 'metadata',         name: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[11px]" />,       desc: 'EXIF/XMP/IPTC metadata extraction via @uswriting/exiftool + WebAssembly' },
   { id: 'queryplan',     name: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[11px]" />,   desc: 'SQL Server execution plan viewer + Gemini AI analysis via @google/genai' },
   { id: 'smartdetect',   name: 'Smart Detector',    icon: <Wand2 size={11} />,         desc: 'Auto-detect content type (JSON, SQL, JWT, cron, etc.) and route to the right tool' },
 ];
