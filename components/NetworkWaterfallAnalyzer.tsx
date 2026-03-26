@@ -1195,18 +1195,25 @@ function RuleManager({ rules, onSave, onClose, onToast }: RuleManagerProps) {
 
 // ── Upload Panel ──────────────────────────────────────────────────
 
-function LoadSampleButton({ onHar, onLog, onProcess }: { onHar: (text: string, name: string) => void; onLog: (text: string, name: string) => void; onProcess: () => void }) {
+function LoadSampleButton({ onHar, onLog, onProcess, onError }: { onHar: (text: string, name: string) => void; onLog: (text: string, name: string) => void; onProcess: () => void; onError?: (msg: string) => void }) {
   const [loading, setLoading] = useState(false);
+  const base = ((import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL ?? '/').replace(/\/$/, '');
   const load = async () => {
     setLoading(true);
     try {
-      const [har, log] = await Promise.all([
-        fetch('/test-data/sample.har').then(r => r.text()),
-        fetch('/test-data/sample.log').then(r => r.text()),
+      const [harRes, logRes] = await Promise.all([
+        fetch(`${base}/test-data/sample.har`),
+        fetch(`${base}/test-data/sample.log`),
       ]);
-      onHar(har, 'sample.har'); onLog(log, 'sample.log');
+      if (!harRes.ok) throw new Error(`Cannot load sample.har (${harRes.status})`);
+      if (!logRes.ok) throw new Error(`Cannot load sample.log (${logRes.status})`);
+      const [har, log] = await Promise.all([harRes.text(), logRes.text()]);
+      onHar(har, 'sample.har');
+      onLog(log, 'sample.log');
       setTimeout(onProcess, 50);
-    } catch { /* silently fail */ } finally { setLoading(false); }
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : 'Failed to load sample data');
+    } finally { setLoading(false); }
   };
   return (
     <button onClick={load} disabled={loading} className="flex items-center gap-2 px-5 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 dark:text-slate-300 font-bold text-sm rounded-xl transition-colors cursor-pointer border border-slate-200 dark:border-slate-700">
@@ -1332,9 +1339,10 @@ interface UploadPanelProps {
   onManageRules: () => void;
   ruleCount: number;
   onHelp: () => void;
+  onError: (msg: string) => void;
 }
 
-function UploadPanel({ onHar, onLog, harName, logName, onProcess, isReady, onManageRules, ruleCount, onHelp }: UploadPanelProps) {
+function UploadPanel({ onHar, onLog, harName, logName, onProcess, isReady, onManageRules, ruleCount, onHelp, onError }: UploadPanelProps) {
   const harRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLInputElement>(null);
   const [harDrag, setHarDrag] = useState(false);
@@ -1385,7 +1393,7 @@ function UploadPanel({ onHar, onLog, harName, logName, onProcess, isReady, onMan
       <div className="flex flex-col items-center gap-3">
         <div className="flex items-center gap-3">
           <button onClick={onProcess} disabled={!isReady} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl transition-colors cursor-pointer shadow-lg shadow-blue-500/20">Analyze</button>
-          <LoadSampleButton onHar={onHar} onLog={onLog} onProcess={onProcess} />
+          <LoadSampleButton onHar={onHar} onLog={onLog} onProcess={onProcess} onError={onError} />
         </div>
       </div>
 
@@ -1688,6 +1696,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
           onManageRules={() => setShowRules(true)}
           ruleCount={rules.filter(r => r.enabled).length}
           onHelp={() => setShowHelp(true)}
+          onError={msg => setError(msg)}
         />
         {ruleManager}
         {helpModal}
