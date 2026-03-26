@@ -379,6 +379,28 @@ export function detectMermaid(input: string): number {
   return 0;
 }
 
+export function detectCsp(input: string): number {
+  const t = input.trim();
+  if (!t) return 0;
+
+  // CSP header patterns: directive-name value1 value2; directive-name value3
+  const cspDirectives = /\b(default-src|script-src|style-src|img-src|font-src|connect-src|media-src|object-src|frame-src|child-src|worker-src|base-uri|form-action|frame-ancestors|report-uri|report-to|upgrade-insecure-requests|block-all-mixed-content)\b/gi;
+  const matches = t.match(cspDirectives) || [];
+  const unique = new Set(matches.map(m => m.toLowerCase()));
+
+  // Multiple CSP directives with semicolon separation = very likely CSP
+  if (unique.size >= 3 && t.includes(';')) return 95;
+  if (unique.size >= 2 && t.includes(';')) return 88;
+  if (unique.size >= 1 && (t.includes("'self'") || t.includes("'none'") || t.includes("'unsafe-inline'"))) return 85;
+
+  // CSP violation console logs
+  if (/violates the following Content Security Policy directive/i.test(t)) return 92;
+  if (/Content[- ]Security[- ]Policy:.*blocked/i.test(t)) return 90;
+  if (/Refused to (?:load|execute|apply).*Content Security Policy/i.test(t)) return 90;
+
+  return 0;
+}
+
 export function detectTextTools(input: string): number {
   const t = input.trim();
   if (!t) return 0;
@@ -474,6 +496,7 @@ export function getExtHint(filename: string): string | null {
 const DETECTORS: { tool: string; label: string; detect: (input: string) => number }[] = [
   { tool: 'jwtdecode',      label: 'JWT Decode',         detect: detectJWT },
   { tool: 'queryplan',      label: 'Query Plan',         detect: detectQueryPlan },
+  { tool: 'csptools',       label: 'CSP Tools',          detect: detectCsp },
   { tool: 'cron',           label: 'Cron Builder',       detect: detectCron },
   { tool: 'epoch',          label: 'Epoch Converter',    detect: detectEpoch },
   { tool: 'color',          label: 'Color Converter',    detect: detectColor },
