@@ -1203,13 +1203,13 @@ function LoadSampleButton({ onHar, onLog, onProcess, onError }: { onHar: (text: 
     try {
       const [harRes, logRes] = await Promise.all([
         fetch(`${base}/test-data/sample.har`),
-        fetch(`${base}/test-data/sample.log`),
+        fetch(`${base}/test-data/sample.txt`),
       ]);
       if (!harRes.ok) throw new Error(`Cannot load sample.har (${harRes.status})`);
-      if (!logRes.ok) throw new Error(`Cannot load sample.log (${logRes.status})`);
+      if (!logRes.ok) throw new Error(`Cannot load sample.txt (${logRes.status})`);
       const [har, log] = await Promise.all([harRes.text(), logRes.text()]);
       onHar(har, 'sample.har');
-      onLog(log, 'sample.log');
+      onLog(log, 'sample.txt');
       setTimeout(onProcess, 50);
     } catch (err) {
       onError?.(err instanceof Error ? err.message : 'Failed to load sample data');
