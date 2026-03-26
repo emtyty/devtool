@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -131,6 +131,47 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+// ── Favorites ─────────────────────────────────────────────────────
+const NAV_ITEM_MAP: Partial<Record<AppMode, NavItem>> = Object.fromEntries(
+  NAV_SECTIONS.flatMap(s => s.items).map(item => [item.id, item])
+);
+
+const FAVORITES_KEY = 'devtoolkit:favorites';
+const MAX_FAVORITES = 5;
+
+function useFavorites() {
+  const [favorites, setFavorites] = useState<AppMode[]>(() => {
+    try {
+      const stored = localStorage.getItem(FAVORITES_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleFavorite = useCallback((id: AppMode) => {
+    setFavorites(prev => {
+      const next = prev.includes(id)
+        ? prev.filter(f => f !== id)
+        : prev.length >= MAX_FAVORITES ? prev : [...prev, id];
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const reorder = useCallback((from: number, to: number) => {
+    setFavorites(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  return { favorites, toggleFavorite, reorder };
+}
+
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(getModeFromPath);
 
@@ -178,6 +219,8 @@ const App: React.FC = () => {
   const [session, setSession] = useState<ImageFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragIndex = useRef<number | null>(null);
+  const { favorites, toggleFavorite, reorder } = useFavorites();
 
   useEffect(() => {
     fetch(zeroperlWasmUrl).catch(console.error);
@@ -231,6 +274,63 @@ const App: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="no-print w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5">
+
+          {/* ── Favorites section ── */}
+          {favorites.length > 0 && (
+            <>
+              <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
+                Favorites
+              </div>
+              {favorites.map((favId, index) => {
+                const item = NAV_ITEM_MAP[favId];
+                if (!item) return null;
+                return (
+                  <div
+                    key={favId}
+                    draggable
+                    onDragStart={() => { dragIndex.current = index; }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragIndex.current !== null && dragIndex.current !== index) {
+                        reorder(dragIndex.current, index);
+                      }
+                      dragIndex.current = null;
+                    }}
+                    className={`group flex items-center rounded-lg transition-all ${
+                      mode === favId
+                        ? 'bg-blue-50 dark:bg-blue-500/15'
+                        : 'hover:bg-slate-50 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="pl-1.5 py-2 text-slate-300 dark:text-slate-700 cursor-grab active:cursor-grabbing shrink-0">
+                      <GripVertical size={12} />
+                    </span>
+                    <button
+                      onClick={() => switchMode(favId)}
+                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2 text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                        mode === favId
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </button>
+                    <button
+                      onClick={() => toggleFavorite(favId)}
+                      title="Remove from favorites"
+                      className="pr-2 py-2 text-amber-400 opacity-0 group-hover:opacity-100 hover:text-amber-300 transition-all cursor-pointer shrink-0"
+                    >
+                      <Star size={13} className="fill-amber-400" />
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
+            </>
+          )}
+
+          {/* ── Regular nav sections ── */}
           {NAV_SECTIONS.map((section, si) => (
             <React.Fragment key={si}>
               {si > 0 && <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />}
@@ -239,20 +339,44 @@ const App: React.FC = () => {
                   {section.title}
                 </div>
               )}
-              {section.items.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => switchMode(tab.id)}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-bold text-left whitespace-nowrap transition-all cursor-pointer ${
-                    mode === tab.id
-                      ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
+              {section.items.map(tab => {
+                const isFav = favorites.includes(tab.id);
+                const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
+                const starClass = isFav
+                  ? 'pl-2 py-2 text-amber-400 opacity-0 group-hover:opacity-100 cursor-pointer shrink-0'
+                  : isMaxed
+                  ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 opacity-0 group-hover:opacity-100 cursor-not-allowed shrink-0'
+                  : 'pl-2 py-2 text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
+                return (
+                  <div
+                    key={tab.id}
+                    className={`group flex items-center rounded-lg transition-all ${
+                      mode === tab.id
+                        ? 'bg-blue-50 dark:bg-blue-500/15'
+                        : 'hover:bg-slate-50 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <button
+                      onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
+                      title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                      className={`transition-all ${starClass}`}
+                    >
+                      <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
+                    </button>
+                    <button
+                      onClick={() => switchMode(tab.id)}
+                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2 text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                        mode === tab.id
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  </div>
+                );
+              })}
             </React.Fragment>
           ))}
         </aside>
