@@ -1,0 +1,6 @@
+dist
+node_modules
+mcp/node_modules
+mcp/dist
+*.wasm
+public/test-data
