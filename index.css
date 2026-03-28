@@ -312,7 +312,10 @@
 .dark .border-orange-300  { border-color: rgba(249,115,22,0.35)   !important; }
 .dark .border-emerald-300 { border-color: rgba(16,185,129,0.35)   !important; }
 .dark .border-blue-300    { border-color: rgba(59,130,246,0.35)   !important; }
+.dark .border-violet-200  { border-color: rgba(139,92,246,0.25)   !important; }
 .dark .border-violet-300  { border-color: rgba(139,92,246,0.35)   !important; }
+.dark .bg-violet-100      { background-color: rgba(139,92,246,0.15) !important; }
+.dark .text-violet-600    { color: #c4b5fd !important; }
 
 .dark .text-red-500    { color: #f87171 !important; }
 .dark .text-orange-500 { color: #fb923c !important; }

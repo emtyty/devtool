@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { FileCode2, Play, AlertTriangle, Sparkles, Key, Eye, EyeOff, X, Check, ChevronDown, ChevronRight, Upload } from 'lucide-react';
+import { FileCode2, Play, AlertTriangle, Sparkles, Key, Eye, EyeOff, X, Check, ChevronDown, ChevronRight, Upload, FlaskConical } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import Markdown from 'react-markdown';
 import * as qp from 'html-query-plan';
@@ -10,6 +10,153 @@ import CopyButton from './CopyButton';
 import { PlanTreeRenderer } from './PlanTreeRenderer';
 
 const AI_MODEL = 'gemini-2.5-pro-preview-06-05';
+
+// ── Sample execution plan for demo purposes ──────────────────────────────────
+const SAMPLE_PLAN = `<?xml version="1.0" encoding="utf-16"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.539" Build="15.0.4375.4">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple
+          StatementText="SELECT o.OrderId, c.Name, c.Email, od.Quantity, od.UnitPrice FROM Orders o INNER JOIN Customers c ON o.CustomerId = c.CustomerId INNER JOIN OrderDetails od ON o.OrderId = od.OrderId WHERE o.OrderDate &gt;= '2024-01-01' AND c.Country = 'USA'"
+          StatementId="1" StatementCompId="1" StatementType="SELECT"
+          StatementSubTreeCost="1.95432" StatementEstRows="1250"
+          StatementOptmLevel="FULL"
+          QueryHash="0x8A4F2B1C3D5E6F70" QueryPlanHash="0x1A2B3C4D5E6F7A8B">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+          <QueryPlan DegreeOfParallelism="1" MemoryGrant="4096" CachedPlanSize="192" CompileTime="78" CompileCPU="76" CompileMemory="2048">
+            <MissingIndexes>
+              <MissingIndexGroup Impact="78.32">
+                <MissingIndex Database="[SalesDB]" Schema="[dbo]" Table="[Customers]">
+                  <ColumnGroup Usage="EQUALITY">
+                    <Column Name="[Country]" ColumnId="5" />
+                  </ColumnGroup>
+                  <ColumnGroup Usage="INCLUDE">
+                    <Column Name="[Name]" ColumnId="2" />
+                    <Column Name="[Email]" ColumnId="3" />
+                    <Column Name="[CustomerId]" ColumnId="1" />
+                  </ColumnGroup>
+                </MissingIndex>
+              </MissingIndexGroup>
+            </MissingIndexes>
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join"
+              EstimateRows="1250" EstimatedTotalSubtreeCost="1.95432"
+              EstimateIO="0" EstimateCPU="0.001250" AvgRowSize="148"
+              EstimateRebinds="0" EstimateRewinds="0" Parallel="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+                <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Name" />
+                <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Email" />
+                <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Alias="[od]" Column="Quantity" />
+                <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Alias="[od]" Column="UnitPrice" />
+              </OutputList>
+              <NestedLoops Optimized="false" WithOrderedPrefetch="true">
+                <OuterReferences>
+                  <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+                </OuterReferences>
+                <RelOp NodeId="1" PhysicalOp="Hash Match" LogicalOp="Inner Join"
+                  EstimateRows="1250" EstimatedTotalSubtreeCost="1.65321"
+                  EstimateIO="0" EstimateCPU="0.045680" AvgRowSize="96"
+                  EstimateRebinds="0" EstimateRewinds="0" Parallel="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="CustomerId" />
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Name" />
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Email" />
+                  </OutputList>
+                  <HashMatch BuildResidual="none">
+                    <HashKeysBuild>
+                      <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="CustomerId" />
+                    </HashKeysBuild>
+                    <HashKeysProbe>
+                      <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="CustomerId" />
+                    </HashKeysProbe>
+                    <RelOp NodeId="2" PhysicalOp="Table Scan" LogicalOp="Table Scan"
+                      EstimateRows="45000" EstimatedTotalSubtreeCost="0.95432"
+                      EstimateIO="0.848066" EstimateCPU="0.045000" AvgRowSize="156"
+                      EstimateRebinds="0" EstimateRewinds="0" Parallel="0"
+                      EstimatedExecutionMode="Row" StorageType="RowStore">
+                      <OutputList>
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="CustomerId" />
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Name" />
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Email" />
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Country" />
+                      </OutputList>
+                      <TableScan Ordered="false" ForcedIndex="false" NoExpandHint="false" Storage="RowStore">
+                        <Object Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" IndexKind="Heap" Storage="RowStore" />
+                        <Predicate>
+                          <ScalarOperator ScalarString="[SalesDB].[dbo].[Customers].[Country] as [c].[Country]=N'USA'">
+                            <Compare CompareOp="EQ">
+                              <ScalarOperator><Identifier><ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Country" /></Identifier></ScalarOperator>
+                              <ScalarOperator><Const ConstValue="N'USA'" /></ScalarOperator>
+                            </Compare>
+                          </ScalarOperator>
+                        </Predicate>
+                      </TableScan>
+                    </RelOp>
+                    <RelOp NodeId="3" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek"
+                      EstimateRows="15423" EstimatedTotalSubtreeCost="0.65321"
+                      EstimateIO="0.548066" EstimateCPU="0.015423" AvgRowSize="48"
+                      EstimateRebinds="0" EstimateRewinds="0" Parallel="0"
+                      EstimatedExecutionMode="Row" StorageType="RowStore">
+                      <OutputList>
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="CustomerId" />
+                        <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderDate" />
+                      </OutputList>
+                      <IndexScan Ordered="true" ScanDirection="FORWARD" ForcedIndex="false" ForceSeek="false" NoExpandHint="false" Storage="RowStore" EstimatedRowsRead="15423">
+                        <Object Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders_OrderId]" Alias="[o]" IndexKind="Clustered" Storage="RowStore" />
+                        <SeekPredicates>
+                          <SeekPredicateNew>
+                            <SeekKeys>
+                              <StartRange ScanType="GE">
+                                <RangeColumns>
+                                  <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderDate" />
+                                </RangeColumns>
+                                <RangeExpressions>
+                                  <ScalarOperator ScalarString="'2024-01-01'"><Const ConstValue="'2024-01-01'" /></ScalarOperator>
+                                </RangeExpressions>
+                              </StartRange>
+                            </SeekKeys>
+                          </SeekPredicateNew>
+                        </SeekPredicates>
+                      </IndexScan>
+                    </RelOp>
+                  </HashMatch>
+                </RelOp>
+                <RelOp NodeId="4" PhysicalOp="Index Seek" LogicalOp="Index Seek"
+                  EstimateRows="3.5" EstimatedTotalSubtreeCost="0.006572"
+                  EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="36"
+                  EstimateRebinds="0" EstimateRewinds="1249" Parallel="0"
+                  EstimatedExecutionMode="Row" StorageType="RowStore">
+                  <OutputList>
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Alias="[od]" Column="Quantity" />
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Alias="[od]" Column="UnitPrice" />
+                    <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Alias="[od]" Column="ProductId" />
+                  </OutputList>
+                  <IndexScan Ordered="true" ScanDirection="FORWARD" ForcedIndex="false" ForceSeek="false" NoExpandHint="false" Storage="RowStore" EstimatedRowsRead="3.5">
+                    <Object Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Index="[IX_OrderDetails_OrderId]" Alias="[od]" IndexKind="NonClustered" Storage="RowStore" />
+                    <SeekPredicates>
+                      <SeekPredicateNew>
+                        <SeekKeys>
+                          <StartRange ScanType="EQ">
+                            <RangeColumns>
+                              <ColumnReference Database="[SalesDB]" Schema="[dbo]" Table="[OrderDetails]" Alias="[od]" Column="OrderId" />
+                            </RangeColumns>
+                          </StartRange>
+                        </SeekKeys>
+                      </SeekPredicateNew>
+                    </SeekPredicates>
+                  </IndexScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>`.trim();
 const LS_KEY = 'devtoolkit_gemini_key';
 
 const SINGLE_SYSTEM_PROMPT = `You are a SQL Server performance tuning expert. You will receive a JSON object containing a pre-analyzed SQL execution plan with the following fields:
@@ -319,20 +466,29 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
               <label htmlFor="xml-input" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                 Execution Plan XML
               </label>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-              >
-                <Upload size={13} />
-                Import .sqlplan
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".sqlplan,.xml"
-                className="hidden"
-                onChange={handleFileImport}
-              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setXmlInput(SAMPLE_PLAN)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-200 transition-colors"
+                >
+                  <FlaskConical size={13} />
+                  Load Sample
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                >
+                  <Upload size={13} />
+                  Import .sqlplan
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".sqlplan,.xml"
+                  className="hidden"
+                  onChange={handleFileImport}
+                />
+              </div>
             </div>
             <textarea
               id="xml-input"
