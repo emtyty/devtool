@@ -342,3 +342,15 @@
   opacity: 1;
   transform: rotate(0deg);
 }
+
+/* ══════════════════════════════════════════
+   MOBILE RESPONSIVENESS — Touch targets & layout
+   ══════════════════════════════════════════ */
+
+/* Minimum touch target sizes on mobile/tablet (< lg breakpoint) */
+@media (max-width: 1023px) {
+  /* Footer tool grid — bigger tap targets on mobile */
+  footer button {
+    min-height: 40px;
+  }
+}

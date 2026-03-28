@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -174,12 +174,14 @@ function useFavorites() {
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(getModeFromPath);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [pendingData, setPendingData] = useState<string | null>(null);
 
   const switchMode = useCallback((next: AppMode) => {
     setPendingData(null);
     setMode(next);
+    setSidebarOpen(false);
     const slug = MODE_TO_SLUG[next];
     window.history.pushState({}, '', slug ? `/${slug}` : '/');
   }, []);
@@ -190,6 +192,15 @@ const App: React.FC = () => {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  // Close sidebar on Escape key
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sidebarOpen) setSidebarOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [sidebarOpen]);
 
   // Smart Detect → detected tool with data
   const handleSmartDetect = useCallback((tool: string, data: string) => {
@@ -245,20 +256,29 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col selection:bg-blue-500/30">
-      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-6 py-4 flex items-center justify-between">
-        <button
-          onClick={() => switchMode('smartdetect')}
-          className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
-          aria-label="Go to home"
-        >
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <i className="fa-solid fa-code text-white text-xl"></i>
-          </div>
-          <div className="text-left">
-            <h1 className="text-xl font-black tracking-tighter leading-none text-slate-800">DevToolKit</h1>
-            <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1">Local First Engine Data</p>
-          </div>
-        </button>
+      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen(prev => !prev)}
+            className="lg:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+          >
+            {sidebarOpen ? <X size={20} className="text-slate-600 dark:text-slate-300" /> : <Menu size={20} className="text-slate-600 dark:text-slate-300" />}
+          </button>
+          <button
+            onClick={() => switchMode('smartdetect')}
+            className="flex items-center gap-3 lg:gap-4 shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
+            aria-label="Go to home"
+          >
+            <div className="w-9 h-9 lg:w-10 lg:h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <i className="fa-solid fa-code text-white text-lg lg:text-xl"></i>
+            </div>
+            <div className="text-left">
+              <h1 className="text-lg lg:text-xl font-black tracking-tighter leading-none text-slate-800">DevToolKit</h1>
+              <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1 hidden sm:block">Local First Engine Data</p>
+            </div>
+          </button>
+        </div>
         <button
           onClick={toggleTheme}
           className="theme-toggle"
@@ -273,7 +293,15 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="no-print w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5">
+        {/* Mobile overlay backdrop */}
+        {sidebarOpen && (
+          <div
+            className="lg:hidden fixed inset-0 bg-black/40 z-40"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static inset-y-0 left-0 z-40 pt-[65px] lg:pt-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
 
           {/* ── Favorites section ── */}
           {favorites.length > 0 && (
@@ -307,7 +335,7 @@ const App: React.FC = () => {
                     </span>
                     <button
                       onClick={() => switchMode(favId)}
-                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2 text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
                         mode === favId
                           ? 'text-blue-600 dark:text-blue-400'
                           : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
@@ -319,7 +347,7 @@ const App: React.FC = () => {
                     <button
                       onClick={() => toggleFavorite(favId)}
                       title="Remove from favorites"
-                      className="pr-2 py-2 text-amber-400 opacity-0 group-hover:opacity-100 hover:text-amber-300 transition-all cursor-pointer shrink-0"
+                      className="pr-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-300 transition-all cursor-pointer shrink-0"
                     >
                       <Star size={13} className="fill-amber-400" />
                     </button>
@@ -343,10 +371,10 @@ const App: React.FC = () => {
                 const isFav = favorites.includes(tab.id);
                 const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
                 const starClass = isFav
-                  ? 'pl-2 py-2 text-amber-400 opacity-0 group-hover:opacity-100 cursor-pointer shrink-0'
+                  ? 'pl-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 cursor-pointer shrink-0'
                   : isMaxed
-                  ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 opacity-0 group-hover:opacity-100 cursor-not-allowed shrink-0'
-                  : 'pl-2 py-2 text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
+                  ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100 cursor-not-allowed shrink-0'
+                  : 'pl-2 py-2 text-slate-300 dark:text-slate-600 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
                 return (
                   <div
                     key={tab.id}
@@ -365,7 +393,7 @@ const App: React.FC = () => {
                     </button>
                     <button
                       onClick={() => switchMode(tab.id)}
-                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2 text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
                         mode === tab.id
                           ? 'text-blue-600 dark:text-blue-400'
                           : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
@@ -382,7 +410,7 @@ const App: React.FC = () => {
         </aside>
 
         <div className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
-          <main className="flex-1 w-full px-6 py-8">
+          <main className="flex-1 w-full px-4 lg:px-6 py-6 lg:py-8">
         <input
           ref={fileInputRef}
           type="file"
@@ -445,7 +473,7 @@ const App: React.FC = () => {
           </main>
 
           <footer className="no-print border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0d1424]">
-            <div className="w-full px-6 py-8 space-y-6">
+            <div className="w-full px-4 lg:px-6 py-6 lg:py-8 space-y-6">
 
               {/* Tools grid — clickable, compact */}
               <div>
