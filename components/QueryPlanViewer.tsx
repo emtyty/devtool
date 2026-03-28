@@ -11,7 +11,21 @@ import CopyButton from './CopyButton';
 const AI_MODEL = 'gemini-2.5-pro-preview-06-05';
 const LS_KEY = 'devtoolkit_gemini_key';
 
-const SINGLE_SYSTEM_PROMPT = `You will receive a pruned XML SQL Execution Plan. Namespaces and low-cost metadata have been removed for token efficiency. Focus your analysis on nodes with high EstimatedTotalSubtreeCost and any present <Warnings> or <MissingIndexes> blocks. If a node is empty, assume it is a standard low-cost operator`;
+const SINGLE_SYSTEM_PROMPT = `You are a SQL Server performance tuning expert. You will receive a JSON object containing a pre-analyzed SQL execution plan with the following fields:
+- statement: the SQL text
+- totalCost: estimated total subtree cost
+- metrics: cost, memory grant, parallelism, top bottleneck operators
+- redFlags: detected issues with severity (high/medium/low), type, description, and nodeId
+- missingIndexes: index recommendations from the optimizer
+- executionPath: flat list of operators in execution order (leaves first), each with selfCostPercent (the operator's own work), estimateRows, and objectName
+- operations: operator type counts
+
+Based on this analysis, provide:
+1. A brief summary of the query's overall performance profile
+2. The top 3 most critical issues to fix, referencing specific node IDs and operator names
+3. Concrete, actionable recommendations for each issue
+
+Be concise and direct. Prioritize high-severity red flags and operators with high selfCostPercent.`;
 
 // --- Gemini Key Modal ---
 
@@ -131,7 +145,7 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileImport = (e: { target: HTMLInputElement }) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -167,9 +181,41 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
     setSingleAnalysis(null);
 
     try {
+      // Use pre-computed summary if available, otherwise compute fresh
+      const planSummary = summary ?? SQLPlanAnalyzer.extractSummary(xmlInput);
+      const metrics = SQLPlanAnalyzer.getMetrics(xmlInput);
+
+      const payload = {
+        statement: planSummary.statementText,
+        totalCost: planSummary.totalCost,
+        metrics: {
+          cost: metrics.cost,
+          memoryGrant: metrics.memGrant,
+          degreeOfParallelism: metrics.parallelism,
+          topBottlenecks: metrics.bottlenecks,
+          warnings: metrics.warnings,
+        },
+        redFlags: planSummary.redFlags.map(f => ({
+          severity: f.severity,
+          type: f.type,
+          description: f.description,
+          nodeId: f.nodeId,
+        })),
+        missingIndexes: planSummary.missingIndexes,
+        executionPath: planSummary.executionPath.map(n => ({
+          nodeId: n.nodeId,
+          operator: n.physicalOp || n.logicalOp,
+          objectName: n.objectName,
+          selfCostPercent: parseFloat(n.selfCostPercent.toFixed(2)),
+          estimateRows: n.estimateRows,
+          estimateExecutions: n.estimateExecutions,
+        })),
+        operations: planSummary.operations,
+      };
+
       const response = await createAiClient().models.generateContent({
         model: AI_MODEL,
-        contents: SQLPlanAnalyzer.pruneExecutionPlan(xmlInput),
+        contents: JSON.stringify(payload),
         config: { systemInstruction: SINGLE_SYSTEM_PROMPT },
       });
       setSingleAnalysis(response.text || 'No analysis generated.');
@@ -377,7 +423,7 @@ function nodeStyle(node: PlanNode): { bg: string; badge: string; border: string 
   if (op === 'Key Lookup' || op === 'Index Scan') {
     return { bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', border: 'border-l-4 border-l-orange-400' };
   }
-  if (node.costPercent > 20) {
+  if (node.selfCostPercent > 15) {
     return { bg: 'bg-yellow-50', badge: 'bg-yellow-100 text-yellow-700', border: 'border-l-4 border-l-yellow-400' };
   }
   if (op === 'Index Seek' || op === 'Clustered Index Seek') {
@@ -388,27 +434,41 @@ function nodeStyle(node: PlanNode): { bg: string; badge: string; border: string 
 
 function ExecutionPathPanel({ nodes }: { nodes: PlanNode[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const allIds = nodes.map((n, i) => n.nodeId || String(i));
+  const allExpanded = allIds.length > 0 && allIds.every(id => expanded.has(id));
+
   const toggle = (id: string) =>
     setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const toggleAll = () =>
+    setExpanded(allExpanded ? new Set() : new Set(allIds));
 
   if (nodes.length === 0) return null;
 
   return (
     <div className="mb-6">
-      <h3 className="text-sm font-medium text-slate-500 mb-3">
-        Execution Path
-        <span className="ml-2 text-xs text-slate-400 font-normal">right → left (leaf to root)</span>
-      </h3>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-medium text-slate-500">
+          Execution Order
+          <span className="ml-2 text-xs text-slate-400 font-normal">leaves first (right → left)</span>
+        </h3>
+        <button
+          onClick={toggleAll}
+          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded hover:bg-slate-100 transition-colors"
+        >
+          {allExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          {allExpanded ? 'Collapse all' : 'Expand all'}
+        </button>
+      </div>
       <div className="rounded-lg border border-slate-200 overflow-hidden divide-y divide-slate-100">
         {nodes.map((node, i) => {
           const style = nodeStyle(node);
-          const isOpen = expanded.has(node.nodeId);
+          const isOpen = expanded.has(node.nodeId || String(i));
           const op = node.physicalOp || node.logicalOp;
-          const barWidth = Math.min(100, node.costPercent);
+          const barWidth = Math.min(100, node.selfCostPercent);
           return (
             <div key={node.nodeId || i} className={`${style.bg} ${style.border}`}>
               <button
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:brightness-95 transition-all"
+                className="w-full flex items-center gap-3 px-4 py-2 text-left hover:brightness-95 transition-all"
                 onClick={() => toggle(node.nodeId || String(i))}
               >
                 <span className="text-xs text-slate-400 font-mono w-6 shrink-0">{String(i + 1).padStart(2, '0')}</span>
@@ -418,21 +478,23 @@ function ExecutionPathPanel({ nodes }: { nodes: PlanNode[] }) {
                 )}
                 {!node.objectName && <span className="flex-1" />}
                 <div className="flex items-center gap-2 shrink-0">
-                  <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${node.costPercent > 20 ? 'bg-red-400' : node.costPercent > 10 ? 'bg-yellow-400' : 'bg-blue-400'}`}
+                      className={`h-full rounded-full ${node.selfCostPercent > 20 ? 'bg-red-400' : node.selfCostPercent > 10 ? 'bg-yellow-400' : 'bg-blue-300'}`}
                       style={{ width: `${barWidth}%` }}
                     />
                   </div>
-                  <span className="text-xs font-semibold text-slate-600 w-10 text-right">{node.costPercent.toFixed(1)}%</span>
+                  <span className="text-xs font-semibold text-slate-600 w-10 text-right">{node.selfCostPercent.toFixed(1)}%</span>
                 </div>
-                {isOpen ? <ChevronDown size={14} className="text-slate-400 shrink-0" /> : <ChevronRight size={14} className="text-slate-400 shrink-0" />}
+                {isOpen ? <ChevronDown size={13} className="text-slate-400 shrink-0" /> : <ChevronRight size={13} className="text-slate-400 shrink-0" />}
               </button>
               {isOpen && (
-                <div className="px-4 pb-3 pt-1 flex gap-6 text-xs text-slate-600 font-mono bg-white/60">
-                  <span><span className="text-slate-400">EstimateRows:</span> {node.estimateRows.toLocaleString()}</span>
-                  <span><span className="text-slate-400">SubtreeCost:</span> {node.subtreeCost.toFixed(6)}</span>
-                  <span><span className="text-slate-400">NodeId:</span> {node.nodeId || '—'}</span>
+                <div className="px-4 pb-2.5 pt-1 grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono bg-white/70 border-t border-slate-100">
+                  <span><span className="text-slate-400">Operator Cost: </span><span className="text-slate-700">{node.selfCost.toFixed(6)}</span> <span className="text-slate-400">({node.selfCostPercent.toFixed(1)}%)</span></span>
+                  <span><span className="text-slate-400">Subtree Cost: </span><span className="text-slate-700">{node.subtreeCost.toFixed(6)}</span></span>
+                  <span><span className="text-slate-400">Est. Rows: </span><span className="text-slate-700">{node.estimateRows.toLocaleString()}</span></span>
+                  <span><span className="text-slate-400">Executions: </span><span className="text-slate-700">{node.estimateExecutions.toLocaleString()}</span></span>
+                  {node.nodeId && <span><span className="text-slate-400">Node ID: </span><span className="text-slate-700">{node.nodeId}</span></span>}
                 </div>
               )}
             </div>
@@ -443,100 +505,113 @@ function ExecutionPathPanel({ nodes }: { nodes: PlanNode[] }) {
   );
 }
 
+const SEVERITY_BADGE: Record<string, string> = {
+  high: 'bg-red-100 text-red-700',
+  medium: 'bg-orange-100 text-orange-700',
+  low: 'bg-slate-100 text-slate-500',
+};
+
 function PlanSummaryPanel({ summary }: { summary: PlanSummary }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900 mb-4">Plan Summary</h2>
+      <h2 className="text-lg font-semibold text-slate-900 mb-5">Plan Summary</h2>
 
-      <ExecutionPathPanel nodes={summary.executionPath} />
+      {/* Two-column layout: left = execution path + statement, right = flags + metrics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-      {summary.statementText && (
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-slate-500">Statement</h3>
-            <CopyButton text={summary.statementText} label="Copy SQL" />
-          </div>
-          <div className="bg-slate-50 p-3 rounded-lg text-sm text-slate-800 font-mono break-words max-h-48 overflow-y-auto">
-            {summary.statementText}
-          </div>
+        {/* LEFT column — execution path only */}
+        <div className="flex flex-col gap-6">
+          <ExecutionPathPanel nodes={summary.executionPath} />
         </div>
-      )}
 
-      {summary.missingIndexes.length > 0 && (
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-amber-600 flex items-center gap-1.5">
-              <AlertTriangle size={16} />
-              Missing Indexes ({summary.missingIndexes.length})
-            </h3>
-            <CopyButton text={summary.missingIndexes.join('\n\n')} label="Copy Indexes" />
-          </div>
-          <div className="space-y-3">
-            {summary.missingIndexes.map((idx, i) => (
-              <div key={i} className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-sm text-amber-900 font-mono break-words whitespace-pre-wrap">
-                {idx}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {summary.redFlags.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-red-600 flex items-center gap-1.5 mb-3">
-            <AlertTriangle size={16} />
-            Red Flags & Warnings ({summary.redFlags.length})
-          </h3>
-          <div className="bg-red-50 border border-red-100 rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-red-200">
-              <thead className="bg-red-100/50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase tracking-wider w-1/4">Type</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase tracking-wider">Description</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase tracking-wider w-24">Node ID</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-red-100">
+        {/* RIGHT column — issues, indexes, operations, statement, metrics */}
+        <div className="flex flex-col gap-6">
+          {summary.redFlags.length > 0 && (
+            <div>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <AlertTriangle size={13} className="text-red-500" />
+                Issues ({summary.redFlags.length})
+              </h3>
+              <div className="rounded-lg border border-slate-200 overflow-hidden divide-y divide-slate-100">
                 {summary.redFlags.map((flag, idx) => (
-                  <tr key={idx}>
-                    <td className="px-4 py-2 text-sm font-medium text-red-900">{flag.type}</td>
-                    <td className="px-4 py-2 text-sm text-red-800">{flag.description}</td>
-                    <td className="px-4 py-2 text-sm text-red-600 font-mono">{flag.nodeId || '-'}</td>
-                  </tr>
+                  <div key={idx} className="flex gap-3 px-3 py-2.5 items-start">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 uppercase tracking-wide ${SEVERITY_BADGE[flag.severity]}`}>
+                      {flag.severity}
+                    </span>
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-semibold text-slate-700">{flag.type}</span>
+                      <span className="text-xs text-slate-500 leading-relaxed">{flag.description}</span>
+                    </div>
+                    {flag.nodeId && (
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-auto">#{flag.nodeId}</span>
+                    )}
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <h3 className="text-sm font-medium text-slate-500 mb-3">Key Metrics</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-              <span className="text-sm text-slate-600">Total Nodes</span>
-              <span className="font-semibold text-slate-900">{summary.totalNodes}</span>
+              </div>
             </div>
-            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-              <span className="text-sm text-slate-600">Estimated Subtree Cost</span>
-              <span className="font-semibold text-slate-900">{summary.totalCost.toFixed(4)}</span>
+          )}
+
+          {summary.missingIndexes.length > 0 && (
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xs font-bold text-amber-600 uppercase tracking-widest flex items-center gap-1.5">
+                  <AlertTriangle size={13} />
+                  Missing Indexes ({summary.missingIndexes.length})
+                </h3>
+                <CopyButton text={summary.missingIndexes.join('\n\n')} label="Copy" />
+              </div>
+              <div className="space-y-2">
+                {summary.missingIndexes.map((idx, i) => (
+                  <div key={i} className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-xs text-amber-900 font-mono break-words whitespace-pre-wrap">
+                    {idx}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Operations Breakdown */}
+          <div>
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Operations</h3>
+            <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 max-h-52 overflow-y-auto">
+              <div className="space-y-1.5">
+                {summary.operations.map((op, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">{op.name}</span>
+                    <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600 font-semibold tabular-nums">
+                      {op.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div>
-          <h3 className="text-sm font-medium text-slate-500 mb-3">Operations Breakdown</h3>
-          <div className="bg-slate-50 rounded-lg p-3 max-h-48 overflow-y-auto">
-            <div className="space-y-2">
-              {summary.operations.map((op, idx) => (
-                <div key={idx} className="flex justify-between items-center text-sm">
-                  <span className="text-slate-700">{op.name}</span>
-                  <span className="bg-white px-2 py-1 rounded-md border border-slate-200 text-slate-600 font-medium">
-                    {op.count}
-                  </span>
-                </div>
-              ))}
+          {/* Statement */}
+          {summary.statementText && (
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Statement</h3>
+                <CopyButton text={summary.statementText} label="Copy SQL" />
+              </div>
+              <div className="bg-slate-50 p-3 rounded-lg text-xs text-slate-800 font-mono break-words max-h-40 overflow-y-auto border border-slate-200">
+                {summary.statementText}
+              </div>
+            </div>
+          )}
+
+          {/* Key Metrics */}
+          <div>
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Key Metrics</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-xs text-slate-500">Total Nodes</span>
+                <span className="text-lg font-bold text-slate-800">{summary.totalNodes}</span>
+              </div>
+              <div className="flex flex-col p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-xs text-slate-500">Total Cost</span>
+                <span className="text-lg font-bold text-slate-800">{summary.totalCost.toFixed(4)}</span>
+              </div>
             </div>
           </div>
         </div>

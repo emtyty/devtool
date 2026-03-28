@@ -25,6 +25,7 @@ export interface RedFlag {
   type: string;
   description: string;
   nodeId?: string;
+  severity: 'high' | 'medium' | 'low';
 }
 
 export interface PlanNode {
@@ -33,8 +34,12 @@ export interface PlanNode {
   logicalOp: string;
   objectName?: string;
   estimateRows: number;
+  estimateExecutions: number;
   subtreeCost: number;
+  selfCost: number;
   costPercent: number;
+  selfCostPercent: number;
+  depth: number;
   children: PlanNode[];
 }
 

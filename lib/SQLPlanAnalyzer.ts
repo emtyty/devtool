@@ -27,17 +27,19 @@ export class SQLPlanAnalyzer {
     return children;
   }
 
-  private static buildPlanNode(relOp: Element, totalCost: number): PlanNode {
+  private static buildPlanNode(relOp: Element, totalCost: number, depth = 0): PlanNode {
     const physicalOp = relOp.getAttribute('PhysicalOp') || '';
     const logicalOp = relOp.getAttribute('LogicalOp') || '';
     const nodeId = relOp.getAttribute('NodeId') || '';
     const estimateRows = parseFloat(relOp.getAttribute('EstimateRows') || '0');
     const subtreeCost = parseFloat(relOp.getAttribute('EstimatedTotalSubtreeCost') || '0');
+    const rewinds = parseFloat(relOp.getAttribute('EstimateRewinds') || '0');
+    const rebinds = parseFloat(relOp.getAttribute('EstimateRebinds') || '0');
+    const estimateExecutions = rewinds + rebinds + 1;
 
     let objectName: string | undefined;
     const objectEls = this.getElementsByLocalName(relOp, 'Object');
     for (const obj of objectEls) {
-      // Only take the Object that is a direct-ish child (skip deeply nested ones)
       const table = obj.getAttribute('Table') || '';
       const index = obj.getAttribute('Index') || '';
       if (table) {
@@ -47,7 +49,11 @@ export class SQLPlanAnalyzer {
     }
 
     const childRelOps = this.getDirectChildRelOps(relOp);
-    const children = childRelOps.map(c => this.buildPlanNode(c, totalCost));
+    const children = childRelOps.map(c => this.buildPlanNode(c, totalCost, depth + 1));
+
+    // selfCost = this node's own work (subtreeCost minus all children's subtreeCosts)
+    const childrenSubtreeCost = children.reduce((sum, c) => sum + c.subtreeCost, 0);
+    const selfCost = Math.max(0, subtreeCost - childrenSubtreeCost);
 
     return {
       nodeId,
@@ -55,15 +61,20 @@ export class SQLPlanAnalyzer {
       logicalOp,
       objectName,
       estimateRows,
+      estimateExecutions,
       subtreeCost,
+      selfCost,
       costPercent: totalCost > 0 ? (subtreeCost / totalCost) * 100 : 0,
+      selfCostPercent: totalCost > 0 ? (selfCost / totalCost) * 100 : 0,
+      depth,
       children,
     };
   }
 
+  // Post-order traversal, rightmost child first → reflects SQL right-to-left execution order
   private static flattenExecutionPath(node: PlanNode): PlanNode[] {
     const result: PlanNode[] = [];
-    for (const child of node.children) {
+    for (const child of [...node.children].reverse()) {
       result.push(...this.flattenExecutionPath(child));
     }
     result.push(node);
@@ -151,15 +162,14 @@ export class SQLPlanAnalyzer {
     const stmtSimple = this.getElementsByLocalName(doc, 'StmtSimple')[0];
     const statementText = stmtSimple ? stmtSimple.getAttribute('StatementText') || '' : '';
 
+    // Missing index suggestions
     const missingIndexes: string[] = [];
     this.getElementsByLocalName(doc, 'MissingIndex').forEach(node => {
       const schema = node.getAttribute('Schema') || '';
       const table = node.getAttribute('Table') || '';
-
       const equalityCols: string[] = [];
       const inequalityCols: string[] = [];
       const includeCols: string[] = [];
-
       this.getElementsByLocalName(node, 'ColumnGroup').forEach(cg => {
         const usage = cg.getAttribute('Usage');
         const cols = this.getElementsByLocalName(cg, 'Column').map(c => c.getAttribute('Name') || '');
@@ -167,7 +177,6 @@ export class SQLPlanAnalyzer {
         if (usage === 'INEQUALITY') inequalityCols.push(...cols);
         if (usage === 'INCLUDE') includeCols.push(...cols);
       });
-
       let indexStr = `CREATE NONCLUSTERED INDEX [<Name of Missing Index, sysname,>] ON ${schema}.${table}`;
       const indexCols = [...equalityCols, ...inequalityCols];
       if (indexCols.length > 0) indexStr += ` (${indexCols.join(', ')})`;
@@ -184,6 +193,10 @@ export class SQLPlanAnalyzer {
       ? this.flattenExecutionPath(this.buildPlanNode(relOps[0], totalCost))
       : [];
 
+    // DOP / parallelism info
+    const queryPlan = this.getElementsByLocalName(doc, 'QueryPlan')[0];
+    const dop = queryPlan ? parseInt(queryPlan.getAttribute('DegreeOfParallelism') || '1', 10) : 1;
+
     const opsMap: Record<string, number> = {};
     const redFlags: RedFlag[] = [];
 
@@ -197,51 +210,54 @@ export class SQLPlanAnalyzer {
       const opName = physicalOp || logicalOp;
       if (opName) opsMap[opName] = (opsMap[opName] || 0) + 1;
 
+      // High-cost operator (using subtree cost here intentionally — root-level exclusion)
       if (totalCost > 0 && nodeId !== '0' && subtreeCost / totalCost > 0.2) {
         redFlags.push({
           type: 'High-Cost Operator',
-          description: `${opName} represents > 20% of the total plan cost (${(subtreeCost / totalCost * 100).toFixed(1)}%).`,
+          description: `${opName} accounts for ${(subtreeCost / totalCost * 100).toFixed(1)}% of total plan cost (subtree).`,
           nodeId,
+          severity: subtreeCost / totalCost > 0.5 ? 'high' : 'medium',
         });
       }
 
+      // Scans & lookups
       if (physicalOp === 'Table Scan') {
-        redFlags.push({ type: 'Operator Type', description: 'Table Scan detected. Consider adding an index.', nodeId });
-        if (estimateRows > 1000) {
-          redFlags.push({ type: 'Access Path', description: `TableScan on a table with > 1000 estimated rows (${estimateRows}).`, nodeId });
-        }
+        redFlags.push({ type: 'Table Scan', description: 'Full table scan — no usable index. Add a covering index.', nodeId, severity: 'high' });
       } else if (physicalOp === 'Clustered Index Scan') {
-        redFlags.push({ type: 'Operator Type', description: 'Clustered Index Scan detected. May indicate missing nonclustered index or non-SARGable predicate.', nodeId });
-      } else if (logicalOp === 'Key Lookup' || physicalOp === 'Key Lookup') {
-        redFlags.push({ type: 'Operator Type', description: 'Key Lookup detected. Consider adding included columns to the nonclustered index.', nodeId });
+        redFlags.push({ type: 'Index Scan', description: 'Clustered index scan — may indicate a missing nonclustered index or non-SARGable predicate.', nodeId, severity: 'high' });
+      } else if (physicalOp === 'Key Lookup' || logicalOp === 'Key Lookup') {
+        redFlags.push({ type: 'Key Lookup', description: 'Key lookup against the clustered index. Add included columns to the nonclustered index to eliminate this.', nodeId, severity: 'high' });
+      } else if (physicalOp === 'Index Scan') {
+        redFlags.push({ type: 'Index Scan', description: `Nonclustered index scan (${estimateRows.toLocaleString()} rows). Check for non-SARGable predicates.`, nodeId, severity: estimateRows > 10000 ? 'high' : 'medium' });
       }
 
-      if (physicalOp === 'Index Scan' && estimateRows > 10000) {
-        redFlags.push({ type: 'Access Path', description: `Index Scan on a large table (${estimateRows} estimated rows).`, nodeId });
-      }
-
-      if (estimateRows > 100000) {
-        redFlags.push({ type: 'Data Movement', description: `High EstimateRows (${estimateRows}) indicating large data sets being moved.`, nodeId });
-      }
-
+      // TempDB spills — check ALL operators
       const warnings = this.getElementsByLocalName(op, 'Warnings');
-      if (warnings.length > 0 && (physicalOp === 'Sort' || physicalOp === 'Hash Match')) {
+      if (warnings.length > 0) {
         const hasSpill = warnings.some(w =>
           w.hasAttribute('SpillToTempDb') ||
           this.getElementsByLocalName(w, 'HashSpillDetails').length > 0 ||
           this.getElementsByLocalName(w, 'SortSpillDetails').length > 0
         );
         if (hasSpill) {
-          redFlags.push({ type: 'Memory/CPU', description: `${physicalOp} operator has warnings indicating TempDB spills.`, nodeId });
+          redFlags.push({ type: 'TempDB Spill', description: `${opName} is spilling to TempDB — insufficient memory grant or very large data set.`, nodeId, severity: 'high' });
+        }
+
+        // Missing join predicate
+        const hasMissingJoin = warnings.some(w => w.hasAttribute('NoJoinPredicate'));
+        if (hasMissingJoin) {
+          redFlags.push({ type: 'Missing Join Predicate', description: 'Join has no predicate — this is a cross join or accidental cartesian product.', nodeId, severity: 'high' });
         }
       }
 
+      // Implicit conversion
       this.getElementsByLocalName(op, 'ScalarOperator').forEach(so => {
         if ((so.getAttribute('ScalarString') || '').includes('CONVERT_IMPLICIT')) {
-          redFlags.push({ type: 'Implicit Conversion', description: 'Scalar Operator contains CONVERT_IMPLICIT, which breaks index SARGability.', nodeId });
+          redFlags.push({ type: 'Implicit Conversion', description: 'CONVERT_IMPLICIT detected — data type mismatch prevents index use. Fix column types or cast explicitly.', nodeId, severity: 'high' });
         }
       });
 
+      // Cardinality mismatch — ratio-based (no delta gate)
       let actualRows = 0;
       let hasActualRows = false;
       this.getElementsByLocalName(op, 'RunTimeCountersPerThread').forEach(rtc => {
@@ -250,52 +266,55 @@ export class SQLPlanAnalyzer {
           hasActualRows = true;
         }
       });
-
-      if (hasActualRows) {
-        const delta = Math.abs(estimateRows - actualRows);
-        if (delta > 1000 && (actualRows > estimateRows * 2 || estimateRows > actualRows * 2)) {
-          redFlags.push({ type: 'Cardinality Mismatch', description: `Large delta between EstimateRows (${estimateRows}) and ActualRows (${actualRows}). Indicates stale statistics.`, nodeId });
+      if (hasActualRows && estimateRows > 0) {
+        const ratio = actualRows > estimateRows ? actualRows / estimateRows : estimateRows / actualRows;
+        if (ratio >= 5) {
+          redFlags.push({
+            type: 'Cardinality Mismatch',
+            description: `Estimated ${estimateRows.toLocaleString()} rows, actual ${actualRows.toLocaleString()} rows (${ratio.toFixed(0)}× off). Update statistics.`,
+            nodeId,
+            severity: ratio >= 100 ? 'high' : 'medium',
+          });
         }
       }
 
+      // Nested loops join strategy
       if (physicalOp === 'Nested Loops') {
         const nestedLoops = this.getElementsByLocalName(op, 'NestedLoops')[0];
         if (nestedLoops) {
           const childRelOps: Element[] = [];
-          const children = nestedLoops.children;
-          for (let i = 0; i < children.length; i++) {
-            if (children[i].localName === 'RelOp' || children[i].tagName.endsWith('RelOp')) {
-              childRelOps.push(children[i]);
-            }
+          const ch = nestedLoops.children;
+          for (let i = 0; i < ch.length; i++) {
+            if (ch[i].localName === 'RelOp' || ch[i].tagName.endsWith('RelOp')) childRelOps.push(ch[i]);
           }
           if (childRelOps.length === 2) {
             const outerRows = parseFloat(childRelOps[0].getAttribute('EstimateRows') || '0');
             const innerRows = parseFloat(childRelOps[1].getAttribute('EstimateRows') || '0');
             if (outerRows > 10000 && outerRows > innerRows * 100) {
-              redFlags.push({ type: 'Join Strategy', description: `Nested Loop where outer input (${outerRows}) is significantly larger than inner input (${innerRows}).`, nodeId });
+              redFlags.push({ type: 'Join Strategy', description: `Nested Loops: outer has ${outerRows.toLocaleString()} rows vs inner ${innerRows.toLocaleString()} — consider a Hash or Merge join.`, nodeId, severity: 'medium' });
             }
           }
         }
       }
     });
 
-    this.getElementsByLocalName(doc, 'IndexScan').forEach(scan => {
-      if (scan.getAttribute('Lookup') === '1' || scan.getAttribute('Lookup') === 'true') {
-        let parentRelOp: Element | null = scan;
-        while (parentRelOp && parentRelOp.localName !== 'RelOp' && !parentRelOp.tagName.endsWith('RelOp')) {
-          parentRelOp = parentRelOp.parentElement;
-        }
-        redFlags.push({
-          type: 'Operator Type',
-          description: 'Key Lookup detected. Consider adding included columns to the nonclustered index.',
-          nodeId: parentRelOp ? parentRelOp.getAttribute('NodeId') || '' : '',
-        });
-      }
+    // Parallelism info flag
+    if (dop > 1) {
+      redFlags.push({ type: 'Parallelism', description: `Plan runs with DOP ${dop}. Verify this is intentional and that MAXDOP settings are appropriate.`, severity: 'low' });
+    }
+
+    // Deduplicate (same type + nodeId)
+    const seen = new Set<string>();
+    const uniqueRedFlags = redFlags.filter(v => {
+      const key = `${v.type}|${v.nodeId ?? ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
 
-    const uniqueRedFlags = redFlags.filter((v, i, a) =>
-      a.findIndex(t => t.description === v.description && t.nodeId === v.nodeId) === i
-    );
+    // Sort: high → medium → low
+    const severityOrder = { high: 0, medium: 1, low: 2 };
+    uniqueRedFlags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
     return {
       totalNodes: relOps.length,
