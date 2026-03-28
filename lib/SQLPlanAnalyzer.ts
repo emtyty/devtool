@@ -1,4 +1,4 @@
-import type { PlanSummary, RedFlag } from '../types';
+import type { PlanSummary, PlanNode, RedFlag } from '../types';
 
 export class SQLPlanAnalyzer {
   private static getElementsByLocalName(node: Element | Document, name: string): Element[] {
@@ -11,8 +11,67 @@ export class SQLPlanAnalyzer {
     return result;
   }
 
+  private static getDirectChildRelOps(relOp: Element): Element[] {
+    const children: Element[] = [];
+    function traverse(node: Element) {
+      for (const child of Array.from(node.children)) {
+        const localName = child.localName || child.tagName.split(':').pop();
+        if (localName === 'RelOp') {
+          children.push(child);
+        } else {
+          traverse(child);
+        }
+      }
+    }
+    traverse(relOp);
+    return children;
+  }
+
+  private static buildPlanNode(relOp: Element, totalCost: number): PlanNode {
+    const physicalOp = relOp.getAttribute('PhysicalOp') || '';
+    const logicalOp = relOp.getAttribute('LogicalOp') || '';
+    const nodeId = relOp.getAttribute('NodeId') || '';
+    const estimateRows = parseFloat(relOp.getAttribute('EstimateRows') || '0');
+    const subtreeCost = parseFloat(relOp.getAttribute('EstimatedTotalSubtreeCost') || '0');
+
+    let objectName: string | undefined;
+    const objectEls = this.getElementsByLocalName(relOp, 'Object');
+    for (const obj of objectEls) {
+      // Only take the Object that is a direct-ish child (skip deeply nested ones)
+      const table = obj.getAttribute('Table') || '';
+      const index = obj.getAttribute('Index') || '';
+      if (table) {
+        objectName = index ? `${table}.${index}` : table;
+        break;
+      }
+    }
+
+    const childRelOps = this.getDirectChildRelOps(relOp);
+    const children = childRelOps.map(c => this.buildPlanNode(c, totalCost));
+
+    return {
+      nodeId,
+      physicalOp,
+      logicalOp,
+      objectName,
+      estimateRows,
+      subtreeCost,
+      costPercent: totalCost > 0 ? (subtreeCost / totalCost) * 100 : 0,
+      children,
+    };
+  }
+
+  private static flattenExecutionPath(node: PlanNode): PlanNode[] {
+    const result: PlanNode[] = [];
+    for (const child of node.children) {
+      result.push(...this.flattenExecutionPath(child));
+    }
+    result.push(node);
+    return result;
+  }
+
   static getMetrics(xmlString: string) {
-    let pruned = xmlString.replace(/xmlns(:\w+)?=(['"])[^\2]*?\2/g, '');
+    let pruned = xmlString.replace(/xmlns(:\w+)?=(?:"[^"]*"|'[^']*')/g, '');
     pruned = pruned.replace(/<\/?\w+:/g, (match) => match.startsWith('</') ? '</' : '<');
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(pruned, 'text/xml');
@@ -51,7 +110,7 @@ export class SQLPlanAnalyzer {
 
   static pruneExecutionPlan(xmlString: string): string {
     try {
-      let pruned = xmlString.replace(/xmlns(:\w+)?=(['"])[^\2]*?\2/g, '');
+      let pruned = xmlString.replace(/xmlns(:\w+)?=(?:"[^"]*"|'[^']*')/g, '');
       pruned = pruned.replace(/<\/?\w+:/g, (match) => match.startsWith('</') ? '</' : '<');
 
       const parser = new DOMParser();
@@ -120,6 +179,10 @@ export class SQLPlanAnalyzer {
     const totalCost = relOps.length > 0
       ? parseFloat(relOps[0].getAttribute('EstimatedTotalSubtreeCost') || '0')
       : 0;
+
+    const executionPath = relOps.length > 0
+      ? this.flattenExecutionPath(this.buildPlanNode(relOps[0], totalCost))
+      : [];
 
     const opsMap: Record<string, number> = {};
     const redFlags: RedFlag[] = [];
@@ -243,6 +306,7 @@ export class SQLPlanAnalyzer {
       statementText,
       missingIndexes,
       redFlags: uniqueRedFlags,
+      executionPath,
     };
   }
 

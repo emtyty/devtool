@@ -236,18 +236,10 @@
   height: 14px;
 }
 
-/* Fix for Query Plan Viewer — scale SVG to fit, no scrollbar */
-.qp-root {
-  width: 100% !important;
-  display: block !important;
-  overflow: hidden !important;
-}
-
+/* Query Plan Viewer — let the library keep its native inline-block/relative layout.
+   The scroll container (.overflow-auto) handles overflow; don't clip here. */
 .qp-root svg {
-  width: 100% !important;
-  height: auto !important;
-  max-width: 100% !important;
-  display: block !important;
+  overflow: visible !important; /* arrow paths must not be clipped at SVG boundary */
 }
 
 /* Remove blank lines injected before/around the plan */

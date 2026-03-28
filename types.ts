@@ -27,6 +27,17 @@ export interface RedFlag {
   nodeId?: string;
 }
 
+export interface PlanNode {
+  nodeId: string;
+  physicalOp: string;
+  logicalOp: string;
+  objectName?: string;
+  estimateRows: number;
+  subtreeCost: number;
+  costPercent: number;
+  children: PlanNode[];
+}
+
 export interface PlanSummary {
   totalNodes: number;
   operations: { name: string; count: number }[];
@@ -34,6 +45,7 @@ export interface PlanSummary {
   statementText: string;
   missingIndexes: string[];
   redFlags: RedFlag[];
+  executionPath: PlanNode[];
 }
 
 // --- Mock Data Generator ---
