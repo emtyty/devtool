@@ -37,14 +37,68 @@ export class SQLPlanAnalyzer {
     const rebinds = parseFloat(relOp.getAttribute('EstimateRebinds') || '0');
     const estimateExecutions = rewinds + rebinds + 1;
 
+    // Capture all raw XML attributes for tooltip display
+    const attributes: Record<string, string> = {};
+    for (let i = 0; i < relOp.attributes.length; i++) {
+      const a = relOp.attributes[i];
+      attributes[a.localName || a.name] = a.value;
+    }
+
     let objectName: string | undefined;
+    let objectFull: string | undefined;
     const objectEls = this.getElementsByLocalName(relOp, 'Object');
     for (const obj of objectEls) {
-      const table = obj.getAttribute('Table') || '';
-      const index = obj.getAttribute('Index') || '';
+      const db     = obj.getAttribute('Database') || '';
+      const schema = obj.getAttribute('Schema')   || '';
+      const table  = obj.getAttribute('Table')    || '';
+      const index  = obj.getAttribute('Index')    || '';
+      const alias  = obj.getAttribute('Alias')    || '';
       if (table) {
         objectName = index ? `${table}.${index}` : table;
+        const parts = [db, schema, table, index, alias].filter(Boolean).map(v => `[${v}]`);
+        objectFull = parts.join('.');
         break;
+      }
+    }
+
+    // Output list
+    const outputList: string[] = [];
+    const outputListEl = this.getElementsByLocalName(relOp, 'OutputList')[0];
+    if (outputListEl) {
+      this.getElementsByLocalName(outputListEl, 'ColumnReference').forEach(cr => {
+        const parts = ['Database', 'Schema', 'Table', 'Alias', 'Column']
+          .map(a => cr.getAttribute(a))
+          .filter((v): v is string => !!v)
+          .map(v => `[${v}]`);
+        if (parts.length) outputList.push(parts.join('.'));
+      });
+    }
+
+    // Inner operator element (first child of RelOp that is not a known wrapper)
+    const SKIP_INNER = new Set([
+      'OutputList', 'RunTimeInformation', 'Warnings', 'MissingIndexes',
+      'StatisticsInfo', 'MemoryFractions', 'OptimizerHardwareDependentProperties',
+      'TraceFlags', 'WaitStats', 'QueryTimeStats',
+    ]);
+    let innerEl: Element | undefined;
+    for (const child of Array.from(relOp.children)) {
+      const localName = child.localName || child.tagName.split(':').pop() || '';
+      if (!SKIP_INNER.has(localName)) { innerEl = child; break; }
+    }
+
+    let ordered: boolean | undefined;
+    let estimatedRowsRead: number | undefined;
+    let predicate: string | undefined;
+    if (innerEl) {
+      const orderedVal = innerEl.getAttribute('Ordered');
+      if (orderedVal !== null) ordered = orderedVal === 'true' || orderedVal === '1';
+      const rr = innerEl.getAttribute('EstimatedRowsRead');
+      if (rr !== null) estimatedRowsRead = parseFloat(rr);
+      const predEl = this.getElementsByLocalName(innerEl, 'Predicate')[0];
+      if (predEl) {
+        const so = this.getElementsByLocalName(predEl, 'ScalarOperator')[0];
+        const ss = so?.getAttribute('ScalarString');
+        if (ss) predicate = ss;
       }
     }
 
@@ -60,6 +114,7 @@ export class SQLPlanAnalyzer {
       physicalOp,
       logicalOp,
       objectName,
+      objectFull,
       estimateRows,
       estimateExecutions,
       subtreeCost,
@@ -68,6 +123,11 @@ export class SQLPlanAnalyzer {
       selfCostPercent: totalCost > 0 ? (selfCost / totalCost) * 100 : 0,
       depth,
       children,
+      attributes,
+      outputList: outputList.length > 0 ? outputList : undefined,
+      predicate,
+      ordered,
+      estimatedRowsRead,
     };
   }
 
@@ -189,9 +249,8 @@ export class SQLPlanAnalyzer {
       ? parseFloat(relOps[0].getAttribute('EstimatedTotalSubtreeCost') || '0')
       : 0;
 
-    const executionPath = relOps.length > 0
-      ? this.flattenExecutionPath(this.buildPlanNode(relOps[0], totalCost))
-      : [];
+    const rootNode = relOps.length > 0 ? this.buildPlanNode(relOps[0], totalCost) : null;
+    const executionPath = rootNode ? this.flattenExecutionPath(rootNode) : [];
 
     // DOP / parallelism info
     const queryPlan = this.getElementsByLocalName(doc, 'QueryPlan')[0];
@@ -326,6 +385,7 @@ export class SQLPlanAnalyzer {
       missingIndexes,
       redFlags: uniqueRedFlags,
       executionPath,
+      planTree: rootNode,
     };
   }
 

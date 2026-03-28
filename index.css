@@ -82,6 +82,18 @@
 .dark .border-slate-200\/50 { border-color: rgba(30,45,69,0.5) !important; }
 .dark .border-red-200       { border-color: rgba(239,68,68,0.25) !important; }
 .dark .border-amber-100     { border-color: rgba(245,158,11,0.15) !important; }
+.dark .border-amber-200     { border-color: rgba(245,158,11,0.25) !important; }
+
+/* ── Plan Summary dark mode — missing color overrides ── */
+.dark .text-slate-900  { color: #f1f5f9 !important; }
+.dark .text-orange-700 { color: #fdba74 !important; }
+.dark .text-amber-900  { color: #fcd34d !important; }
+
+.dark .bg-yellow-50   { background-color: rgba(234,179,8,0.07)    !important; }
+.dark .bg-red-100     { background-color: rgba(239,68,68,0.15)    !important; }
+.dark .bg-orange-100  { background-color: rgba(249,115,22,0.15)   !important; }
+.dark .bg-yellow-100  { background-color: rgba(234,179,8,0.15)    !important; }
+.dark .bg-emerald-100 { background-color: rgba(16,185,129,0.15)   !important; }
 
 /* ── Specific text overrides ── */
 .dark .text-slate-300   { color: #475569 !important; }
@@ -236,15 +248,6 @@
   height: 14px;
 }
 
-/* Query Plan Viewer — let the library keep its native inline-block/relative layout.
-   The scroll container (.overflow-auto) handles overflow; don't clip here. */
-.qp-root svg {
-  overflow: visible !important; /* arrow paths must not be clipped at SVG boundary */
-}
-
-/* Remove blank lines injected before/around the plan */
-.qp-root br { display: none !important; }
-.qp-root > *:first-child { margin-top: 0 !important; padding-top: 0 !important; }
 
 /* ══════════════════════════════════════════
    DARK MODE — Markdown body
@@ -282,6 +285,39 @@
 .dark .markdown-body td            { color: #94a3b8; border-bottom-color: #131c2e; }
 .dark .markdown-body tbody tr:hover { background: #162032; }
 .dark .markdown-body input[type="checkbox"] { accent-color: #60a5fa; }
+
+/* ── html-query-plan (Classic tab) overrides ── */
+.qp-root svg { overflow: visible !important; }
+.qp-root br { display: none !important; }
+.qp-root > *:first-child { margin-top: 0 !important; padding-top: 0 !important; }
+
+/* ── Classic tab — dark mode ── */
+.dark div.qp-node                { background-color: #1e2d45 !important; color: #e2e8f0 !important; border-color: #2d4470 !important; }
+.dark .qp-statement-header       { background-color: #162032 !important; color: #e2e8f0 !important; border-color: #2d4470 !important; }
+.dark .qp-tt                     { background-color: #131c2e !important; color: #cbd5e1 !important; border-color: #1e2d45 !important; }
+.dark .qp-tt td, .dark .qp-tt th { border-bottom-color: #1e2d45 !important; color: #cbd5e1 !important; }
+.dark .qp-tt-header              { color: #e2e8f0 !important; }
+.dark .qp-bold                   { color: #e2e8f0 !important; }
+.dark .missing-index             { color: #4ade80 !important; }
+
+/* ── Modern tab — SVG arrows ── */
+.qp-modern-arrow { fill: #E3E3E3; stroke: #505050; }
+.dark .qp-modern-arrow { fill: #2a3f5f; stroke: #4a6a8a; }
+
+/* ── Modern tab — missing Tailwind dark overrides ── */
+.dark .bg-orange-50  { background-color: rgba(249,115,22,0.08)  !important; }
+.dark .bg-violet-50  { background-color: rgba(139,92,246,0.08)  !important; }
+
+.dark .border-red-300     { border-color: rgba(239,68,68,0.35)    !important; }
+.dark .border-orange-300  { border-color: rgba(249,115,22,0.35)   !important; }
+.dark .border-emerald-300 { border-color: rgba(16,185,129,0.35)   !important; }
+.dark .border-blue-300    { border-color: rgba(59,130,246,0.35)   !important; }
+.dark .border-violet-300  { border-color: rgba(139,92,246,0.35)   !important; }
+
+.dark .text-red-500    { color: #f87171 !important; }
+.dark .text-orange-500 { color: #fb923c !important; }
+.dark .text-blue-500   { color: #60a5fa !important; }
+.dark .text-violet-500 { color: #a78bfa !important; }
 
 /* ══════════════════════════════════════════
    DARK MODE — Theme toggle animation

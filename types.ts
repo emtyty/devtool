@@ -33,6 +33,7 @@ export interface PlanNode {
   physicalOp: string;
   logicalOp: string;
   objectName?: string;
+  objectFull?: string;
   estimateRows: number;
   estimateExecutions: number;
   subtreeCost: number;
@@ -41,6 +42,11 @@ export interface PlanNode {
   selfCostPercent: number;
   depth: number;
   children: PlanNode[];
+  attributes: Record<string, string>;
+  outputList?: string[];
+  predicate?: string;
+  ordered?: boolean;
+  estimatedRowsRead?: number;
 }
 
 export interface PlanSummary {
@@ -51,6 +57,7 @@ export interface PlanSummary {
   missingIndexes: string[];
   redFlags: RedFlag[];
   executionPath: PlanNode[];
+  planTree: PlanNode | null;
 }
 
 // --- Mock Data Generator ---
