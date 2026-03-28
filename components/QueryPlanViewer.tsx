@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import * as qp from 'html-query-plan';
-import 'html-query-plan/css/qp.css';
 import { FileCode2, Play, AlertTriangle, Sparkles, Key, Eye, EyeOff, X, Check, ChevronDown, ChevronRight, Upload } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import Markdown from 'react-markdown';
+import * as qp from 'html-query-plan';
+import 'html-query-plan/css/qp.css';
 import { SQLPlanAnalyzer } from '../lib/SQLPlanAnalyzer';
 import type { PlanSummary, PlanNode } from '../types';
 import CopyButton from './CopyButton';
+import { PlanTreeRenderer } from './PlanTreeRenderer';
 
 const AI_MODEL = 'gemini-2.5-pro-preview-06-05';
 const LS_KEY = 'devtoolkit_gemini_key';
@@ -138,12 +139,26 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
   const [singleAnalysis, setSingleAnalysis] = useState<string | null>(null);
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasRendered, setHasRendered] = useState(false);
   const [summary, setSummary] = useState<PlanSummary | null>(null);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [geminiKey, setGeminiKey] = useState<string>(() => localStorage.getItem(LS_KEY) || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'classic' | 'modern'>('classic');
+  const [classicXml, setClassicXml] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Re-render Classic plan whenever switching to Classic tab or new XML is loaded
+  useEffect(() => {
+    if (viewMode !== 'classic' || !classicXml || !containerRef.current) return;
+    const el = containerRef.current;
+    el.innerHTML = '';
+    qp.showPlan(el, classicXml, { jsTooltips: true });
+    // Double-RAF so SVG arrows are drawn after layout
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      qp.showPlan(el, classicXml, { jsTooltips: true });
+    }));
+  }, [viewMode, classicXml]);
 
   const handleFileImport = (e: { target: HTMLInputElement }) => {
     const file = e.target.files?.[0];
@@ -227,12 +242,9 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
   };
 
   const handleRender = () => {
-    if (!containerRef.current) return;
-
     setError(null);
-    containerRef.current.innerHTML = '';
-    setHasRendered(false);
     setSummary(null);
+    setActiveNodeId(null);
 
     if (!xmlInput.trim()) return;
 
@@ -258,33 +270,10 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
         throw new Error('Missing <ShowPlanXML> root element. This does not appear to be a valid SQL execution plan.');
       }
 
-      const renderFn = qp.showPlan || (qp as any).default?.showPlan;
-      if (!renderFn) throw new Error('showPlan function not found in html-query-plan module');
-
-      renderFn(containerRef.current, xmlToRender, { jsTooltips: true });
-
-      if (!containerRef.current.querySelector('.qp-root')) {
-        throw new Error('Rendered plan is empty. The XML might be structurally invalid for a SQL Execution Plan.');
-      }
-
-      setHasRendered(true);
+      setClassicXml(xmlToRender);
       setSummary(SQLPlanAnalyzer.extractSummary(xmlToRender));
-
-      // drawLines() inside showPlan uses getBoundingClientRect() synchronously before
-      // the browser has finished laying out the freshly injected DOM, so SVG arrow
-      // coordinates are all zero. Re-invoke after two animation frames to let layout settle.
-      const container = containerRef.current;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (container?.querySelector('.qp-root')) {
-          renderFn(container, xmlToRender, { jsTooltips: false });
-        }
-      }));
     } catch (err: unknown) {
-      let message = err instanceof Error ? err.message : 'Failed to parse or render the execution plan XML.';
-      if (message.includes('getBoundingClientRect') || message.includes('root is null')) {
-        message = 'The provided XML is not a valid SQL execution plan or is missing required elements.';
-      }
-      setError(message);
+      setError(err instanceof Error ? err.message : 'Failed to parse the execution plan XML.');
       setSummary(null);
     }
   };
@@ -379,20 +368,63 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
           {singleAnalysis && <AiAnalysisPanel analysis={singleAnalysis} />}
 
           <div className="flex flex-col gap-2">
-            <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rendered Plan</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rendered Plan</h2>
+              {classicXml && (
+                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewMode('classic')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      viewMode === 'classic'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Classic
+                  </button>
+                  <button
+                    onClick={() => setViewMode('modern')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      viewMode === 'modern'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Modern
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="overflow-auto p-4 bg-white min-h-[400px]">
-                <div ref={containerRef} />
-                {!hasRendered && (
+              {/* Classic container — always mounted so containerRef stays valid */}
+              <div
+                style={{ display: viewMode === 'classic' ? 'block' : 'none' }}
+                className="overflow-auto p-4 bg-white min-h-[400px]"
+              >
+                {!classicXml && (
                   <div className="h-96 flex items-center justify-center text-slate-400 text-sm italic">
                     No plan rendered yet. Paste XML or import a .sqlplan file and click Render.
                   </div>
                 )}
+                <div ref={containerRef} />
               </div>
+              {/* Modern container */}
+              {viewMode === 'modern' && (
+                <div className="overflow-auto p-4 bg-white min-h-[400px]">
+                  {summary?.planTree
+                    ? <PlanTreeRenderer root={summary.planTree} redFlags={summary.redFlags} activeNodeId={activeNodeId} />
+                    : (
+                      <div className="h-96 flex items-center justify-center text-slate-400 text-sm italic">
+                        No plan rendered yet. Paste XML or import a .sqlplan file and click Render.
+                      </div>
+                    )
+                  }
+                </div>
+              )}
             </div>
           </div>
 
-          {summary && <PlanSummaryPanel summary={summary} />}
+          {summary && <PlanSummaryPanel summary={summary} onFlagClick={id => setActiveNodeId(id)} />}
         </div>
       </div>
     </>
@@ -489,7 +521,7 @@ function ExecutionPathPanel({ nodes }: { nodes: PlanNode[] }) {
                 {isOpen ? <ChevronDown size={13} className="text-slate-400 shrink-0" /> : <ChevronRight size={13} className="text-slate-400 shrink-0" />}
               </button>
               {isOpen && (
-                <div className="px-4 pb-2.5 pt-1 grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono bg-white/70 border-t border-slate-100">
+                <div className="px-4 pb-2.5 pt-1 grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono bg-slate-50 border-t border-slate-100">
                   <span><span className="text-slate-400">Operator Cost: </span><span className="text-slate-700">{node.selfCost.toFixed(6)}</span> <span className="text-slate-400">({node.selfCostPercent.toFixed(1)}%)</span></span>
                   <span><span className="text-slate-400">Subtree Cost: </span><span className="text-slate-700">{node.subtreeCost.toFixed(6)}</span></span>
                   <span><span className="text-slate-400">Est. Rows: </span><span className="text-slate-700">{node.estimateRows.toLocaleString()}</span></span>
@@ -511,7 +543,7 @@ const SEVERITY_BADGE: Record<string, string> = {
   low: 'bg-slate-100 text-slate-500',
 };
 
-function PlanSummaryPanel({ summary }: { summary: PlanSummary }) {
+function PlanSummaryPanel({ summary, onFlagClick }: { summary: PlanSummary; onFlagClick?: (nodeId: string) => void }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-900 mb-5">Plan Summary</h2>
@@ -534,7 +566,11 @@ function PlanSummaryPanel({ summary }: { summary: PlanSummary }) {
               </h3>
               <div className="rounded-lg border border-slate-200 overflow-hidden divide-y divide-slate-100">
                 {summary.redFlags.map((flag, idx) => (
-                  <div key={idx} className="flex gap-3 px-3 py-2.5 items-start">
+                  <div
+                    key={idx}
+                    className={`flex gap-3 px-3 py-2.5 items-start ${flag.nodeId && onFlagClick ? 'cursor-pointer hover:bg-blue-50 transition-colors' : ''}`}
+                    onClick={() => flag.nodeId && onFlagClick?.(flag.nodeId)}
+                  >
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 uppercase tracking-wide ${SEVERITY_BADGE[flag.severity]}`}>
                       {flag.severity}
                     </span>
