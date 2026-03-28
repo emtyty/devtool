@@ -178,10 +178,16 @@ const App: React.FC = () => {
 
   const [pendingData, setPendingData] = useState<string | null>(null);
 
+  // ── Auto-hide header on scroll (mobile) ──
+  const [barsHidden, setBarsHidden] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   const switchMode = useCallback((next: AppMode) => {
     setPendingData(null);
     setMode(next);
     setSidebarOpen(false);
+    scrollRef.current?.scrollTo(0, 0);
+    setBarsHidden(false);
     const slug = MODE_TO_SLUG[next];
     window.history.pushState({}, '', slug ? `/${slug}` : '/');
   }, []);
@@ -233,6 +239,34 @@ const App: React.FC = () => {
   const dragIndex = useRef<number | null>(null);
   const { favorites, toggleFavorite, reorder } = useFavorites();
 
+  const lastScrollY = useRef(0);
+  const scrollDelta = useRef(0);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const THRESHOLD = 40;
+    const onScroll = () => {
+      const y = el.scrollTop;
+      const delta = y - lastScrollY.current;
+      // Ignore tiny movements (< 2px) — prevents bounce/flicker at edges
+      if (Math.abs(delta) < 2) return;
+      // Near top — always show
+      if (y < 60) { setBarsHidden(false); scrollDelta.current = 0; lastScrollY.current = y; return; }
+      // Near bottom — freeze state (prevents iOS bounce flicker)
+      const nearBottom = el.scrollHeight - el.clientHeight - y < 30;
+      if (nearBottom) { lastScrollY.current = y; return; }
+      // Accumulate scroll delta in same direction, reset on direction change
+      if ((delta > 0 && scrollDelta.current < 0) || (delta < 0 && scrollDelta.current > 0)) scrollDelta.current = 0;
+      scrollDelta.current += delta;
+      if (scrollDelta.current > THRESHOLD) setBarsHidden(true);
+      else if (scrollDelta.current < -THRESHOLD) setBarsHidden(false);
+      lastScrollY.current = y;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
   useEffect(() => {
     fetch(zeroperlWasmUrl).catch(console.error);
   }, []);
@@ -255,10 +289,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-dvh flex flex-col selection:bg-blue-500/30">
-      {/* Safe area spacer for iPhone notch/Dynamic Island */}
-      <div className="shrink-0 bg-white/80 dark:bg-[#131c2e]/85 backdrop-blur-xl z-50 h-[env(safe-area-inset-top)]" />
-      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between">
+    <div className="h-dvh flex flex-col selection:bg-blue-500/30 pt-[env(safe-area-inset-top)]">
+      <header className={`no-print border-b border-slate-200 glass z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between fixed lg:static top-[env(safe-area-inset-top)] left-0 right-0 lg:shrink-0 transition-transform duration-300 ${barsHidden && !sidebarOpen ? '-translate-y-[calc(100%+env(safe-area-inset-top))] lg:translate-y-0' : 'translate-y-0'}`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(prev => !prev)}
@@ -294,16 +326,16 @@ const App: React.FC = () => {
         </button>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className={`flex flex-1 overflow-hidden transition-[padding] duration-300 lg:pt-0 ${barsHidden && !sidebarOpen ? 'pt-0' : 'pt-[57px]'}`}>
         {/* Mobile overlay backdrop */}
         {sidebarOpen && (
           <div
-            className="lg:hidden fixed inset-0 bg-black/40 z-40"
+            className="lg:hidden fixed top-[env(safe-area-inset-top)] bottom-0 left-0 right-0 bg-black/40 z-40"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
-        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static inset-y-0 left-0 z-40 pt-[calc(57px+env(safe-area-inset-top))] lg:pt-3 pb-[env(safe-area-inset-bottom)] shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static top-[env(safe-area-inset-top)] bottom-0 left-0 z-40 pt-[57px] lg:pt-3 pb-[env(safe-area-inset-bottom)] lg:pb-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
 
           {/* ── Favorites section ── */}
           {favorites.length > 0 && (
@@ -411,7 +443,7 @@ const App: React.FC = () => {
           ))}
         </aside>
 
-        <div className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
           <main className="flex-1 w-full px-4 lg:px-6 py-6 lg:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <input
           ref={fileInputRef}
@@ -477,8 +509,8 @@ const App: React.FC = () => {
           <footer className="no-print border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0d1424]">
             <div className="w-full px-4 lg:px-6 py-6 lg:py-8 space-y-6">
 
-              {/* Tools grid — clickable, compact */}
-              <div>
+              {/* Tools grid — hidden on mobile, visible on lg+ */}
+              <div className="hidden lg:block">
                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-4">All Tools</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2">
                   {FOOTER_TOOLS.map(t => (
@@ -551,6 +583,7 @@ const App: React.FC = () => {
           </footer>
         </div>
       </div>
+
     </div>
   );
 };
