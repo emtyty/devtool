@@ -40,13 +40,14 @@ export default function ResizableSplit({
 
   const handleWidthPx = gap + 8;
 
-  const onMouseDown = (e: React.MouseEvent) => {
+  const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startLeft = leftPercent;
     const rect = containerRef.current!.getBoundingClientRect();
 
-    const onMove = (ev: MouseEvent) => {
+    const onMove = (ev: PointerEvent) => {
       const deltaPct = ((ev.clientX - startX) / rect.width) * 100;
       const next = Math.min(maxLeftPercent, Math.max(minLeftPercent, startLeft + deltaPct));
       leftPercentRef.current = next;
@@ -54,15 +55,15 @@ export default function ResizableSplit({
     };
 
     const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
       if (storageKey) {
         localStorage.setItem(storageKey, String(leftPercentRef.current));
       }
     };
 
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
   return (
@@ -78,12 +79,12 @@ export default function ResizableSplit({
         {left}
       </div>
 
-      {/* Drag handle — desktop only */}
+      {/* Drag handle — visible on lg+, supports mouse + touch + stylus via Pointer Events */}
       {isLg && (
         <div
           className="flex items-center justify-center shrink-0 cursor-col-resize group select-none"
-          style={{ width: `${handleWidthPx}px` }}
-          onMouseDown={onMouseDown}
+          onPointerDown={onPointerDown}
+          style={{ width: `${handleWidthPx}px`, touchAction: 'none' }}
         >
           <div className="w-1 self-stretch rounded-full bg-slate-200 group-hover:bg-blue-400 transition-colors duration-150" />
         </div>

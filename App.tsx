@@ -255,8 +255,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col selection:bg-blue-500/30">
-      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between">
+    <div className="h-dvh flex flex-col selection:bg-blue-500/30">
+      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(prev => !prev)}
@@ -301,7 +301,7 @@ const App: React.FC = () => {
           />
         )}
 
-        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static inset-y-0 left-0 z-40 pt-[65px] lg:pt-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static inset-y-0 left-0 z-40 pt-[calc(65px+env(safe-area-inset-top))] lg:pt-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
 
           {/* ── Favorites section ── */}
           {favorites.length > 0 && (
@@ -410,7 +410,7 @@ const App: React.FC = () => {
         </aside>
 
         <div className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
-          <main className="flex-1 w-full px-4 lg:px-6 py-6 lg:py-8">
+          <main className="flex-1 w-full px-4 lg:px-6 py-6 lg:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <input
           ref={fileInputRef}
           type="file"

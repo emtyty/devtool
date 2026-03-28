@@ -324,6 +324,19 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
   const [wordWrap, setWordWrap] = useState(true);
   const [leftDragOver, setLeftDragOver] = useState(false);
   const [rightDragOver, setRightDragOver] = useState(false);
+  const [isLg, setIsLg] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    setIsLg(mq.matches);
+    const handler = (e: MediaQueryListEvent) => {
+      setIsLg(e.matches);
+      if (!e.matches) setViewMode('unified');
+    };
+    mq.addEventListener('change', handler);
+    if (!mq.matches) setViewMode('unified');
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const leftFileRef = useRef<HTMLInputElement>(null);
   const rightFileRef = useRef<HTMLInputElement>(null);
@@ -402,31 +415,37 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
       </div>
 
       {/* Options bar */}
-      <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+      <div className="flex flex-wrap items-center gap-3 lg:gap-4">
+        <label className="flex items-center gap-2 cursor-pointer select-none min-h-[44px] lg:min-h-0">
           <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             checked={ignoreWs} onChange={e => setIgnoreWs(e.target.checked)} />
           <span className="text-[11px] font-black text-slate-600 uppercase tracking-wide">Ignore whitespace</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+        <label className="flex items-center gap-2 cursor-pointer select-none min-h-[44px] lg:min-h-0">
           <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             checked={ignoreCase} onChange={e => setIgnoreCase(e.target.checked)} />
           <span className="text-[11px] font-black text-slate-600 uppercase tracking-wide">Ignore case</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+        <label className="flex items-center gap-2 cursor-pointer select-none min-h-[44px] lg:min-h-0">
           <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             checked={hideEqual} onChange={e => setHideEqual(e.target.checked)} />
-          <span className="text-[11px] font-black text-slate-600 uppercase tracking-wide">Hide unchanged lines</span>
+          <span className="text-[11px] font-black text-slate-600 uppercase tracking-wide">Hide unchanged</span>
         </label>
+
+        {/* Swap button — visible on mobile only (since the center overlay is hidden) */}
+        <button type="button" onClick={() => { setLeft(right); setRight(left); }} title="Swap A ↔ B"
+          className="flex lg:hidden items-center gap-1.5 px-3 min-h-[44px] rounded-lg text-[11px] font-black uppercase tracking-wide text-slate-500 border border-slate-200 hover:text-blue-600 hover:border-blue-400 transition-all">
+          <ArrowLeftRight size={13} /> Swap
+        </button>
 
         <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={() => setWordWrap(w => !w)} title={wordWrap ? 'Disable word wrap' : 'Enable word wrap'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all border ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all border ${
               wordWrap ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-slate-500 border-slate-200 hover:text-slate-700'
             }`}>
             <WrapText size={13} /> Wrap
           </button>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+          <div className="hidden lg:flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button type="button" onClick={() => setViewMode('sidebyside')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-black uppercase tracking-wide transition-all ${
                 viewMode === 'sidebyside' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -444,7 +463,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
       </div>
 
       {/* Input panels */}
-      <div className="relative grid grid-cols-2 gap-4">
+      <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Left */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
@@ -480,7 +499,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
 
         {/* Swap button */}
         <button type="button" onClick={() => { setLeft(right); setRight(left); }} title="Swap A ↔ B"
-          className="absolute left-1/2 top-[calc(50%+0.75rem)] -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:shadow-md transition-all">
+          className="hidden lg:flex absolute left-1/2 top-[calc(50%+0.75rem)] -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8 items-center justify-center bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:shadow-md transition-all">
           <ArrowLeftRight size={14} />
         </button>
 
@@ -520,7 +539,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
 
       {/* Stats bar */}
       {(left || right) && (
-        <div className="flex items-center gap-4 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+        <div className="flex flex-wrap items-center gap-3 lg:gap-4 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
           <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Result</span>
           <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600">
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />

@@ -325,7 +325,7 @@ const TreeNodeRow: React.FC<{
   const isNullType = node.originalType === 'null';
   return (
     <div className="flex flex-col">
-      <div className="flex items-center py-2 border-b border-slate-100 hover:bg-slate-50">
+      <div className="flex flex-wrap lg:flex-nowrap items-center py-2 border-b border-slate-100 hover:bg-slate-50 gap-y-1">
         <div className="flex-1 flex items-center" style={{ paddingLeft: `${Math.max(0, node.depth - 1) * 1.5}rem` }}>
           {isComplex ? (
             <button onClick={() => setExpanded(!expanded)} className="p-1 mr-1 text-slate-400 hover:text-slate-600">
@@ -348,12 +348,12 @@ const TreeNodeRow: React.FC<{
         </div>
 
         {/* Mapped Type */}
-        <div className="w-44 px-4">
+        <div className="w-full lg:w-44 px-4">
           {!isComplex && !node.isLoop && (
             <select
               value={node.mappedType}
               onChange={e => onUpdateType(node.id, e.target.value as FieldType)}
-              className={`w-full rounded-lg px-2 py-1.5 text-xs font-black focus:ring-2 outline-none cursor-pointer ${
+              className={`w-full rounded-lg px-2 py-2.5 lg:py-1.5 text-xs font-black focus:ring-2 outline-none cursor-pointer min-h-[44px] lg:min-h-0 ${
                 isNullType
                   ? 'bg-red-50 border-2 border-red-400 text-red-700 focus:ring-red-400'
                   : 'bg-slate-50 border border-slate-200 focus:ring-blue-500'
@@ -371,7 +371,7 @@ const TreeNodeRow: React.FC<{
         </div>
 
         {/* Loop */}
-        <div className="w-24 px-4">
+        <div className="w-full lg:w-24 px-4">
           {node.originalType === 'array' && !node.isLoop ? (
             <input
               type="number" min={1} max={50}
@@ -604,7 +604,7 @@ export default function MockDataGenerator() {
         <Settings2 size={14} /> Settings
       </span>
 
-      <div className="flex gap-3 items-start">
+      <div className="flex flex-wrap lg:flex-nowrap gap-3 items-start">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Rows</label>
           <input
@@ -696,28 +696,28 @@ export default function MockDataGenerator() {
 
       {activeTab === 'generator' ? (
         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col max-h-[65vh]">
-          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0 rounded-t-2xl">
+          <div className="px-4 lg:px-6 py-3 lg:py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0 rounded-t-2xl">
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Settings2 size={14} /> Schema Definition
-              <span className="bg-blue-600 text-white px-2 py-0.5 rounded shadow-sm">{fields.length} FIELDS</span>
+              <Settings2 size={14} /> Schema
+              <span className="bg-blue-600 text-white px-2 py-0.5 rounded shadow-sm">{fields.length}</span>
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 lg:gap-2">
               <button onClick={addField} title="Add field"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors uppercase tracking-widest">
-                <Plus size={12} /> Add Field
+                className="flex items-center gap-1.5 px-2.5 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 text-[10px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors uppercase tracking-widest">
+                <Plus size={12} /> Add
               </button>
-              <button onClick={savePreset} title="Save preset" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+              <button onClick={savePreset} title="Save preset" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                 <Save size={14} />
               </button>
-              <button onClick={exportSchema} title="Export schema" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+              <button onClick={exportSchema} title="Export schema" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                 <Download size={14} />
               </button>
-              <label title="Import schema" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer">
+              <label title="Import schema" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer">
                 <Upload size={14} />
                 <input type="file" accept=".json" className="hidden" onChange={importSchema} />
               </label>
               <div className="border-l border-slate-200 pl-2 flex items-center gap-1.5">
-                <LayoutTemplate size={14} className="text-slate-400" />
+                <LayoutTemplate size={14} className="text-slate-400 hidden lg:block" />
                 <select
                   onChange={e => {
                     const val = e.target.value;
@@ -726,9 +726,9 @@ export default function MockDataGenerator() {
                     else loadBuiltinPreset(val as keyof typeof PRESETS);
                     e.target.value = '';
                   }}
-                  className="bg-transparent text-[10px] font-black text-slate-500 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors"
+                  className="bg-transparent text-[10px] font-black text-slate-500 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors min-h-[44px] lg:min-h-0"
                 >
-                  <option value="">Load Preset…</option>
+                  <option value="">Preset…</option>
                   <optgroup label="Built-in">
                     <option value="ecommerce">Product</option>
                     <option value="users">Users</option>
@@ -747,7 +747,8 @@ export default function MockDataGenerator() {
           </div>
 
           <div ref={fieldsListRef} className="flex-1 overflow-y-auto p-4">
-            <div className="grid grid-cols-12 gap-2 mb-3 px-1 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+            {/* Desktop: grid header */}
+            <div className="hidden lg:grid grid-cols-12 gap-2 mb-3 px-1 text-[9px] font-black text-slate-400 uppercase tracking-widest">
               <div className="col-span-2">Name</div>
               <div className="col-span-2">Type</div>
               <div className="col-span-3">Options</div>
@@ -756,87 +757,173 @@ export default function MockDataGenerator() {
               <div className="col-span-1 text-center">Del</div>
             </div>
 
-            <div className="space-y-2 pr-1">
+            <div className="space-y-2 lg:space-y-2 pr-1">
               {fields.map(field => (
-                <div key={field.id} className="grid grid-cols-12 gap-2 items-center group">
-                  <div className="col-span-2">
-                    <input
-                      type="text" value={field.name} placeholder="field_name"
-                      onChange={e => updateField(field.id, { name: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <select
-                      value={field.type}
-                      onChange={e => updateField(field.id, { type: e.target.value as FieldType })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-black focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
-                    >
-                      {categories.map(cat => (
-                        <optgroup key={cat} label={cat}>
-                          {FIELD_TYPES.filter(ft => ft.category === cat).map(ft => (
-                            <option key={ft.value} value={ft.value}>{ft.label}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-3 flex items-center gap-1">
-                    {field.type === 'Number' && (
-                      <>
-                        <input type="number" placeholder="Min" value={field.options?.min ?? ''}
-                          onChange={e => updateField(field.id, { options: { ...field.options, min: e.target.value ? Number(e.target.value) : undefined } })}
+                <div key={field.id} className="group">
+                  {/* Desktop: 12-column grid */}
+                  <div className="hidden lg:grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-2">
+                      <input
+                        type="text" value={field.name} placeholder="field_name"
+                        onChange={e => updateField(field.id, { name: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <select
+                        value={field.type}
+                        onChange={e => updateField(field.id, { type: e.target.value as FieldType })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-black focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                      >
+                        {categories.map(cat => (
+                          <optgroup key={cat} label={cat}>
+                            {FIELD_TYPES.filter(ft => ft.category === cat).map(ft => (
+                              <option key={ft.value} value={ft.value}>{ft.label}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-span-3 flex items-center gap-1">
+                      {field.type === 'Number' && (
+                        <>
+                          <input type="number" placeholder="Min" value={field.options?.min ?? ''}
+                            onChange={e => updateField(field.id, { options: { ...field.options, min: e.target.value ? Number(e.target.value) : undefined } })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                          <input type="number" placeholder="Max" value={field.options?.max ?? ''}
+                            onChange={e => updateField(field.id, { options: { ...field.options, max: e.target.value ? Number(e.target.value) : undefined } })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </>
+                      )}
+                      {field.type === 'Date' && (
+                        <>
+                          <input type="date" title="From Date" value={field.options?.from ?? ''}
+                            onChange={e => updateField(field.id, { options: { ...field.options, from: e.target.value } })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                          <input type="date" title="To Date" value={field.options?.to ?? ''}
+                            onChange={e => updateField(field.id, { options: { ...field.options, to: e.target.value } })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </>
+                      )}
+                      {field.type === 'CustomList' && (
+                        <input type="text" placeholder="Apple, Banana, Cherry" title="Comma-separated values"
+                          value={field.options?.customValues ?? ''}
+                          onChange={e => updateField(field.id, { options: { ...field.options, customValues: e.target.value } })}
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                        <input type="number" placeholder="Max" value={field.options?.max ?? ''}
-                          onChange={e => updateField(field.id, { options: { ...field.options, max: e.target.value ? Number(e.target.value) : undefined } })}
+                      )}
+                      {field.type !== 'Number' && field.type !== 'Date' && field.type !== 'CustomList' && (
+                        <span className="text-[10px] text-slate-300 italic px-1">—</span>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      {(field.type === 'CustomList' || field.type === 'Number') ? (
+                        <input type="text" placeholder="Apple=30, Orange=50" title="Weighted distribution"
+                          value={field.options?.factor ?? ''}
+                          onChange={e => updateField(field.id, { options: { ...field.options, factor: e.target.value } })}
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                      </>
-                    )}
-                    {field.type === 'Date' && (
-                      <>
-                        <input type="date" title="From Date" value={field.options?.from ?? ''}
-                          onChange={e => updateField(field.id, { options: { ...field.options, from: e.target.value } })}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                        <input type="date" title="To Date" value={field.options?.to ?? ''}
-                          onChange={e => updateField(field.id, { options: { ...field.options, to: e.target.value } })}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                      </>
-                    )}
-                    {field.type === 'CustomList' && (
-                      <input type="text" placeholder="Apple, Banana, Cherry" title="Comma-separated values"
-                        value={field.options?.customValues ?? ''}
-                        onChange={e => updateField(field.id, { options: { ...field.options, customValues: e.target.value } })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                    )}
-                    {field.type !== 'Number' && field.type !== 'Date' && field.type !== 'CustomList' && (
-                      <span className="text-[10px] text-slate-300 italic px-1">—</span>
-                    )}
-                  </div>
-                  <div className="col-span-2">
-                    {(field.type === 'CustomList' || field.type === 'Number') ? (
-                      <input type="text" placeholder="Apple=30, Orange=50" title="Weighted distribution"
-                        value={field.options?.factor ?? ''}
-                        onChange={e => updateField(field.id, { options: { ...field.options, factor: e.target.value } })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                    ) : (
-                      <span className="text-[10px] text-slate-300 italic px-1">N/A</span>
-                    )}
-                  </div>
-                  <div className="col-span-2">
-                    <div className="relative">
-                      <input type="number" min={0} max={100} placeholder="0" title="Percentage of null values"
-                        value={field.options?.nullPercentage ?? ''}
-                        onChange={e => updateField(field.id, { options: { ...field.options, nullPercentage: e.target.value ? Number(e.target.value) : undefined } })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 pr-5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-400">%</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 italic px-1">N/A</span>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <div className="relative">
+                        <input type="number" min={0} max={100} placeholder="0" title="Percentage of null values"
+                          value={field.options?.nullPercentage ?? ''}
+                          onChange={e => updateField(field.id, { options: { ...field.options, nullPercentage: e.target.value ? Number(e.target.value) : undefined } })}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 pr-5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-400">%</span>
+                      </div>
+                    </div>
+                    <div className="col-span-1 flex justify-center">
+                      <button onClick={() => removeField(field.id)}
+                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Remove field">
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
-                  <div className="col-span-1 flex justify-center">
-                    <button onClick={() => removeField(field.id)}
-                      className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                      title="Remove field">
-                      <Trash2 size={13} />
-                    </button>
+
+                  {/* Mobile: card layout */}
+                  <div className="lg:hidden bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text" value={field.name} placeholder="field_name"
+                        onChange={e => updateField(field.id, { name: e.target.value })}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                      <select
+                        value={field.type}
+                        onChange={e => updateField(field.id, { type: e.target.value as FieldType })}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2.5 text-xs font-black focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                      >
+                        {categories.map(cat => (
+                          <optgroup key={cat} label={cat}>
+                            {FIELD_TYPES.filter(ft => ft.category === cat).map(ft => (
+                              <option key={ft.value} value={ft.value}>{ft.label}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button onClick={() => removeField(field.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                        title="Remove field">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    {/* Conditional options row */}
+                    {(field.type === 'Number' || field.type === 'Date' || field.type === 'CustomList') && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-black text-slate-400 uppercase w-12 shrink-0">Opts</span>
+                        {field.type === 'Number' && (
+                          <>
+                            <input type="number" placeholder="Min" value={field.options?.min ?? ''}
+                              onChange={e => updateField(field.id, { options: { ...field.options, min: e.target.value ? Number(e.target.value) : undefined } })}
+                              className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                            <input type="number" placeholder="Max" value={field.options?.max ?? ''}
+                              onChange={e => updateField(field.id, { options: { ...field.options, max: e.target.value ? Number(e.target.value) : undefined } })}
+                              className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                          </>
+                        )}
+                        {field.type === 'Date' && (
+                          <>
+                            <input type="date" title="From" value={field.options?.from ?? ''}
+                              onChange={e => updateField(field.id, { options: { ...field.options, from: e.target.value } })}
+                              className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                            <input type="date" title="To" value={field.options?.to ?? ''}
+                              onChange={e => updateField(field.id, { options: { ...field.options, to: e.target.value } })}
+                              className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                          </>
+                        )}
+                        {field.type === 'CustomList' && (
+                          <input type="text" placeholder="Apple, Banana, Cherry"
+                            value={field.options?.customValues ?? ''}
+                            onChange={e => updateField(field.id, { options: { ...field.options, customValues: e.target.value } })}
+                            className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                        )}
+                      </div>
+                    )}
+                    {/* Factor + Null % row (only when relevant) */}
+                    {((field.type === 'CustomList' || field.type === 'Number') || (field.options?.nullPercentage != null && field.options.nullPercentage > 0)) && (
+                      <div className="flex items-center gap-1">
+                        {(field.type === 'CustomList' || field.type === 'Number') && (
+                          <>
+                            <span className="text-[9px] font-black text-slate-400 uppercase w-12 shrink-0">Factor</span>
+                            <input type="text" placeholder="A=30, B=50"
+                              value={field.options?.factor ?? ''}
+                              onChange={e => updateField(field.id, { options: { ...field.options, factor: e.target.value } })}
+                              className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                          </>
+                        )}
+                        <span className="text-[9px] font-black text-slate-400 uppercase w-12 shrink-0">Null%</span>
+                        <div className="relative flex-1">
+                          <input type="number" min={0} max={100} placeholder="0"
+                            value={field.options?.nullPercentage ?? ''}
+                            onChange={e => updateField(field.id, { options: { ...field.options, nullPercentage: e.target.value ? Number(e.target.value) : undefined } })}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 pr-5 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-400">%</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

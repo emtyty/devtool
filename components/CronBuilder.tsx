@@ -67,7 +67,7 @@ function FieldCard({
             <button
               key={mode}
               onClick={() => onChange({ ...state, mode })}
-              className={`flex-1 py-1.5 px-2 text-[10px] font-black rounded-lg uppercase transition-all ${
+              className={`flex-1 py-2.5 lg:py-1.5 px-2 text-[10px] font-black rounded-lg uppercase transition-all ${
                 state.mode === mode ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
@@ -78,12 +78,12 @@ function FieldCard({
 
         {/* Mode-specific controls */}
         {state.mode === 'specific' && (
-          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+          <div className="flex flex-wrap gap-1.5 lg:gap-1.5 max-h-40 lg:max-h-28 overflow-y-auto">
             {options.map(val => (
               <button
                 key={val}
                 onClick={() => toggleSpecific(val)}
-                className={`min-w-[36px] px-1.5 py-1 text-[11px] font-bold rounded-lg border transition-all ${
+                className={`min-w-[44px] lg:min-w-[36px] min-h-[44px] lg:min-h-0 px-1.5 py-2 lg:py-1 text-[11px] font-bold rounded-lg border transition-all ${
                   state.specific.includes(val)
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
@@ -100,7 +100,7 @@ function FieldCard({
             <select
               value={state.rangeStart}
               onChange={e => onChange({ ...state, rangeStart: parseInt(e.target.value, 10) })}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 lg:py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer min-h-[44px] lg:min-h-0"
             >
               {options.map(v => (
                 <option key={v} value={v}>{field.names ? field.names[v - field.min] : v}</option>
@@ -110,7 +110,7 @@ function FieldCard({
             <select
               value={state.rangeEnd}
               onChange={e => onChange({ ...state, rangeEnd: parseInt(e.target.value, 10) })}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 lg:py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer min-h-[44px] lg:min-h-0"
             >
               {options.map(v => (
                 <option key={v} value={v}>{field.names ? field.names[v - field.min] : v}</option>
@@ -290,12 +290,12 @@ export default function CronBuilder({ initialData }: { initialData?: string | nu
       </div>
 
       {/* Example Data + Cheat Sheet */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         {/* Example Data Dropdown */}
         <div className="relative" ref={presetsRef}>
           <button
             onClick={() => setShowPresets(!showPresets)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-white border border-slate-200 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-black bg-white border border-slate-200 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors"
           >
             <Sparkles size={14} />
             Example Data
@@ -320,7 +320,7 @@ export default function CronBuilder({ initialData }: { initialData?: string | nu
         {/* Cheat Sheet Toggle */}
         <button
           onClick={() => setShowCheatSheet(!showCheatSheet)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-white border border-slate-200 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-black bg-white border border-slate-200 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors"
         >
           <BookOpen size={14} />
           Cheat Sheet
@@ -340,7 +340,7 @@ export default function CronBuilder({ initialData }: { initialData?: string | nu
             {/* Field reference */}
             <div className="mb-5">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-3">Fields (left to right)</h4>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 lg:grid-cols-5 gap-2">
                 {['Minute\n0–59', 'Hour\n0–23', 'Day\n1–31', 'Month\n1–12', 'DOW\n0–6'].map(f => {
                   const [name, range] = f.split('\n');
                   return (
@@ -381,7 +381,7 @@ export default function CronBuilder({ initialData }: { initialData?: string | nu
         </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg"
+          className="flex items-center gap-2 px-4 py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-[10px] font-black bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg"
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
           {copied ? 'COPIED' : 'COPY EXPRESSION'}
