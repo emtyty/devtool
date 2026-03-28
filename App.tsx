@@ -256,7 +256,9 @@ const App: React.FC = () => {
 
   return (
     <div className="h-dvh flex flex-col selection:bg-blue-500/30">
-      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between pt-[max(0.75rem,env(safe-area-inset-top))]">
+      {/* Safe area spacer for iPhone notch/Dynamic Island */}
+      <div className="shrink-0 bg-white/80 dark:bg-[#131c2e]/85 backdrop-blur-xl z-50 h-[env(safe-area-inset-top)]" />
+      <header className="no-print border-b border-slate-200 glass shrink-0 z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(prev => !prev)}
@@ -301,7 +303,7 @@ const App: React.FC = () => {
           />
         )}
 
-        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static inset-y-0 left-0 z-40 pt-[calc(65px+env(safe-area-inset-top))] lg:pt-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static inset-y-0 left-0 z-40 pt-[calc(57px+env(safe-area-inset-top))] lg:pt-3 pb-[env(safe-area-inset-bottom)] shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
 
           {/* ── Favorites section ── */}
           {favorites.length > 0 && (
