@@ -1,125 +1,106 @@
-[10:00:00.050] INFO: Application initializing — version 3.14.2 (build 20241115)
-[10:00:00.082] INFO: Loading environment config from /api/config
-[10:00:00.095] DEBUG: Runtime environment: production | region: us-east-1 | pod: web-7d9f6b-xkp2
-[10:00:00.110] INFO: Auth module initialized — session store: redis | TTL: 3600s
-[10:00:00.165] INFO: POST /api/login — user: testuser | ip: 192.168.1.42
-[10:00:00.175] DEBUG: JWT issued — sub: usr-00421 | exp: 2024-11-15T11:00:00Z
-[10:00:00.200] INFO: Static asset pipeline started — CDN base: https://cdn.myapp.com
-[10:00:00.210] DEBUG: Fetching main.bundle.js (estimated 5.0 MB gzip)
-[10:00:00.250] DEBUG: Fetching styles.css from CDN
-[10:00:00.310] INFO: Config loaded successfully — featureFlags: 12 active, 3 disabled
-[10:00:00.350] DEBUG: Image prefetch queued: logo.png, hero-banner.png
-[10:00:00.410] INFO: GET /api/users — initiating request | requestId: req-001
-[10:00:00.430] DEBUG: DB query plan selected: full-table-scan on users (index missing on created_at)
-[10:00:00.450] WARN: Query execution time exceeded 200ms threshold — query: SELECT * FROM users ORDER BY created_at DESC
-[10:00:00.500] INFO: Analytics beacon sent — event: pageview | page: /dashboard
-[10:00:00.550] DEBUG: GET /api/products — endpoint hit | requestId: req-002
-[10:00:00.560] ERROR: Failed to load resource: the server responded with status 404 for https://api.myapp.com/api/products
-[10:00:00.572] WARN: Product catalog endpoint returned 404 — falling back to cached data
-[10:00:00.600] INFO: GET /api/orders — initiating long-poll request | requestId: req-003
-[10:00:00.620] DEBUG: Connection pool stats — active: 18/20 | idle: 2 | waiting: 4
-[10:00:00.650] WARN: Connection pool near capacity (90%) — consider scaling
-[10:00:00.700] INFO: Upload initiated — file: report_Q4.xlsx | size: 8.0 MB | requestId: req-upload-001
-[10:00:00.715] DEBUG: Multipart upload started — boundary: ----FormBoundary | chunks: 16
-[10:00:00.800] INFO: GET /api/products/featured — request dispatched
-[10:00:00.820] ERROR: Failed to load resource: the server responded with status 404 for https://api.myapp.com/api/products/featured
-[10:00:00.830] WARN: Featured products endpoint missing — UI component will render empty state
-[10:00:00.900] INFO: Font assets loading — inter-regular.woff2, inter-bold.woff2
-[10:00:01.000] INFO: GET /api/config/features — fetching feature flags
-[10:00:01.050] DEBUG: Feature flags response: { darkMode: true, betaCheckout: false, aiRecommendations: true }
-[10:00:01.100] ERROR: GET /api/orders/recent responded with 503 Service Unavailable
-[10:00:01.115] WARN: Orders service unavailable — Retry-After: 30s | displaying cached order list
-[10:00:01.200] INFO: Search request dispatched — query: "smartphone" | category: electronics | limit: 50
-[10:00:01.250] DEBUG: Search index hit: elasticsearch cluster es-prod-02
-[10:00:01.300] WARN: Search response time 4200ms exceeds SLA threshold of 2000ms
-[10:00:01.400] ERROR: TypeError: Cannot read properties of undefined (reading 'items')
-    at ProductGrid.render (ProductGrid.tsx:142:18)
-    at processChild (/app/node_modules/react-dom/cjs/react-dom.development.js:3990:14)
-    at resolve (/app/node_modules/react-server-dom-webpack/cjs/react-server-dom-webpack.development.js:1234:5)
-[10:00:01.420] WARN: ProductGrid caught render error — rendered empty fallback component
-[10:00:01.500] INFO: User notifications loaded — 7 unread
-[10:00:01.600] INFO: POST /api/orders — creating new order | items: 1 | total: $149.99
-[10:00:01.650] DEBUG: Order validation passed — inventory check OK | payment gateway: stripe
-[10:00:01.700] INFO: Order created successfully — orderId: ord-8872 | status: 201 Created
-[10:00:01.800] ERROR: Failed to load resource: the server responded with status 404 for https://api.myapp.com/api/products/categories
-[10:00:01.820] WARN: Category tree unavailable — breadcrumb navigation disabled
-[10:00:02.000] INFO: User activity feed loading — requestId: usr-activity-req
-[10:00:02.050] DEBUG: Activity feed query: 90-day window | user: usr-00421 | events: up to 5000
-[10:00:02.100] WARN: Activity feed payload 2.0 MB — consider pagination to reduce transfer size
-[10:00:02.200] INFO: Dashboard widget rendering — 6 widgets queued
-[10:00:02.250] ERROR: Access to fetch at 'https://analytics.myapp.com/collect' from origin 'https://myapp.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource
-[10:00:02.260] WARN: Analytics beacon blocked by CORS — disabling analytics for this session
-[10:00:02.400] INFO: Config redirect detected — /api/config/theme → /api/v2/config/theme (301)
-[10:00:02.420] DEBUG: Following redirect automatically — hop 1 of 3
-[10:00:02.500] INFO: Upload progress — req-upload-001: 52% (4.2 MB / 8.0 MB transmitted)
-[10:00:02.600] WARN: Upload size 8.0 MB exceeds recommended limit of 5 MB — degraded performance expected
-[10:00:02.700] ERROR: POST /api/upload responded with 500 Internal Server Error
-[10:00:02.710] ERROR: Upload failed — {"error":"STORAGE_QUOTA_EXCEEDED","message":"Organisation storage limit reached","quota":"50GB","used":"50.0GB"}
-[10:00:02.720] WARN: Upload retry scheduled in 5000ms (attempt 1/3)
-[10:00:03.000] INFO: Vendor bundle loading — vendor.bundle.js (8.0 MB)
-[10:00:03.050] WARN: vendor.bundle.js transfer time 6200ms — consider code splitting to reduce initial load
-[10:00:03.200] INFO: GET /api/users/preferences responded with 500 Internal Server Error
-[10:00:03.210] ERROR: ReferenceError: userPreferences is not defined
-    at ThemeProvider.applyPreferences (ThemeProvider.tsx:88:12)
-    at ThemeProvider.componentDidMount (ThemeProvider.tsx:56:5)
-[10:00:03.220] WARN: Falling back to system default theme — user preferences unavailable
-[10:00:03.400] INFO: Dashboard loading — 3 of 6 widgets rendered
-[10:00:03.500] DEBUG: Chart library initialized — charts.bundle.js loaded in 218ms
-[10:00:03.600] INFO: GET /api/users/dashboard responded with 200 OK — payload: 400 KB
-[10:00:03.700] WARN: Dashboard response payload 400 KB — Time to First Byte: 3250ms (exceeds 1000ms budget)
-[10:00:03.800] INFO: Order export initiated — format: csv | dateFrom: 2024-01-01
-[10:00:03.850] DEBUG: Export query building — estimated rows: 47,823
-[10:00:04.000] WARN: Export response time 11200ms — long-running query detected on orders table
-[10:00:04.100] INFO: Order export complete — file: orders.csv | size: 5.0 MB
-[10:00:04.200] INFO: Product p001 loaded — name: "MacBook Pro 16" M3" | price: $2499.00
-[10:00:04.300] INFO: Product p002 loaded — name: "Sony WH-1000XM5 Headphones" | price: $349.00
-[10:00:04.400] ERROR: Failed to load resource: the server responded with status 404 for https://cdn.myapp.com/images/avatar-placeholder.png
-[10:00:04.420] WARN: Avatar placeholder image missing from CDN — using inline SVG fallback
-[10:00:04.500] INFO: User analytics loaded — period: 30d | data points: 720 | size: 1.5 MB
-[10:00:04.550] WARN: User analytics payload 1.5 MB — recommend server-side aggregation before transfer
-[10:00:04.800] INFO: Config redirect — /api/config/shipping → /api/v2/config/shipping (302)
-[10:00:05.000] INFO: GET /api/users/audit-log responded with 200 OK — 200 records | 320 KB
-[10:00:05.100] WARN: Audit log fetch duration 3100ms for 200 records — add index on timestamp column
-[10:00:05.200] INFO: Product reviews loaded — productId: p001 | count: 142 reviews
-[10:00:05.300] DEBUG: Recommendation engine invoked — userId: usr-00421 | model: collab-filter-v3
-[10:00:05.400] WARN: GET /api/products/inventory responded with 503 — inventory service degraded
-[10:00:05.500] INFO: Order history loading — page: 1 | limit: 100
-[10:00:05.600] WARN: Order history response time 5100ms — payload 768 KB. Consider cursor-based pagination
-[10:00:05.700] ERROR: Failed to load resource: the server responded with status 404 for https://api.myapp.com/api/products/p004
-[10:00:05.750] WARN: Product p004 not found — removing stale entry from local cache
-[10:00:05.900] INFO: GET /api/products/p005/stock responded with 500 Internal Server Error
-[10:00:05.910] ERROR: TypeError: Cannot read properties of null (reading 'quantity')
-    at InventoryService.getStock (InventoryService.ts:214:22)
-    at async StockChecker.check (StockChecker.ts:88:10)
-[10:00:06.000] INFO: Search query "monitor" dispatched — sort: price_asc
-[10:00:06.050] WARN: Search for "monitor" took 3800ms — search cluster under load
-[10:00:06.200] INFO: User session list loaded — 3 active sessions
-[10:00:06.400] INFO: Upload initiated — file: product_images.zip | size: 6.0 MB | requestId: req-upload-003
-[10:00:06.500] WARN: Upload attempt 1 — POST /api/upload responded with 503 Service Unavailable
-[10:00:06.510] ERROR: Upload failed — service temporarily unavailable. Retry-After: 30s
-[10:00:06.600] INFO: Order analytics loading — period: 7d | groupBy: day
-[10:00:06.700] WARN: Order analytics took 4900ms — consider pre-aggregating daily rollups
-[10:00:06.900] ERROR: Failed to load resource: the server responded with status 404 for https://api.myapp.com/api/products/p007
-[10:00:07.000] INFO: User cart loaded — 2 items | subtotal: $2,848.00
-[10:00:07.100] INFO: Search query "keyboard" dispatched — limit: 10
-[10:00:07.200] INFO: Localization config loaded — locale: en-US | strings: 2048
-[10:00:07.300] ERROR: Failed to load resource: the server responded with status 404 for https://api.myapp.com/api/products/p009
-[10:00:07.400] INFO: Recommendations engine responded — 24 items | size: 128 KB
-[10:00:07.450] WARN: Recommendation latency 4100ms — ML inference service response time degraded
-[10:00:07.600] INFO: Users export initiated — format: json | includeOrders: true
-[10:00:07.650] WARN: Users export request size 7.0 MB — large payload detected. Transfer time may exceed 10s
-[10:00:07.700] DEBUG: Memory usage: heap used 142 MB / 256 MB | external: 38 MB
-[10:00:07.800] WARN: High memory usage detected — heap at 55% capacity. GC may impact latency
-[10:00:08.000] INFO: Pending orders loaded — 12 pending | total value: $18,492.00
-[10:00:08.100] INFO: User addresses loaded — 3 saved addresses
-[10:00:08.200] DEBUG: Component lifecycle complete — all widgets rendered | total mount time: 8200ms
-[10:00:08.300] WARN: Long task detected — main thread blocked for 320ms during initial render
-[10:00:08.400] INFO: Performance metrics — FCP: 1240ms | LCP: 3850ms | TBT: 720ms | CLS: 0.08
-[10:00:08.500] WARN: LCP 3850ms exceeds Core Web Vital threshold of 2500ms
-[10:00:08.600] WARN: Total Blocking Time 720ms exceeds good threshold of 200ms
-[10:00:08.700] INFO: Analytics timing beacon sent — pageLoad: 4200ms | interactive: 8200ms
-[10:00:08.800] INFO: Application fully initialized — 82 network requests | 28.4 MB transferred | 30.0s total
-[10:00:08.900] DEBUG: Service worker registered — cache strategy: stale-while-revalidate
-[10:00:09.000] INFO: WebSocket connection established — ws://realtime.myapp.com/live | channelId: ch-88421
-[10:00:09.100] DEBUG: Subscribing to channels: orders.updates | inventory.changes | notifications.usr-00421
-[10:00:30.000] INFO: Session heartbeat — connected 30s | WS messages received: 0 | pending requests: 2
+2024-11-15T10:00:00.052Z [INFO] App initializing - version 3.14.2 (build 20241115)
+2024-11-15T10:00:00.055Z [INFO] Fetching runtime config from /api/config
+2024-11-15T10:00:00.078Z [INFO] User login attempt - user: testuser | ip: 192.168.1.42
+2024-11-15T10:00:00.100Z [DEBUG] Runtime: production | region: us-east-1 | pod: web-7d9f6b-xkp2
+2024-11-15T10:00:00.165Z [INFO] Config loaded - featureFlags: 12 active, 3 disabled | region: us-east-1
+2024-11-15T10:00:00.172Z [INFO] Auth ready - JWT issued for usr-00421 | session TTL: 3600s
+2024-11-15T10:00:00.198Z [INFO] Static asset pipeline started - CDN: https://cdn.myapp.com
+2024-11-15T10:00:00.202Z [DEBUG] Queueing asset prefetch: main.bundle.js (5.0MB), styles.css, logo.png
+2024-11-15T10:00:00.320Z [DEBUG] styles.css applied - 3 theme variables resolved
+2024-11-15T10:00:00.495Z [INFO] Initiating user list request - requestId: req-users-001
+2024-11-15T10:00:00.498Z [DEBUG] DB query plan: full-table-scan on users (missing index on created_at)
+2024-11-15T10:00:00.595Z [INFO] Fetching product catalog from /api/products
+2024-11-15T10:00:00.650Z [ERROR] GET /api/products returned 404 Not Found - catalog endpoint missing
+2024-11-15T10:00:00.653Z [WARN] Product catalog unavailable - falling back to cached response (2h old)
+2024-11-15T10:00:00.698Z [INFO] Loading order list - requestId: req-orders-001
+2024-11-15T10:00:01.003Z [INFO] Analytics beacon dispatched - event: pageview | page: /dashboard
+2024-11-15T10:00:01.198Z [INFO] Search triggered - query: laptop | category: electronics | limit: 20
+2024-11-15T10:00:01.702Z [INFO] Search results received - 24 items | took 502ms
+2024-11-15T10:00:01.998Z [INFO] Loading user profile - userId: usr-00421
+2024-11-15T10:00:02.198Z [INFO] Upload initiated - file: report_Q4.xlsx | size: 8.0 MB | requestId: req-upload-001
+2024-11-15T10:00:02.205Z [DEBUG] Multipart upload started - boundary: FormBoundary7890 | chunks: 16
+2024-11-15T10:00:02.245Z [INFO] User profile loaded - name: Test User | role: admin | plan: pro
+2024-11-15T10:00:02.498Z [INFO] Requesting featured products for homepage widget
+2024-11-15T10:00:02.568Z [ERROR] GET /api/products/featured returned 404 - homepage widget renders empty state
+2024-11-15T10:00:02.998Z [INFO] Fetching feature flags from /api/config/features
+2024-11-15T10:00:03.158Z [DEBUG] Feature flags: darkMode=true | betaCheckout=false | aiRecommendations=true
+2024-11-15T10:00:03.498Z [INFO] Polling recent orders - requestId: req-orders-recent
+2024-11-15T10:00:03.580Z [ERROR] GET /api/orders/recent returned 503 Service Unavailable - orders service degraded
+2024-11-15T10:00:03.586Z [WARN] Orders service down - Retry-After: 30s | showing cached order list
+2024-11-15T10:00:03.998Z [INFO] Search triggered - query: smartphone | category: electronics | limit: 50
+2024-11-15T10:00:04.265Z [INFO] Notifications loaded - 7 unread messages
+2024-11-15T10:00:04.998Z [INFO] Placing new order - items: 1 | total: 49.99 | gateway: stripe
+2024-11-15T10:00:05.012Z [DEBUG] Order validation passed - inventory: OK | payment: authorized
+2024-11-15T10:00:05.140Z [INFO] Order created - orderId: ord-8872 | status: 201 | ETA: 2 days
+2024-11-15T10:00:05.298Z [INFO] Fetching product category tree for breadcrumb navigation
+2024-11-15T10:00:05.370Z [ERROR] GET /api/products/categories returned 404 - breadcrumb navigation disabled
+2024-11-15T10:00:05.998Z [INFO] Loading user activity feed - window: 90 days | userId: usr-00421
+2024-11-15T10:00:06.005Z [DEBUG] Activity feed query - up to 5000 rows | pagination not implemented
+2024-11-15T10:00:06.998Z [INFO] Fetching theme config from /api/config/theme
+2024-11-15T10:00:07.085Z [WARN] Config redirect: /api/config/theme to /api/v2/config/theme (301 Moved Permanently)
+2024-11-15T10:00:07.498Z [INFO] Upload retry - file: report_Q4.xlsx | attempt: 2/3
+2024-11-15T10:00:07.998Z [INFO] Confirming order details - orderId: ord-8872
+2024-11-15T10:00:08.190Z [INFO] Order confirmed - status: processing | shipping: standard 2-day
+2024-11-15T10:00:09.198Z [INFO] Loading user preferences from /api/users/preferences
+2024-11-15T10:00:09.690Z [ERROR] GET /api/users/preferences returned 500 Internal Server Error
+2024-11-15T10:00:09.694Z [ERROR] ReferenceError: userPreferences is not defined at ThemeProvider.applyPreferences (ThemeProvider.tsx:88)
+2024-11-15T10:00:09.698Z [WARN] Falling back to system default theme - user preferences unavailable
+2024-11-15T10:00:10.298Z [INFO] Fetching dashboard data - 6 widgets pending render
+2024-11-15T10:00:11.198Z [INFO] Order export initiated - format: CSV | dateFrom: 2024-01-01 | rows: ~47823
+2024-11-15T10:00:11.205Z [DEBUG] Export query building - large date range scan on orders table
+2024-11-15T10:00:12.690Z [ERROR] POST /api/upload returned 500 - STORAGE_QUOTA_EXCEEDED: quota 50GB used 50.0GB
+2024-11-15T10:00:12.695Z [WARN] Upload failed - storage quota exceeded. Scheduling retry in 5000ms (attempt 1/3)
+2024-11-15T10:00:13.852Z [WARN] Dashboard TTFB: 3250ms exceeds 1000ms SLA | payload: 400 KB
+2024-11-15T10:00:18.102Z [WARN] GET /api/users/analytics payload 1.5 MB - recommend server-side aggregation
+2024-11-15T10:00:20.498Z [INFO] Loading product details - productId: p004
+2024-11-15T10:00:20.568Z [ERROR] GET /api/products/p004 returned 404 - removing stale entry from local cache
+2024-11-15T10:00:22.400Z [WARN] Order export took 11200ms - long-running query on orders table
+2024-11-15T10:00:22.998Z [INFO] Checking stock level for productId: p005
+2024-11-15T10:00:23.055Z [ERROR] GET /api/products/p005/stock returned 500 Internal Server Error
+2024-11-15T10:00:23.058Z [ERROR] TypeError: Cannot read properties of null (reading quantity) at InventoryService.getStock
+2024-11-15T10:00:24.560Z [ERROR] GET /api/products/p007 returned 404 - stale product reference in cart
+2024-11-15T10:00:26.498Z [INFO] Upload retry - file: product_images.zip | size: 6.0 MB | attempt: 3/3
+2024-11-15T10:00:26.840Z [ERROR] POST /api/upload returned 503 Service Unavailable - Retry-After: 30s
+2024-11-15T10:00:26.845Z [ERROR] Upload permanently failed after 3 attempts - user notification queued
+2024-11-15T10:00:28.355Z [ERROR] GET /api/products/p009 returned 404 - removing stale recommendation entry
+2024-11-15T10:00:29.198Z [WARN] LCP: 3850ms exceeds Core Web Vital threshold of 2500ms
+2024-11-15T10:00:29.205Z [WARN] Total Blocking Time: 720ms - main thread blocked during initial render
+2024-11-15T10:00:30.000Z [INFO] Session complete - 80 requests | 28.4 MB transferred | 30.0s total
+2024-11-15T10:00:30.548Z [INFO] Starting product catalog render - loading 12 product cards individually (N+1 risk)
+2024-11-15T10:00:30.552Z [DEBUG] Fetching product details: p001
+2024-11-15T10:00:30.852Z [ERROR] GET /api/products/p004 returned 404 - product delisted, removing from catalog
+2024-11-15T10:00:31.152Z [ERROR] GET /api/products/p007 returned 404 - product not found
+2024-11-15T10:00:31.352Z [ERROR] GET /api/products/p009 returned 404 - stale product ID in recommendation list
+2024-11-15T10:00:31.658Z [INFO] Product catalog loaded - 9/12 succeeded, 3 not found
+2024-11-15T10:00:32.648Z [ERROR] GET https://cdn.myapp.com/images/p004-main.jpg returned 404 - missing CDN asset
+2024-11-15T10:00:33.548Z [INFO] Loading reviews for product p001 (142 reviews)
+2024-11-15T10:00:34.248Z [INFO] Search triggered - query: gaming laptop | limit: 20
+2024-11-15T10:00:35.252Z [ERROR] GET /api/products/p003/stock returned 500 - inventory service error
+2024-11-15T10:00:35.548Z [INFO] Adding product p001 to cart - userId: usr-00421
+2024-11-15T10:00:35.948Z [INFO] Cart loaded - 2 items | subtotal: $2,848.00
+2024-11-15T10:00:36.248Z [DEBUG] Cart re-fetched (2nd time) - triggered by component re-render
+2024-11-15T10:00:36.748Z [DEBUG] Cart re-fetched (3rd time) - triggered by stock update event
+2024-11-15T10:00:37.548Z [WARN] POST /api/cart/promo returned 400 - promo code SAVE20 is expired
+2024-11-15T10:00:38.848Z [DEBUG] Cart re-fetched (4th time) - triggered by address change
+2024-11-15T10:00:39.548Z [INFO] Cart validation passed - all items in stock | promo: none
+2024-11-15T10:00:40.050Z [INFO] Loading order history page 2
+2024-11-15T10:00:41.548Z [INFO] Checkout initiated - 3 items | total: $3,458.99
+2024-11-15T10:00:42.348Z [INFO] Creating Stripe payment intent - amount: $3458.99
+2024-11-15T10:00:43.248Z [DEBUG] Cart re-fetched (5th time) - triggered by checkout summary render
+2024-11-15T10:00:43.548Z [WARN] WARN: /api/cart/items fetched 5 times in 8 seconds - consider caching at component level
+2024-11-15T10:00:43.552Z [INFO] Payment intent created - clientSecret: pi_3Ox...secret | amount: $345899
+2024-11-15T10:00:43.558Z [INFO] Submitting order to /api/checkout/confirm
+2024-11-15T10:00:49.248Z [INFO] Order export initiated - format: CSV | estimated size: 8.5 MB
+2024-11-15T10:00:49.352Z [ERROR] GET /api/orders/export took 14200ms - query timeout risk on orders table
+2024-11-15T10:00:50.050Z [INFO] Stock re-check: p001, p005, p010 before shipment confirmation
+2024-11-15T10:00:51.248Z [INFO] Loading audit log page 2 - 200 more records
+2024-11-15T10:00:53.548Z [INFO] User data export initiated - format: JSON | size: 9.2 MB
+2024-11-15T10:00:54.042Z [WARN] /api/users/export response 18500ms - very slow, add DB pagination
+2024-11-15T10:00:54.050Z [WARN] GET /api/products/inventory returned 503 - inventory service still degraded
+2024-11-15T10:00:54.250Z [WARN] Inventory service retry 2/3 failed
+2024-11-15T10:00:54.450Z [ERROR] Inventory service retry 3/3 failed - displaying cached stock data
+2024-11-15T10:00:57.050Z [INFO] Refreshing product details for cart items - p001, p005, p010
+2024-11-15T10:00:58.050Z [INFO] Notification poll - 3 new messages since last check
+2024-11-15T10:01:00.050Z [INFO] Loading user activity feed (2nd fetch) - 90-day window
+2024-11-15T10:01:03.548Z [INFO] User submitted product feedback - productId: p001 | rating: 5
+2024-11-15T10:01:05.050Z [INFO] Session active - 160 requests | 68.2 MB transferred | 65.0s total
