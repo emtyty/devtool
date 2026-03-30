@@ -3,7 +3,7 @@ import {
   Upload, X, Settings, Search, Download, ChevronRight, Clock, HardDrive,
   Activity, AlertTriangle, Filter, Pencil, CheckCircle, Trash2, Info,
   GitCompare, Layers, BarChart2, ChevronDown, ChevronUp, ZoomOut,
-  Copy, Check, TrendingUp, TrendingDown, Minus, Globe,
+  Copy, Check, TrendingUp, TrendingDown, Minus, Globe, Terminal,
 } from 'lucide-react';
 import {
   DEFAULT_RULES, Rule, HarEntry, LogEntry, ParseResult, Operator, RuleTarget, Severity,
@@ -168,6 +168,85 @@ function TimingBar({
 
 const ROW_HEIGHT = 36;
 
+// ── Log row (interleaved in waterfall) ────────────────────────────
+
+function LogWaterfallRow({
+  log, isSelected, isCorrelated, onClick,
+}: {
+  key?: React.Key;
+  log: LogEntry;
+  isSelected: boolean;
+  isCorrelated: boolean;
+  onClick: () => void;
+}) {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(log.message).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+
+  return (
+    <div
+      onClick={onClick}
+      style={{ height: ROW_HEIGHT, borderLeft: `3px solid ${logLevelDotColor(log.level)}` }}
+      className={`group flex items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer select-none transition-colors ${
+        isSelected
+          ? 'bg-blue-50 dark:bg-blue-900/20'
+          : isCorrelated
+          ? 'bg-amber-50/80 dark:bg-amber-900/15'
+          : 'bg-slate-50/60 dark:bg-slate-800/25 hover:bg-slate-100/70 dark:hover:bg-slate-800/50'
+      }`}
+    >
+      {/* Spacer aligns with Status col (w-12 minus the 3px border) */}
+      <div className="w-[45px] shrink-0" />
+
+      {/* Level badge — aligns with Method col (w-14) */}
+      <div className="w-14 shrink-0 px-1">
+        <span className={`text-[9px] font-black uppercase ${levelColor(log.level)}`}>{log.level}</span>
+      </div>
+
+      {/* Timestamp — aligns with URL/Path col (w-40) */}
+      <div className="w-40 shrink-0 px-2">
+        <span className="text-[10px] font-mono text-slate-400">{formatMs(log.relMs)}</span>
+      </div>
+
+      {/* Message — spans the timeline area (flex-1) */}
+      <div className="flex-1 px-3 overflow-hidden flex items-center gap-2 min-w-0">
+        <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1 min-w-0 italic">
+          {log.message}
+        </span>
+        {log.tags.length > 0 && (
+          <div className="shrink-0 flex gap-1">
+            {log.tags.slice(0, 2).map((t, i) => <TagBadge key={i} tag={t.tag} color={t.color} />)}
+          </div>
+        )}
+      </div>
+
+      {/* Empty spacers for Time / Size cols */}
+      <div className="w-16 shrink-0" />
+      <div className="w-14 shrink-0" />
+
+      {/* Copy button — replaces Log-count col (w-8) */}
+      <div className="w-8 shrink-0 flex items-center justify-center">
+        <button
+          onClick={handleCopy}
+          title="Copy message"
+          className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+        >
+          {copied
+            ? <Check size={11} className="text-emerald-500" />
+            : <Copy size={11} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" />
+          }
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface WaterfallRowProps {
   key?: React.Key;
   entry: HarEntry;
@@ -176,7 +255,9 @@ interface WaterfallRowProps {
   isCorrelated: boolean;
   isHighlighted?: boolean;
   logCount: number;
+  isLogExpanded?: boolean;
   onClick: () => void;
+  onLogClick?: () => void;
   onDoubleClick?: () => void;
   zoomRange?: { start: number; end: number } | null;
   sortKey?: string;
@@ -188,7 +269,7 @@ interface WaterfallRowProps {
 }
 
 function WaterfallRow({
-  entry, duration, isSelected, isCorrelated, isHighlighted, logCount, onClick, onDoubleClick,
+  entry, duration, isSelected, isCorrelated, isHighlighted, logCount, isLogExpanded, onClick, onLogClick, onDoubleClick,
   zoomRange, indent, isGroupRow, groupCount, isExpanded, onToggleExpand,
 }: WaterfallRowProps) {
   return (
@@ -260,9 +341,17 @@ function WaterfallRow({
       {/* Log indicator */}
       <div className="w-8 shrink-0 px-1 flex items-center justify-center">
         {logCount > 0 && (
-          <span className="text-[9px] font-black bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded px-1">
+          <button
+            onClick={e => { e.stopPropagation(); onLogClick?.(); }}
+            title={isLogExpanded ? 'Collapse logs' : `${logCount} log${logCount !== 1 ? 's' : ''} — click to show inline`}
+            className={`text-[9px] font-black rounded px-1 transition-colors cursor-pointer ${
+              isLogExpanded
+                ? 'bg-amber-400 dark:bg-amber-600 text-white'
+                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800/50'
+            }`}
+          >
             {logCount}
-          </span>
+          </button>
         )}
       </div>
     </div>
@@ -423,9 +512,220 @@ function TimelineRuler({ duration, zoomRange, onZoom, onReset }: {
   );
 }
 
+// ── Mini Charts ───────────────────────────────────────────────────
+
+function StatusDonutCard({ entries, activeRange, onSliceClick }: {
+  entries: HarEntry[];
+  activeRange: string;
+  onSliceClick: (range: string) => void;
+}) {
+  const counts = useMemo(() => {
+    const c = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
+    for (const e of entries) {
+      if (e.status >= 500) c['5xx']++;
+      else if (e.status >= 400) c['4xx']++;
+      else if (e.status >= 300) c['3xx']++;
+      else if (e.status >= 200) c['2xx']++;
+    }
+    return c;
+  }, [entries]);
+
+  const total = entries.length;
+  const slices = ([
+    { key: '2xx' as const, color: '#10b981', label: '2xx' },
+    { key: '3xx' as const, color: '#94a3b8', label: '3xx' },
+    { key: '4xx' as const, color: '#f97316', label: '4xx' },
+    { key: '5xx' as const, color: '#ef4444', label: '5xx' },
+  ] as const).filter(s => counts[s.key] > 0).map(s => ({ ...s, value: counts[s.key] }));
+
+  const cx = 36, cy = 36, r = 26, sw = 10;
+  const C = 2 * Math.PI * r;
+  let cumulativePct = 0;
+  const segments = slices.map(s => {
+    const pct = s.value / total;
+    const offset = C * (0.25 - cumulativePct);
+    cumulativePct += pct;
+    return { ...s, pct, dash: pct * C, offset };
+  });
+
+  const hasActive = activeRange !== '';
+
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Status Distribution</span>
+        {hasActive && (
+          <button onClick={() => onSliceClick('')} className="text-[9px] text-blue-500 hover:text-blue-700 cursor-pointer font-bold ml-auto">Clear ×</button>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <svg width="72" height="72" viewBox="0 0 72 72" className="shrink-0">
+          <circle cx={cx} cy={cy} r={r} fill="none" className="stroke-slate-100 dark:stroke-slate-800" strokeWidth={sw} />
+          {segments.map((s, i) => (
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+              stroke={s.color} strokeWidth={sw}
+              strokeDasharray={`${s.dash} ${C - s.dash}`}
+              strokeDashoffset={s.offset}
+              opacity={hasActive ? (activeRange === s.key ? 1 : 0.25) : 1}
+              style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
+              onClick={() => onSliceClick(activeRange === s.key ? '' : s.key)}
+            />
+          ))}
+          <text x={cx} y={cy + 4} textAnchor="middle" fontSize="11" fontWeight="900"
+            className="fill-slate-700 dark:fill-slate-200 pointer-events-none">
+            {hasActive ? (counts[activeRange as keyof typeof counts] ?? total) : total}
+          </text>
+        </svg>
+        <div className="space-y-1.5 flex-1 min-w-0">
+          {segments.map(s => {
+            const isActive = activeRange === s.key;
+            return (
+              <button key={s.key} onClick={() => onSliceClick(isActive ? '' : s.key)}
+                className={`w-full flex items-center gap-1.5 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer ${isActive ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'} ${hasActive && !isActive ? 'opacity-40' : ''}`}>
+                <div className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
+                <span className="text-slate-500 dark:text-slate-400 w-6">{s.label}</span>
+                <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${s.pct * 100}%`, backgroundColor: s.color }} />
+                </div>
+                <span className="font-black w-5 text-right shrink-0 tabular-nums" style={{ color: s.color }}>{s.value}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const HISTOGRAM_BUCKETS = [
+  { label: '<100ms',    min: 0,    max: 100,      color: '#10b981' },
+  { label: '100–500ms', min: 100,  max: 500,      color: '#3b82f6' },
+  { label: '500ms–1s',  min: 500,  max: 1000,     color: '#f59e0b' },
+  { label: '1–3s',      min: 1000, max: 3000,     color: '#f97316' },
+  { label: '>3s',       min: 3000, max: Infinity,  color: '#ef4444' },
+] as const;
+
+function ResponseHistogramCard({ entries, activeTimeRange, onBucketClick }: {
+  entries: HarEntry[];
+  activeTimeRange: { min: number; max: number } | null;
+  onBucketClick: (range: { min: number; max: number } | null) => void;
+}) {
+  const counts = useMemo(() => {
+    return HISTOGRAM_BUCKETS.map(b => {
+      const count = entries.filter(e => e.time >= b.min && e.time < b.max).length;
+      return { ...b, count };
+    });
+  }, [entries]);
+
+  const max = Math.max(...counts.map(b => b.count), 1);
+  const hasActive = activeTimeRange !== null;
+
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Response Time</span>
+        {hasActive && (
+          <button onClick={() => onBucketClick(null)} className="text-[9px] text-blue-500 hover:text-blue-700 cursor-pointer font-bold ml-auto">Clear ×</button>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {counts.map(b => {
+          const isActive = hasActive && activeTimeRange!.min === b.min && activeTimeRange!.max === b.max;
+          return (
+            <button key={b.label} onClick={() => onBucketClick(isActive ? null : { min: b.min, max: b.max })}
+              className={`w-full flex items-center gap-2 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer ${isActive ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'} ${hasActive && !isActive ? 'opacity-40' : ''}`}>
+              <span className="w-[68px] shrink-0 text-slate-400 dark:text-slate-500 text-right">{b.label}</span>
+              <div className="flex-1 h-3.5 bg-slate-100 dark:bg-slate-800 rounded-sm overflow-hidden">
+                <div className="h-full rounded-sm transition-all"
+                  style={{ width: `${(b.count / max) * 100}%`, backgroundColor: b.color, minWidth: b.count > 0 ? 3 : 0 }} />
+              </div>
+              <span className="w-5 text-right font-black shrink-0 tabular-nums" style={{ color: b.count > 0 ? b.color : undefined }}>{b.count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TimelineSparklineCard({ entries, duration, zoomRange, onBucketZoom }: {
+  entries: HarEntry[];
+  duration: number;
+  zoomRange: { start: number; end: number } | null;
+  onBucketZoom: (range: { start: number; end: number } | null) => void;
+}) {
+  const BUCKETS = 32;
+  const bSize = duration > 0 ? duration / BUCKETS : 1;
+
+  const bars = useMemo(() => {
+    const arr = Array<number>(BUCKETS).fill(0);
+    if (duration <= 0) return arr;
+    for (const e of entries) {
+      const idx = Math.min(BUCKETS - 1, Math.floor(e.relStartMs / bSize));
+      arr[idx]++;
+    }
+    return arr;
+  }, [entries, duration, bSize]);
+
+  const max = Math.max(...bars, 1);
+
+  const isInZoom = (i: number) => {
+    if (!zoomRange) return false;
+    const start = i * bSize;
+    const end = (i + 1) * bSize;
+    return start < zoomRange.end && end > zoomRange.start;
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Requests / Time</span>
+        {zoomRange && (
+          <button onClick={() => onBucketZoom(null)} className="text-[9px] text-blue-500 hover:text-blue-700 cursor-pointer font-bold ml-auto">Reset zoom ×</button>
+        )}
+      </div>
+      <div className="flex items-end gap-px h-[52px]">
+        {bars.map((count, i) => {
+          const active = isInZoom(i);
+          return (
+            <button key={i}
+              onClick={() => {
+                const start = i * bSize;
+                const end = Math.min(duration, (i + 1) * bSize);
+                const alreadyExact = zoomRange && Math.abs(zoomRange.start - start) < 1 && Math.abs(zoomRange.end - end) < 1;
+                onBucketZoom(alreadyExact ? null : { start, end });
+              }}
+              className="flex-1 flex items-end h-full cursor-pointer group/bar"
+              title={count > 0 ? `${formatMs(i * bSize)} – ${formatMs((i + 1) * bSize)}: ${count} request${count !== 1 ? 's' : ''}` : undefined}
+            >
+              <div className={`w-full rounded-t-[1px] transition-colors ${active ? 'bg-blue-500 dark:bg-blue-400' : 'bg-blue-300 dark:bg-blue-700 group-hover/bar:bg-blue-400 dark:group-hover/bar:bg-blue-500'} ${zoomRange && !active ? 'opacity-30' : ''}`}
+                style={{ height: count > 0 ? `${Math.max(3, (count / max) * 100)}%` : 0 }} />
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-[9px] mt-1.5">
+        <span className="text-slate-400">0s</span>
+        <span className="text-slate-300 dark:text-slate-600">{entries.length} requests</span>
+        <span className="text-slate-400">{formatMs(duration)}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Summary Dashboard ─────────────────────────────────────────────
 
-function SummaryDashboard({ summary, data, onClickSlowest, onClickLargest }: { summary: HarSummary; data: ParseResult; onClickSlowest: () => void; onClickLargest: () => void }) {
+function SummaryDashboard({ summary, data, filter, zoomRange, onClickSlowest, onClickLargest, onStatusFilter, onTimeRangeFilter, onZoomToRange }: {
+  summary: HarSummary;
+  data: ParseResult;
+  filter: FilterState;
+  zoomRange: { start: number; end: number } | null;
+  onClickSlowest: () => void;
+  onClickLargest: () => void;
+  onStatusFilter: (range: string) => void;
+  onTimeRangeFilter: (range: { min: number; max: number } | null) => void;
+  onZoomToRange: (range: { start: number; end: number } | null) => void;
+}) {
   const mostCalled = useMemo(() => {
     const groups = detectDuplicates(data.entries, 1);
     return groups.length > 0 ? groups[0] : null;
@@ -514,6 +814,13 @@ function SummaryDashboard({ summary, data, onClickSlowest, onClickLargest }: { s
             <span className="font-black text-purple-500 ml-1">×{mostCalled.count}</span>
           </div>
         )}
+      </div>
+
+      {/* Charts row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatusDonutCard entries={data.entries} activeRange={filter.statusRange} onSliceClick={onStatusFilter} />
+        <ResponseHistogramCard entries={data.entries} activeTimeRange={filter.timeRange} onBucketClick={onTimeRangeFilter} />
+        <TimelineSparklineCard entries={data.entries} duration={summary.totalDuration} zoomRange={zoomRange} onBucketZoom={onZoomToRange} />
       </div>
     </div>
   );
@@ -1237,12 +1544,13 @@ const HELP_SECTIONS = [
     ],
   },
   {
-    title: 'Request ↔ Log Correlation',
+    title: 'Log Overlay (Interleaved Mode)',
     color: 'text-emerald-600 dark:text-emerald-400',
     items: [
-      { icon: '→', text: 'Click a request row → logs inside its time window are highlighted green' },
-      { icon: '←', text: 'Click a log marker → requests active at that timestamp are highlighted blue' },
-      { icon: '📋', text: 'Click a request row → detail panel shows correlated logs at the bottom' },
+      { icon: '📟', text: 'Toggle "Logs" button in toolbar — merges console logs directly into the waterfall, sorted by time' },
+      { icon: '→', text: 'Click a request row → all logs within its time window highlight amber in the waterfall' },
+      { icon: '←', text: 'Click a log row → network requests active at that timestamp highlight blue' },
+      { icon: '📋', text: 'Request detail panel shows correlated logs in the "Console Logs" section at the bottom' },
     ],
   },
   {
@@ -1269,19 +1577,19 @@ const HELP_SECTIONS = [
     title: 'Performance Tools',
     color: 'text-rose-600 dark:text-rose-400',
     items: [
-      { icon: '📊', text: 'Summary Dashboard shows P50/P95/P99 latency, cache rate, error rate' },
-      { icon: '⚠️', text: 'Issues panel detects N+1 patterns (same URL called 3+ times)' },
-      { icon: '🌐', text: '"By Domain" tab shows breakdown per domain with avg time & total bytes' },
-      { icon: '⚖️', text: '"Compare" button loads a second HAR to diff requests side by side' },
+      { icon: '📊', text: 'Summary Dashboard shows P50/P95/P99 latency, error rate, avg TTFB' },
+      { icon: '⚠️', text: 'Issues panel auto-detects N+1 patterns (same URL called 3+ times)' },
+      { icon: '🌐', text: '"By Domain" tab breaks down count, errors, avg time, total size per host' },
+      { icon: '⚖️', text: '"Compare" loads a second HAR to diff average response times side by side' },
     ],
   },
   {
     title: 'Other Actions',
     color: 'text-slate-600 dark:text-slate-400',
     items: [
-      { icon: '📋', text: 'Detail panel → "cURL" button copies the request as a curl command' },
-      { icon: '🕐', text: '"Log TZ" dropdown adjusts log timezone offset to sync with HAR (UTC)' },
-      { icon: '🔄', text: '"Re-analyze" re-runs parsing — use after changing rules or TZ offset' },
+      { icon: '📋', text: 'Request detail → "cURL" button copies the full request as a curl command' },
+      { icon: '🕐', text: '"Log TZ" dropdown shifts log timestamps to align with HAR time (HAR is always UTC)' },
+      { icon: '🔄', text: '"Re-analyze" re-runs parsing — use after changing rules or timezone offset' },
       { icon: '🔒', text: '100% client-side — no data ever leaves your browser' },
     ],
   },
@@ -1421,39 +1729,96 @@ function UploadPanel({ onHar, onLog, harName, logName, onProcess, isReady, onMan
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
-          <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">How to export a HAR file</p>
-          <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-decimal list-inside">
-            <li>Open DevTools (F12) → Network tab</li>
-            <li>Reproduce the issue in your browser</li>
-            <li>Right-click any request → "Save all as HAR with content"</li>
-            <li>Drop the .har file above</li>
-          </ol>
-        </div>
+        {/* HAR export guide */}
         <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">How to export a console log file</p>
-          <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-decimal list-inside">
-            <li>Open DevTools (F12) → Console tab</li>
-            <li>Right-click anywhere in the console → "Save as…"</li>
-            <li><span className="font-semibold">Or</span> in Node.js: redirect output with <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono">node app.js &gt; app.log</code></li>
-            <li>Drop the .log or .txt file above</li>
-          </ol>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500">Supported timestamps: ISO 8601 · <code className="bg-slate-200 dark:bg-slate-700 px-0.5 rounded font-mono">YYYY-MM-DD HH:mm:ss</code> · <code className="bg-slate-200 dark:bg-slate-700 px-0.5 rounded font-mono">[HH:mm:ss.SSS]</code> · Unix ms epoch</p>
-          <div className="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
-            <p className="text-[10px] font-black text-amber-500 dark:text-amber-400 uppercase tracking-widest">Important notes</p>
-            <div className="space-y-1.5">
-              <div className="flex gap-2 items-start">
-                <span className="text-amber-500 shrink-0 mt-0.5">⚠</span>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300"><span className="font-bold">Enable timestamps</span> — In Console settings (⚙), check <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">Show timestamps</span>. Without timestamps, logs cannot be matched to the waterfall timeline.</p>
-              </div>
-              <div className="flex gap-2 items-start">
-                <span className="text-blue-400 shrink-0 mt-0.5">ℹ</span>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300"><span className="font-bold">File format</span> — Both <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">.log</span> and <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">.txt</span> are supported — they are both plain text.</p>
-              </div>
-              <div className="flex gap-2 items-start">
-                <span className="text-blue-400 shrink-0 mt-0.5">ℹ</span>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300"><span className="font-bold">Log level</span> — Use <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">All levels</span> mode to capture Info, Warn, and Error together.</p>
-              </div>
+          <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">How to export a HAR file</p>
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Chrome / Edge / Brave</p>
+            <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-decimal list-inside">
+              <li>Open DevTools (F12) → <span className="font-semibold">Network</span> tab</li>
+              <li>Reproduce the issue or navigate the page</li>
+              <li>Right-click any request → <span className="font-semibold">Save all as HAR with content</span></li>
+            </ol>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Firefox</p>
+            <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-decimal list-inside">
+              <li>Open DevTools (F12) → <span className="font-semibold">Network</span> tab</li>
+              <li>Click the gear icon → <span className="font-semibold">Save All As HAR</span></li>
+            </ol>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Safari</p>
+            <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-decimal list-inside">
+              <li>Enable DevTools: Preferences → Advanced → Show Develop menu</li>
+              <li>Develop → Show Web Inspector → Network tab</li>
+              <li>Click <span className="font-semibold">Export</span> (down-arrow icon)</li>
+            </ol>
+          </div>
+        </div>
+
+        {/* Console log export guide */}
+        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">How to get a console log file</p>
+
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Browser (Chrome / Edge)</p>
+            <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-decimal list-inside">
+              <li>Open DevTools → <span className="font-semibold">Console</span> tab</li>
+              <li>Click ⚙ (gear) → enable <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">Show timestamps</span></li>
+              <li>Set log level to <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">All levels</span> (Default / Verbose)</li>
+              <li>Reproduce the issue, then right-click → <span className="font-semibold">Save as…</span></li>
+            </ol>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Node.js / Backend</p>
+            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
+              <p>Redirect stdout + stderr to a file:</p>
+              <code className="block bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded font-mono text-[10px] text-slate-700 dark:text-slate-200">
+                node app.js &gt; app.log 2&gt;&amp;1
+              </code>
+              <p className="mt-1">Or use a logger with ISO timestamps:</p>
+              <code className="block bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded font-mono text-[10px] text-slate-700 dark:text-slate-200">
+                winston / pino / bunyan → format: timestamp
+              </code>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Other sources</p>
+            <ul className="text-xs text-slate-500 dark:text-slate-400 space-y-1 list-disc list-inside">
+              <li>AWS CloudWatch, Datadog, Loki → export as plain text</li>
+              <li>Docker: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono text-[10px]">docker logs container &gt; app.log</code></li>
+              <li>PM2: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono text-[10px]">~/.pm2/logs/app-out.log</code></li>
+            </ul>
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1.5">
+            <p className="text-[10px] font-black text-amber-500 dark:text-amber-400 uppercase tracking-widest">Critical: timestamp format</p>
+            <div className="flex gap-2 items-start">
+              <span className="text-emerald-500 shrink-0">✓</span>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                <span className="font-bold">Best:</span> ISO 8601 with timezone — <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono text-[10px]">2024-11-15T10:00:00.050Z</code>
+              </p>
+            </div>
+            <div className="flex gap-2 items-start">
+              <span className="text-emerald-500 shrink-0">✓</span>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                <span className="font-bold">OK:</span> Date + time — <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono text-[10px]">2024-11-15 10:00:00.050</code>
+              </p>
+            </div>
+            <div className="flex gap-2 items-start">
+              <span className="text-amber-500 shrink-0">⚠</span>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                <span className="font-bold">Needs TZ offset:</span> Time-only — <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono text-[10px]">[10:00:00.050]</code> — use the <span className="font-semibold">Log TZ</span> dropdown to correct
+              </p>
+            </div>
+            <div className="flex gap-2 items-start">
+              <span className="text-red-500 shrink-0">✗</span>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                <span className="font-bold">No timestamp</span> — logs cannot be matched to requests
+              </p>
             </div>
           </div>
         </div>
@@ -1472,6 +1837,7 @@ interface FilterState {
   method: string;
   statusRange: string;
   onlyTagged: boolean;
+  timeRange: { min: number; max: number } | null;
 }
 
 const NetworkWaterfallAnalyzer: React.FC = () => {
@@ -1495,7 +1861,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [showRules,   setShowRules]   = useState(false);
   const [showHelp,    setShowHelp]    = useState(false);
-  const [filter, setFilter] = useState<FilterState>({ search: '', method: '', statusRange: '', onlyTagged: false });
+  const [filter, setFilter] = useState<FilterState>({ search: '', method: '', statusRange: '', onlyTagged: false, timeRange: null });
 
   // ── New feature state ─────────────────────────────────────────
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
@@ -1507,12 +1873,16 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const [compareData, setCompareData] = useState<ParseResult | null>(null);
   const [compareText, setCompareText] = useState<string | null>(null);
   const [highlightedPattern, setHighlightedPattern] = useState<{ pattern: string; method: string } | null>(null);
+  const [interleavedLogs, setInterleavedLogs] = useState(false);
+  const [logLevelFilter, setLogLevelFilter] = useState<'all' | 'error' | 'warn' | 'error+warn'>('all');
+  const [expandedLogEntry, setExpandedLogEntry] = useState<string | null>(null);
 
   // ── Virtual scroll ────────────────────────────────────────────
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const compareWorkerRef = useRef<Worker | null>(null);
+  const mergedRowsRef = useRef<any[]>([]);
 
   // ── Worker setup ──────────────────────────────────────────────
   useEffect(() => {
@@ -1565,6 +1935,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
         if (filter.statusRange === '5xx' && e.status < 500) return false;
       }
       if (filter.onlyTagged && e.tags.length === 0) return false;
+      if (filter.timeRange && (e.time < filter.timeRange.min || e.time >= filter.timeRange.max)) return false;
       return true;
     });
 
@@ -1581,6 +1952,20 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
 
     return entries;
   }, [data, filter, sortConfig]);
+
+  const errorEntries = useMemo(() => filteredEntries.filter(e => e.status >= 400), [filteredEntries]);
+
+  const statusCounts = useMemo(() => {
+    if (!data) return { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
+    const c = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
+    for (const e of data.entries) {
+      if (e.status >= 500) c['5xx']++;
+      else if (e.status >= 400) c['4xx']++;
+      else if (e.status >= 300) c['3xx']++;
+      else if (e.status >= 200) c['2xx']++;
+    }
+    return c;
+  }, [data]);
 
   // Group by pattern rows
   interface GroupedRow { type: 'group'; key: string; representative: HarEntry; count: number; entries: HarEntry[] }
@@ -1608,6 +1993,65 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
     return rows;
   }, [filteredEntries, groupByPattern, expandedGroups]);
 
+  type MergedRow = DisplayRow | { type: 'log'; log: LogEntry };
+
+  const mergedRows = useMemo((): MergedRow[] => {
+    // Full interleaved mode — all logs sorted into waterfall
+    if (interleavedLogs && data && data.logs.length > 0) {
+      const netRows: MergedRow[] = filteredEntries.map(e => ({ type: 'single' as const, entry: e }));
+      const visibleLogs = data.logs.filter(log => {
+        if (logLevelFilter === 'all') return true;
+        if (logLevelFilter === 'error') return log.level === 'error';
+        if (logLevelFilter === 'warn') return log.level === 'warn';
+        if (logLevelFilter === 'error+warn') return log.level === 'error' || log.level === 'warn';
+        return true;
+      });
+      const logRows: MergedRow[] = visibleLogs.map(log => ({ type: 'log' as const, log }));
+      const getT = (r: MergedRow): number => {
+        if (r.type === 'log') return r.log.relMs;
+        if (r.type === 'group') return r.representative.relStartMs;
+        return r.entry.relStartMs;
+      };
+      return [...netRows, ...logRows].sort((a, b) => getT(a) - getT(b));
+    }
+
+    // Single-entry log expansion — insert correlated logs right after the expanded row
+    if (expandedLogEntry && data && data.logs.length > 0) {
+      const result: MergedRow[] = [];
+      for (const row of displayRows) {
+        result.push(row);
+        const entry = row.type === 'single' ? row.entry : row.type === 'group' ? row.representative : null;
+        if (entry?.id === expandedLogEntry) {
+          const correlated = data.logs.filter(l => l.relMs >= entry.relStartMs && l.relMs <= entry.relStartMs + entry.time);
+          for (const log of correlated) result.push({ type: 'log' as const, log });
+        }
+      }
+      return result;
+    }
+
+    return displayRows;
+  }, [interleavedLogs, logLevelFilter, expandedLogEntry, displayRows, filteredEntries, data]);
+
+  // Keep mergedRowsRef in sync for scroll-to-selected
+  useEffect(() => { mergedRowsRef.current = mergedRows; }, [mergedRows]);
+
+  // Scroll virtual list to show selected entry
+  useEffect(() => {
+    if (!selected || !scrollRef.current) return;
+    const rows = mergedRowsRef.current;
+    const idx = rows.findIndex((r: any) => {
+      if (r.type === 'log') return false;
+      if (r.type === 'group') return r.representative.id === selected.id;
+      return r.entry.id === selected.id;
+    });
+    if (idx < 0) return;
+    const targetTop = idx * ROW_HEIGHT;
+    const { scrollTop: st, clientHeight } = scrollRef.current;
+    if (targetTop < st || targetTop + ROW_HEIGHT > st + clientHeight) {
+      scrollRef.current.scrollTo({ top: Math.max(0, targetTop - clientHeight / 3), behavior: 'smooth' });
+    }
+  }, [selected]);
+
   const correlatedLogIds = useMemo(() => {
     if (!selected || !data) return new Set<string>();
     return new Set(data.logs.filter(l => l.relMs >= selected.relStartMs && l.relMs <= selected.relStartMs + selected.time).map(l => l.id));
@@ -1634,7 +2078,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const CONTAINER_HEIGHT = 500;
   const BUFFER = 5;
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER);
-  const endIdx   = Math.min(displayRows.length, Math.ceil((scrollTop + CONTAINER_HEIGHT) / ROW_HEIGHT) + BUFFER);
+  const endIdx   = Math.min(mergedRows.length, Math.ceil((scrollTop + CONTAINER_HEIGHT) / ROW_HEIGHT) + BUFFER);
   const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => setScrollTop(e.currentTarget.scrollTop), []);
 
   // ── Actions ───────────────────────────────────────────────────
@@ -1657,6 +2101,16 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   };
 
   const resetZoom = () => setZoomRange(null);
+
+  const jumpToError = (dir: 1 | -1) => {
+    if (errorEntries.length === 0) return;
+    const currentPos = selected ? errorEntries.findIndex(e => e.id === selected.id) : -1;
+    let next = currentPos + dir;
+    if (next < 0) next = errorEntries.length - 1;
+    if (next >= errorEntries.length) next = 0;
+    setSelectedLog(null);
+    setSelected(errorEntries[next]);
+  };
 
   const zoomToEntry = (entry: HarEntry, effectiveDur: number) => {
     const padding = Math.max((entry.time) * 0.1, 50);
@@ -1745,13 +2199,41 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
           {methods.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
 
-        {/* Status filter */}
-        <select value={filter.statusRange} onChange={e => setFilter(f => ({ ...f, statusRange: e.target.value }))}
-          className="text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-600 dark:text-slate-300">
-          <option value="">All Status</option>
-          <option value="2xx">2xx</option><option value="3xx">3xx</option>
-          <option value="4xx">4xx</option><option value="5xx">5xx</option>
-        </select>
+        {/* Status filter chips */}
+        <div className="flex items-center gap-1">
+          {([
+            { v: '',    label: 'All',  cnt: data.entries.length, active: 'bg-slate-200 dark:bg-slate-600 border-slate-400 dark:border-slate-500 text-slate-700 dark:text-slate-100' },
+            { v: '2xx', label: '2xx',  cnt: statusCounts['2xx'], active: 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-400 text-emerald-700 dark:text-emerald-300' },
+            { v: '3xx', label: '3xx',  cnt: statusCounts['3xx'], active: 'bg-slate-100 dark:bg-slate-700 border-slate-400 text-slate-600 dark:text-slate-200' },
+            { v: '4xx', label: '4xx',  cnt: statusCounts['4xx'], active: 'bg-orange-100 dark:bg-orange-900/40 border-orange-400 text-orange-700 dark:text-orange-300' },
+            { v: '5xx', label: '5xx',  cnt: statusCounts['5xx'], active: 'bg-red-100 dark:bg-red-900/40 border-red-400 text-red-700 dark:text-red-300' },
+          ] as const).filter(c => c.v === '' || c.cnt > 0).map(c => (
+            <button key={c.v}
+              onClick={() => setFilter(f => ({ ...f, statusRange: c.v }))}
+              className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border transition-colors cursor-pointer ${
+                filter.statusRange === c.v
+                  ? c.active
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              {c.label}
+              {c.v !== '' && <span className="opacity-60 text-[9px]">{c.cnt}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Jump-to-error navigation */}
+        {errorEntries.length > 0 && (
+          <div className="flex items-center rounded-lg border border-red-200 dark:border-red-800 overflow-hidden shrink-0">
+            <button onClick={() => jumpToError(-1)} title="Previous error" className="px-1.5 py-1 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-500 transition-colors cursor-pointer text-xs font-black">←</button>
+            <span className="text-[10px] font-black text-red-500 px-1.5 tabular-nums">
+              {selected && errorEntries.findIndex(e => e.id === selected.id) >= 0
+                ? `${errorEntries.findIndex(e => e.id === selected.id) + 1}/${errorEntries.length}`
+                : `${errorEntries.length} err`}
+            </span>
+            <button onClick={() => jumpToError(1)} title="Next error" className="px-1.5 py-1 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-500 transition-colors cursor-pointer text-xs font-black">→</button>
+          </div>
+        )}
 
         {/* Flagged toggle */}
         <button onClick={() => setFilter(f => ({ ...f, onlyTagged: !f.onlyTagged }))}
@@ -1765,6 +2247,54 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
           <Layers size={11} />
           Group
         </button>
+
+        {/* Interleaved logs toggle */}
+        {data.logs.length > 0 && (
+          <button
+            onClick={() => {
+              setInterleavedLogs(v => !v);
+              setLogLevelFilter('all');
+            }}
+            title={interleavedLogs ? 'Hide logs from waterfall' : 'Show logs inline in waterfall'}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+              interleavedLogs
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-400'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
+            }`}
+          >
+            <Terminal size={11} />
+            Logs
+          </button>
+        )}
+
+        {/* Log level filter chips — only when interleaved mode is on */}
+        {interleavedLogs && data.logs.length > 0 && (
+          <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
+            {(['all', 'error+warn', 'error', 'warn'] as const).map(level => {
+              const labels: Record<string, string> = { all: 'All', 'error+warn': 'Err+Warn', error: 'Error', warn: 'Warn' };
+              const activeColors: Record<string, string> = {
+                all: 'bg-slate-100 border-slate-400 text-slate-700 dark:bg-slate-700 dark:border-slate-500 dark:text-slate-200',
+                'error+warn': 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-700 dark:text-red-400',
+                error: 'bg-red-50 border-red-400 text-red-700 dark:bg-red-900/30 dark:border-red-600 dark:text-red-400',
+                warn: 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-400',
+              };
+              const isActive = logLevelFilter === level;
+              return (
+                <button
+                  key={level}
+                  onClick={() => setLogLevelFilter(level)}
+                  className={`text-[10px] font-bold px-2 py-1 rounded border transition-colors cursor-pointer ${
+                    isActive
+                      ? activeColors[level]
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  {labels[level]}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Compare */}
         <button onClick={() => setShowCompare(true)}
@@ -1806,8 +2336,12 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
 
       {/* ── Summary Dashboard ──────────────────────────────────── */}
       {summary && <SummaryDashboard summary={summary} data={data}
+        filter={filter} zoomRange={zoomRange}
         onClickSlowest={() => { if (summary.slowestEntry) { setSelected(summary.slowestEntry); setSelectedLog(null); } }}
         onClickLargest={() => { if (summary.largestEntry) { setSelected(summary.largestEntry); setSelectedLog(null); } }}
+        onStatusFilter={range => setFilter(f => ({ ...f, statusRange: range }))}
+        onTimeRangeFilter={range => setFilter(f => ({ ...f, timeRange: range }))}
+        onZoomToRange={range => setZoomRange(range)}
       />}
 
       {/* ── Issues panel ───────────────────────────────────────── */}
@@ -1877,12 +2411,23 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
 
             {/* Virtual list */}
             <div ref={scrollRef} onScroll={onScroll} style={{ height: CONTAINER_HEIGHT, overflowY: 'auto' }}>
-              {displayRows.length === 0 ? (
+              {mergedRows.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-sm text-slate-400">No requests match the current filter.</div>
               ) : (
-                <div style={{ height: displayRows.length * ROW_HEIGHT, position: 'relative' }}>
+                <div style={{ height: mergedRows.length * ROW_HEIGHT, position: 'relative' }}>
                   <div style={{ position: 'absolute', top: startIdx * ROW_HEIGHT, width: '100%' }}>
-                    {displayRows.slice(startIdx, endIdx).map((row, i) => {
+                    {mergedRows.slice(startIdx, endIdx).map((row, i) => {
+                      if (row.type === 'log') {
+                        return (
+                          <LogWaterfallRow
+                            key={row.log.id}
+                            log={row.log}
+                            isSelected={selectedLog?.id === row.log.id}
+                            isCorrelated={selected ? correlatedLogIds.has(row.log.id) : false}
+                            onClick={() => { setSelected(null); setSelectedLog(l => l?.id === row.log.id ? null : row.log); }}
+                          />
+                        );
+                      }
                       if (row.type === 'group') {
                         const isExpanded = expandedGroups.has(row.key);
                         return (
@@ -1894,7 +2439,9 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
                             isCorrelated={correlatedEntryIds.has(row.representative.id)}
                             isHighlighted={!!highlightedPattern && normalizeUrlPattern(row.representative.pathname) === highlightedPattern.pattern && row.representative.method === highlightedPattern.method}
                             logCount={logCountsPerEntry.get(row.representative.id) ?? 0}
+                            isLogExpanded={expandedLogEntry === row.representative.id}
                             onClick={() => { setSelectedLog(null); setSelected(s => s?.id === row.representative.id ? null : row.representative); }}
+                            onLogClick={() => { setSelectedLog(null); setSelected(row.representative); setExpandedLogEntry(id => id === row.representative.id ? null : row.representative.id); }}
                             onDoubleClick={() => zoomToEntry(row.representative, effectiveDuration)}
                             zoomRange={zoomRange}
                             isGroupRow
@@ -1917,7 +2464,9 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
                           isCorrelated={correlatedEntryIds.has(row.entry.id)}
                           isHighlighted={!!highlightedPattern && normalizeUrlPattern(row.entry.pathname) === highlightedPattern.pattern && row.entry.method === highlightedPattern.method}
                           logCount={logCountsPerEntry.get(row.entry.id) ?? 0}
+                          isLogExpanded={expandedLogEntry === row.entry.id}
                           onClick={() => { setSelectedLog(null); setSelected(s => s?.id === row.entry.id ? null : row.entry); }}
+                          onLogClick={() => { setSelectedLog(null); setSelected(row.entry); setExpandedLogEntry(id => id === row.entry.id ? null : row.entry.id); }}
                           onDoubleClick={() => zoomToEntry(row.entry, effectiveDuration)}
                           zoomRange={zoomRange}
                           indent={groupByPattern}
@@ -1938,7 +2487,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
       )}
 
       {/* ── Log timeline ───────────────────────────────────────── */}
-      {data.logs.length > 0 && (
+      {data.logs.length > 0 && !interleavedLogs && (
         <div className="border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 overflow-hidden">
           <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3">
             <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Console Logs</span>
