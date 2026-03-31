@@ -1,16 +1,18 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, startTransition, lazy, Suspense } from 'react';
 import ResizableSplit from './ResizableSplit';
 import {
   Braces, Layers, Copy, Check, Maximize2, Minimize2, AlertCircle,
   Upload, Wrench, GitCompare, ChevronRight, ChevronDown, Plus, Minus,
-  RefreshCw, TreePine, Code2, Quote, ArrowLeftRight, Unlink,
+  RefreshCw, TreePine, Code2, Quote, ArrowLeftRight, Unlink, Network,
 } from 'lucide-react';
 import { jsonrepair } from 'jsonrepair';
 import JsonDiffV2, { findDiffs, type DiffItem } from './JsonDiffV2';
 
+const JsonDiagram = lazy(() => import('./JsonDiagram'));
+
 // --- Types ---
 
-type JsonTab = 'format' | 'diff' | 'ts' | 'unescape';
+type JsonTab = 'format' | 'diff' | 'ts' | 'unescape' | 'diagram';
 type DiffViewMode = 'tree' | 'sidebyside';
 type OutputMode = 'text' | 'tree' | 'string';
 type DiffType = 'added' | 'removed' | 'changed' | 'nested';
@@ -393,6 +395,9 @@ export default function JsonTools({ initialData }: { initialData?: string | null
   const [unescError, setUnescError] = useState<string | null>(null);
   const [unescCopied, setUnescCopied] = useState(false);
 
+  // Diagram
+  const [diagramParsed, setDiagramParsed] = useState<unknown>(null);
+
   // --- Format handlers ---
 
   const indentVal = () => (indent === 'tab' ? '\t' : indent);
@@ -541,6 +546,18 @@ export default function JsonTools({ initialData }: { initialData?: string | null
   const diffStats = diffEntries ? countDiffStats(diffEntries) : null;
   const hasOutput = outputMode === 'tree' ? treeParsed !== null : !!output;
 
+  // Auto-parse input when switching to diagram tab
+  useEffect(() => {
+    if (tab === 'diagram' && input.trim()) {
+      try {
+        const parsed = JSON.parse(input);
+        startTransition(() => setDiagramParsed(parsed));
+      } catch {
+        // keep existing diagramParsed
+      }
+    }
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-6">
       {/* Tab Switcher */}
@@ -556,6 +573,9 @@ export default function JsonTools({ initialData }: { initialData?: string | null
         </button>
         <button onClick={() => setTab('unescape')} className={TAB_CLASSES(tab === 'unescape')}>
           <Unlink size={14} /> Unescape
+        </button>
+        <button onClick={() => setTab('diagram')} className={TAB_CLASSES(tab === 'diagram')}>
+          <Network size={14} /> Diagram
         </button>
       </div>
 
@@ -1004,6 +1024,21 @@ export default function JsonTools({ initialData }: { initialData?: string | null
                   diffEntries.map((entry, i) => <DiffEntryRow key={i} entry={entry} />)
                 )}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── DIAGRAM TAB ── */}
+      {tab === 'diagram' && (
+        <div>
+          {diagramParsed !== null ? (
+            <Suspense fallback={<div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl min-h-[400px] flex items-center justify-center"><p className="text-slate-400 text-xs italic">Loading diagram…</p></div>}>
+              <JsonDiagram data={diagramParsed} />
+            </Suspense>
+          ) : (
+            <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl min-h-[400px] flex items-center justify-center">
+              <p className="text-slate-400 text-xs italic">Paste JSON in the Format tab first, then switch here.</p>
             </div>
           )}
         </div>
