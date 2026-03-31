@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -31,8 +31,9 @@ const TableLens                = lazy(() => import('./components/TableLens'));
 const NetworkWaterfallAnalyzer = lazy(() => import('./components/NetworkWaterfallAnalyzer'));
 const CspTools                 = lazy(() => import('./components/CspTools'));
 const JsonExtractor            = lazy(() => import('./components/JsonExtractor'));
+const PdfEditor                = lazy(() => import('./components/PdfEditor'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -62,6 +63,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   networkwaterfall: 'network-waterfall',
   csptools:         'csp-tools',
   jsonextractor:    'json-extractor',
+  pdfeditor:        'pdf-editor',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -112,6 +114,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={16} /> },
       { id: 'fileconverter', label: 'File Converter',    icon: <FileOutput size={16} /> },
       { id: 'tablelens',     label: 'Table Lens',        icon: <Sheet size={16} /> },
+      { id: 'pdfeditor',     label: 'PDF Editor',        icon: <Scissors size={16} /> },
     ],
   },
   {
@@ -485,6 +488,7 @@ const App: React.FC = () => {
            mode === 'networkwaterfall' ? <NetworkWaterfallAnalyzer /> :
            mode === 'csptools'         ? <CspTools initialData={pendingData} /> :
            mode === 'jsonextractor'    ? <JsonExtractor /> :
+           mode === 'pdfeditor'        ? <PdfEditor /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (
@@ -618,5 +622,6 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'metadata',         name: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[11px]" />, desc: 'EXIF/XMP/IPTC metadata extraction via @uswriting/exiftool + WebAssembly' },
   { id: 'queryplan',     name: 'Query Plan',        icon: <i className="fa-solid fa-diagram-project text-[11px]" />,   desc: 'SQL Server execution plan viewer + Gemini AI analysis via @google/genai' },
   { id: 'jsonextractor', name: 'JSON Extractor',    icon: <ListTree size={11} />,      desc: 'Extract a list of values from JSON by dot-notation path — auto-traverses nested arrays' },
+  { id: 'pdfeditor',    name: 'PDF Editor',        icon: <Scissors size={11} />,      desc: 'Sort or delete PDF pages and export a new PDF — runs entirely in your browser' },
   { id: 'smartdetect',   name: 'Smart Detector',    icon: <Wand2 size={11} />,         desc: 'Auto-detect content type (JSON, SQL, JWT, cron, etc.) and route to the right tool' },
 ];
