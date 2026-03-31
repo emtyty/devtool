@@ -1,5 +1,9 @@
-import React, { useState, useRef, useMemo, useEffect, startTransition, memo, useCallback } from 'react';
-import { buildDiagramLayout, type DiagramNode } from '@/utils/jsonDiagramLayout';
+import React, { useState, useRef, useMemo, useEffect, useTransition, memo, useCallback } from 'react';
+import {
+  buildDiagramTree, applyLayout,
+  NODE_WIDTH, NODE_HEADER_H, PRIMITIVE_ROW_H, MAX_VISIBLE_ENTRIES,
+  type DiagramNode, type DiagramTree,
+} from '@/utils/jsonDiagramLayout';
 
 // ── Node sub-component ──────────────────────────────────────────────────────
 
@@ -40,7 +44,7 @@ interface NodeProps {
   node: DiagramNode;
   collapsed: boolean;
   isDark: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
   onValueHover: (text: string, screenX: number, screenY: number) => void;
   onValueLeave: () => void;
 }
@@ -102,7 +106,7 @@ const JsonDiagramNode = memo(function JsonDiagramNode({
             cursor: hasChildren ? 'pointer' : 'default',
             flexShrink: 0,
           }}
-          onClick={hasChildren ? onToggle : undefined}
+          onClick={hasChildren ? () => onToggle(node.id) : undefined}
         >
           <span
             style={{
@@ -262,16 +266,27 @@ interface JsonDiagramProps {
   data: unknown;
 }
 
+const MINIMAP_W = 140;
+const MINIMAP_H = 90;
+
 export default function JsonDiagram({ data }: JsonDiagramProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set<string>());
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const [zoom, setZoom] = useState(1.0);
   const [isPanning, setIsPanning] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
+  const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+  const [isPending, startTransition] = useTransition();
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ mx: 0, my: 0, px: 0, py: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingFitRef = useRef(false);
+
+  // Stage 1: build tree — only when data changes
+  const diagramTree = useMemo<DiagramTree>(() => buildDiagramTree(data), [data]);
+
+  // Stage 2: apply layout — when tree OR collapse changes
+  const layout = useMemo(() => applyLayout(diagramTree, collapsedIds), [diagramTree, collapsedIds]);
 
   // When data changes: expand all nodes and schedule fit-to-view
   useEffect(() => {
@@ -282,8 +297,6 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
     });
     pendingFitRef.current = true;
   }, [data]);
-
-  const layout = useMemo(() => buildDiagramLayout(data, collapsedIds), [data, collapsedIds]);
 
   // After layout updates, run pending fit (only when triggered by data change)
   useEffect(() => {
@@ -316,14 +329,31 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  const toggleNode = (id: string) => {
-    setCollapsedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  // ResizeObserver to track container size
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setContainerSize({ width, height });
     });
-  };
+    ro.observe(el);
+    // Set initial size
+    const rect = el.getBoundingClientRect();
+    setContainerSize({ width: rect.width, height: rect.height });
+    return () => ro.disconnect();
+  }, []);
+
+  const toggleNode = useCallback((id: string) => {
+    startTransition(() => {
+      setCollapsedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    });
+  }, [startTransition]);
 
   // Convert screen coords → SVG viewport coords (not affected by pan/zoom)
   const handleValueHover = useCallback((text: string, screenX: number, screenY: number) => {
@@ -366,7 +396,49 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
     setPan({ x: 40, y: 40 });
   };
 
-  const containerSize = containerRef.current?.getBoundingClientRect();
+  // Viewport culling
+  const MAX_NODE_HEIGHT = NODE_HEADER_H + MAX_VISIBLE_ENTRIES * PRIMITIVE_ROW_H + 12;
+
+  const cullRect = useMemo(() => {
+    const vpLeft   = -pan.x / zoom;
+    const vpTop    = -pan.y / zoom;
+    const vpRight  = (containerSize.width  - pan.x) / zoom;
+    const vpBottom = (containerSize.height - pan.y) / zoom;
+    return {
+      left:   vpLeft   - NODE_WIDTH,
+      top:    vpTop    - MAX_NODE_HEIGHT,
+      right:  vpRight  + NODE_WIDTH,
+      bottom: vpBottom + MAX_NODE_HEIGHT,
+    };
+  }, [pan.x, pan.y, zoom, containerSize.width, containerSize.height, MAX_NODE_HEIGHT]);
+
+  const visibleNodes = useMemo(() =>
+    layout.nodes.filter(n =>
+      n.x + n.width > cullRect.left  &&
+      n.x           < cullRect.right &&
+      n.y + n.height > cullRect.top  &&
+      n.y            < cullRect.bottom
+    ),
+    [layout.nodes, cullRect]
+  );
+
+  const visibleNodeIds = useMemo(() =>
+    new Set(visibleNodes.map(n => n.id)),
+    [visibleNodes]
+  );
+
+  const visibleEdges = useMemo(() =>
+    layout.edges.filter(e =>
+      visibleNodeIds.has(e.fromId) || visibleNodeIds.has(e.toId)
+    ),
+    [layout.edges, visibleNodeIds]
+  );
+
+  // Minimap
+  const minimapScale = layout.totalWidth > 0 && layout.totalHeight > 0
+    ? Math.min(MINIMAP_W / layout.totalWidth, MINIMAP_H / layout.totalHeight)
+    : 1;
+  const showMinimap = layout.nodes.length > 30;
 
   return (
     <div>
@@ -383,6 +455,15 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
+        {/* Loading indicator while layout is pending */}
+        {isPending && (
+          <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-xs text-slate-500 dark:text-slate-400 shadow-md">
+              Computing layout…
+            </div>
+          </div>
+        )}
+
         {/* Controls */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1" onPointerDown={(e) => e.stopPropagation()}>
           <button
@@ -413,7 +494,7 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
         {/* SVG Canvas */}
         <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
           <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-            {layout.edges.map(edge => (
+            {visibleEdges.map(edge => (
               <path
                 key={`${edge.fromId}->${edge.toId}`}
                 d={edge.path}
@@ -423,26 +504,79 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
                 strokeOpacity={0.55}
               />
             ))}
-            {layout.nodes.map(node => (
+            {visibleNodes.map(node => (
               <JsonDiagramNode
                 key={node.id}
                 node={node}
                 collapsed={collapsedIds.has(node.id)}
                 isDark={isDark}
-                onToggle={() => toggleNode(node.id)}
+                onToggle={toggleNode}
                 onValueHover={handleValueHover}
                 onValueLeave={handleValueLeave}
               />
             ))}
           </g>
           {/* Tooltip — outside <g> so it's not scaled/clipped by pan+zoom */}
-          {tooltip && containerSize && (
+          {tooltip && (
             <DiagramTooltip
               tooltip={tooltip}
               containerWidth={containerSize.width}
               containerHeight={containerSize.height}
               isDark={isDark}
             />
+          )}
+          {/* Minimap */}
+          {showMinimap && (
+            <g transform={`translate(8, ${containerSize.height - MINIMAP_H - 8})`} style={{ pointerEvents: 'all' }}>
+              {/* Background */}
+              <rect
+                width={MINIMAP_W} height={MINIMAP_H} rx={4}
+                fill={isDark ? 'rgba(15,23,42,0.85)' : 'rgba(248,250,252,0.9)'}
+                stroke={isDark ? '#334155' : '#e2e8f0'}
+                strokeWidth={1}
+              />
+              {/* All nodes as tiny colored rects */}
+              {layout.nodes.map(n => (
+                <rect
+                  key={n.id}
+                  x={n.x * minimapScale}
+                  y={n.y * minimapScale}
+                  width={Math.max(2, n.width * minimapScale)}
+                  height={Math.max(2, n.height * minimapScale)}
+                  fill={DEPTH_HEADER_COLORS[n.depth % DEPTH_HEADER_COLORS.length]}
+                  opacity={0.75}
+                />
+              ))}
+              {/* Viewport indicator */}
+              <rect
+                x={Math.max(0, -pan.x / zoom * minimapScale)}
+                y={Math.max(0, -pan.y / zoom * minimapScale)}
+                width={Math.min(MINIMAP_W, containerSize.width / zoom * minimapScale)}
+                height={Math.min(MINIMAP_H, containerSize.height / zoom * minimapScale)}
+                fill="none"
+                stroke="#38bdf8"
+                strokeWidth={1.5}
+                opacity={0.9}
+              />
+              {/* Click-to-navigate */}
+              <rect
+                width={MINIMAP_W} height={MINIMAP_H} rx={4}
+                fill="transparent"
+                style={{ cursor: 'crosshair' }}
+                onPointerDown={(e: React.PointerEvent<SVGRectElement>) => {
+                  e.stopPropagation();
+                  const mmRect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
+                  const mmX = e.clientX - mmRect.left;
+                  const mmY = e.clientY - mmRect.top;
+                  const diagX = mmX / minimapScale;
+                  const diagY = mmY / minimapScale;
+                  setPan({
+                    x: containerSize.width  / 2 - diagX * zoom,
+                    y: containerSize.height / 2 - diagY * zoom,
+                  });
+                }}
+              />
+            </g>
           )}
         </svg>
       </div>

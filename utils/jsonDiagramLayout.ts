@@ -32,11 +32,15 @@ export interface DiagramLayout {
   nodeMap: Map<string, DiagramNode>;
 }
 
+export interface DiagramTree {
+  topNodes: DiagramNode[];
+}
+
 // Layout constants
-const NODE_WIDTH = 260;
-const NODE_HEADER_H = 36;
-const PRIMITIVE_ROW_H = 22;
-const MAX_VISIBLE_ENTRIES = 8;
+export const NODE_WIDTH = 260;
+export const NODE_HEADER_H = 36;
+export const PRIMITIVE_ROW_H = 22;
+export const MAX_VISIBLE_ENTRIES = 8;
 const NODE_V_GAP = 18;
 const NODE_H_GAP = 80;
 const EDGE_COLORS = ['#2563eb', '#7c3aed', '#0d9488', '#d97706', '#e11d48', '#6366f1'];
@@ -199,9 +203,7 @@ function shiftDepths(node: DiagramNode, delta: number): void {
   }
 }
 
-export function buildDiagramLayout(data: unknown, collapsedIds?: Set<string>): DiagramLayout {
-  const collapsed = collapsedIds ?? new Set<string>();
-
+export function buildDiagramTree(data: unknown): DiagramTree {
   const root = buildTree(data, 'root', 'root', 0, null);
 
   // Skip the root wrapper node when it has children — promote children to depth 0
@@ -216,17 +218,23 @@ export function buildDiagramLayout(data: unknown, collapsedIds?: Set<string>): D
     topNodes = [root];
   }
 
+  return { topNodes };
+}
+
+export function applyLayout(tree: DiagramTree, collapsedIds: Set<string>): DiagramLayout {
+  const { topNodes } = tree;
+
   // Layout all top-level nodes stacked vertically
   let top = 0;
   for (const topNode of topNodes) {
-    const subtreeH = computeSubtreeHeight(topNode, collapsed);
-    computeLayout(topNode, collapsed, top);
+    const subtreeH = computeSubtreeHeight(topNode, collapsedIds);
+    computeLayout(topNode, collapsedIds, top);
     top += subtreeH + NODE_V_GAP;
   }
 
   const nodes: DiagramNode[] = [];
   for (const topNode of topNodes) {
-    collectVisibleNodes(topNode, collapsed, nodes);
+    collectVisibleNodes(topNode, collapsedIds, nodes);
   }
 
   const nodeMap = new Map<string, DiagramNode>();
@@ -259,4 +267,8 @@ export function buildDiagramLayout(data: unknown, collapsedIds?: Set<string>): D
   }
 
   return { nodes, edges, totalWidth, totalHeight, nodeMap };
+}
+
+export function buildDiagramLayout(data: unknown, collapsedIds?: Set<string>): DiagramLayout {
+  return applyLayout(buildDiagramTree(data), collapsedIds ?? new Set());
 }
