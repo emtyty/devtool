@@ -266,8 +266,6 @@ interface JsonDiagramProps {
   data: unknown;
 }
 
-const MINIMAP_W = 140;
-const MINIMAP_H = 90;
 
 export default function JsonDiagram({ data }: JsonDiagramProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set<string>());
@@ -434,11 +432,6 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
     [layout.edges, visibleNodeIds]
   );
 
-  // Minimap
-  const minimapScale = layout.totalWidth > 0 && layout.totalHeight > 0
-    ? Math.min(MINIMAP_W / layout.totalWidth, MINIMAP_H / layout.totalHeight)
-    : 1;
-  const showMinimap = layout.nodes.length > 30;
 
   return (
     <div>
@@ -524,59 +517,6 @@ export default function JsonDiagram({ data }: JsonDiagramProps) {
               containerHeight={containerSize.height}
               isDark={isDark}
             />
-          )}
-          {/* Minimap */}
-          {showMinimap && (
-            <g transform={`translate(8, ${containerSize.height - MINIMAP_H - 8})`} style={{ pointerEvents: 'all' }}>
-              {/* Background */}
-              <rect
-                width={MINIMAP_W} height={MINIMAP_H} rx={4}
-                fill={isDark ? 'rgba(15,23,42,0.85)' : 'rgba(248,250,252,0.9)'}
-                stroke={isDark ? '#334155' : '#e2e8f0'}
-                strokeWidth={1}
-              />
-              {/* All nodes as tiny colored rects */}
-              {layout.nodes.map(n => (
-                <rect
-                  key={n.id}
-                  x={n.x * minimapScale}
-                  y={n.y * minimapScale}
-                  width={Math.max(2, n.width * minimapScale)}
-                  height={Math.max(2, n.height * minimapScale)}
-                  fill={DEPTH_HEADER_COLORS[n.depth % DEPTH_HEADER_COLORS.length]}
-                  opacity={0.75}
-                />
-              ))}
-              {/* Viewport indicator */}
-              <rect
-                x={Math.max(0, -pan.x / zoom * minimapScale)}
-                y={Math.max(0, -pan.y / zoom * minimapScale)}
-                width={Math.min(MINIMAP_W, containerSize.width / zoom * minimapScale)}
-                height={Math.min(MINIMAP_H, containerSize.height / zoom * minimapScale)}
-                fill="none"
-                stroke="#38bdf8"
-                strokeWidth={1.5}
-                opacity={0.9}
-              />
-              {/* Click-to-navigate */}
-              <rect
-                width={MINIMAP_W} height={MINIMAP_H} rx={4}
-                fill="transparent"
-                style={{ cursor: 'crosshair' }}
-                onPointerDown={(e: React.PointerEvent<SVGRectElement>) => {
-                  e.stopPropagation();
-                  const mmRect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
-                  const mmX = e.clientX - mmRect.left;
-                  const mmY = e.clientY - mmRect.top;
-                  const diagX = mmX / minimapScale;
-                  const diagY = mmY / minimapScale;
-                  setPan({
-                    x: containerSize.width  / 2 - diagX * zoom,
-                    y: containerSize.height / 2 - diagY * zoom,
-                  });
-                }}
-              />
-            </g>
           )}
         </svg>
       </div>
