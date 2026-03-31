@@ -70,6 +70,16 @@ export interface ParseResult {
   duration: number;
 }
 
+export interface Issue {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  severity: Severity;
+  entries: HarEntry[];
+  meta?: Record<string, unknown>;
+}
+
 export const DEFAULT_RULES: Rule[] = [
   {
     id: 'R_001', name: 'Slow Request (>3s)', enabled: true, target: 'network',
@@ -148,6 +158,12 @@ function headersToRecord(headers: Array<{ name: string; value: string }>): Recor
   return result;
 }
 
+function getHeader(headers: Record<string, string> | undefined, name: string): string {
+  if (!headers) return '';
+  const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? headers[key] : '';
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseHar(text: string, rules: Rule[]): { entries: HarEntry[]; t0: number } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,6 +220,35 @@ export function parseHar(text: string, rules: Rule[]): { entries: HarEntry[]; t0
       rules,
       'network',
     );
+
+    // ── Per-entry hardcoded detections ────────────────────────────────
+
+    // #3 Uncompressed Bloat — response > 1MB without Content-Encoding
+    if (responseSize > 1_000_000 && !getHeader(entry.responseHeaders, 'content-encoding')) {
+      entry.tags.push({ tag: 'Bloat', color: '#7c3aed', severity: 'warning' });
+    }
+
+    // #8 Cache Miss Trend — static asset with no-cache / no-store header
+    if (/\.(js|css|png|jpg|jpeg|gif|svg|woff2?|ico|webp)(\?|$)/i.test(url)) {
+      const cc = getHeader(entry.responseHeaders, 'cache-control');
+      if (/no-cache|no-store/.test(cc)) {
+        entry.tags.push({ tag: 'No Cache', color: '#0891b2', severity: 'warning' });
+      }
+    }
+
+    // #9 Header Leakage — sensitive headers sent over plain HTTP
+    if (url.startsWith('http://')) {
+      const SENSITIVE = /^(authorization|x-api-key|api-key|token|x-auth-token|x-access-token|set-cookie)$/i;
+      const allHeaders = { ...entry.requestHeaders, ...entry.responseHeaders };
+      if (Object.keys(allHeaders).some(k => SENSITIVE.test(k))) {
+        entry.tags.push({ tag: 'Header Leak', color: '#dc2626', severity: 'critical' });
+      }
+    }
+
+    // #10 Large Payload DOM — HTML response > 500KB
+    if (mimeType.includes('text/html') && responseSize > 500_000) {
+      entry.tags.push({ tag: 'Heavy HTML', color: '#be185d', severity: 'warning' });
+    }
 
     return entry;
   });
@@ -536,4 +581,273 @@ export function generateCurl(entry: HarEntry): string {
   }
   parts.push(`  ${JSON.stringify(entry.url)}`);
   return parts.join(' \\\n');
+}
+
+// ── Advanced Session-Level Issue Detection ─────────────────────────
+
+// #1 N+1 Waterfall — sequential requests to same pattern with start-time gap < 20ms
+export function detectN1Waterfall(entries: HarEntry[]): Issue[] {
+  const groups = new Map<string, HarEntry[]>();
+  // Only consider successful responses — redirects are handled by detectRedirectLoops
+  for (const e of entries.filter(e => e.status >= 200 && e.status < 300)) {
+    const key = `${e.method}::${normalizeUrlPattern(e.pathname)}`;
+    const arr = groups.get(key) ?? [];
+    arr.push(e);
+    groups.set(key, arr);
+  }
+  const issues: Issue[] = [];
+  let idx = 0;
+  for (const [key, group] of groups) {
+    if (group.length < 3) continue;
+    const sorted = [...group].sort((a, b) => a.relStartMs - b.relStartMs);
+    // Collect consecutive entries where gap between start times < 20ms
+    const run: HarEntry[] = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].relStartMs - sorted[i - 1].relStartMs < 20) run.push(sorted[i]);
+    }
+    if (run.length >= 3) {
+      const [method, pattern] = key.split('::');
+      issues.push({
+        id: `n1-waterfall-${idx++}`,
+        type: 'n1-waterfall',
+        title: `N+1 Waterfall: ${method} ${pattern}`,
+        description: `${run.length} sequential requests with <20ms gap between starts`,
+        severity: 'critical',
+        entries: run,
+      });
+    }
+  }
+  return issues;
+}
+
+// #2 Infinite Polling — identical GET requests at fixed interval (stdDev/avg < 20%)
+export function detectInfinitePolling(entries: HarEntry[]): Issue[] {
+  const gets = entries.filter(e => e.method === 'GET');
+  const groups = new Map<string, HarEntry[]>();
+  for (const e of gets) {
+    const key = normalizeUrlPattern(e.pathname);
+    const arr = groups.get(key) ?? [];
+    arr.push(e);
+    groups.set(key, arr);
+  }
+  const issues: Issue[] = [];
+  let idx = 0;
+  for (const [pattern, group] of groups) {
+    if (group.length < 4) continue;
+    const sorted = [...group].sort((a, b) => a.relStartMs - b.relStartMs);
+    const gaps = sorted.slice(1).map((e, i) => e.relStartMs - sorted[i].relStartMs);
+    const avg = gaps.reduce((s, g) => s + g, 0) / gaps.length;
+    const stdDev = Math.sqrt(gaps.reduce((s, g) => s + (g - avg) ** 2, 0) / gaps.length);
+    if (avg > 500 && stdDev / avg < 0.2) {
+      issues.push({
+        id: `polling-${idx++}`,
+        type: 'infinite-polling',
+        title: `Infinite Polling: GET ${pattern}`,
+        description: `${group.length} requests at ~${Math.round(avg)}ms fixed interval`,
+        severity: 'error',
+        entries: sorted,
+        meta: { intervalMs: Math.round(avg) },
+      });
+    }
+  }
+  return issues;
+}
+
+// #4 CORS Preflight Storm — per-endpoint OPTIONS count ≥ actual call count on 2+ endpoints
+// (Access-Control-Max-Age=0 or missing causes browser to re-send preflight every time)
+export function detectCorsPreflightStorm(entries: HarEntry[]): Issue[] {
+  const options = entries.filter(e => e.method === 'OPTIONS');
+  if (options.length === 0) return [];
+
+  // Group by normalized URL pattern: count OPTIONS vs actual calls
+  const groups = new Map<string, { options: HarEntry[]; actual: HarEntry[] }>();
+  for (const e of entries) {
+    const key = normalizeUrlPattern(e.pathname);
+    const g = groups.get(key) ?? { options: [], actual: [] };
+    if (e.method === 'OPTIONS') g.options.push(e);
+    else g.actual.push(e);
+    groups.set(key, g);
+  }
+
+  // Storm = endpoints where preflight count ≥ actual call count (browser isn't caching)
+  const stormEndpoints = [...groups.entries()].filter(
+    ([, g]) => g.options.length > 0 && g.actual.length > 0 && g.options.length >= g.actual.length,
+  );
+  if (stormEndpoints.length < 2) return [];
+
+  return [{
+    id: 'cors-storm-0',
+    type: 'cors-preflight-storm',
+    title: 'CORS Preflight Storm',
+    description: `${stormEndpoints.length} endpoints where OPTIONS ≥ actual calls — Access-Control-Max-Age may be 0`,
+    severity: 'warning',
+    entries: options,
+    meta: { stormCount: stormEndpoints.length, totalOptions: options.length },
+  }];
+}
+
+// #5 Zombie API Calls — 200 OK with empty body, repeated ≥ 3 times on same pattern
+export function detectZombieApiCalls(entries: HarEntry[]): Issue[] {
+  const groups = new Map<string, HarEntry[]>();
+  for (const e of entries) {
+    if (e.status !== 200 || e.responseSize > 10) continue;
+    const key = `${e.method}::${normalizeUrlPattern(e.pathname)}`;
+    const arr = groups.get(key) ?? [];
+    arr.push(e);
+    groups.set(key, arr);
+  }
+  const issues: Issue[] = [];
+  let idx = 0;
+  for (const [key, group] of groups) {
+    if (group.length < 3) continue;
+    const [method, pattern] = key.split('::');
+    issues.push({
+      id: `zombie-${idx++}`,
+      type: 'zombie-api',
+      title: `Zombie API: ${method} ${pattern}`,
+      description: `${group.length}× status 200 with empty response body`,
+      severity: 'warning',
+      entries: group,
+    });
+  }
+  return issues;
+}
+
+// #6 Redirect Loops — same URL pattern with 301/302 appearing ≥ 3 times
+export function detectRedirectLoops(entries: HarEntry[]): Issue[] {
+  const groups = new Map<string, HarEntry[]>();
+  for (const e of entries) {
+    if (e.status !== 301 && e.status !== 302) continue;
+    const key = normalizeUrlPattern(e.pathname);
+    const arr = groups.get(key) ?? [];
+    arr.push(e);
+    groups.set(key, arr);
+  }
+  const issues: Issue[] = [];
+  let idx = 0;
+  for (const [pattern, group] of groups) {
+    if (group.length < 3) continue;
+    const statuses = [...new Set(group.map(e => e.status))].join(', ');
+    issues.push({
+      id: `redirect-loop-${idx++}`,
+      type: 'redirect-loop',
+      title: `Redirect Loop: ${pattern}`,
+      description: `${group.length} redirects (${statuses})`,
+      severity: 'critical',
+      entries: group,
+    });
+  }
+  return issues;
+}
+
+// #7 Heavy Third-Party — third-party domains account for > 60% of total transfer
+export function detectHeavyThirdParty(entries: HarEntry[]): Issue[] {
+  if (entries.length === 0) return [];
+  // Detect app domain as most-requested host
+  const hostCount = new Map<string, number>();
+  for (const e of entries) if (e.host) hostCount.set(e.host, (hostCount.get(e.host) ?? 0) + 1);
+  let appDomain = '';
+  let maxCount = 0;
+  for (const [host, count] of hostCount) if (count > maxCount) { maxCount = count; appDomain = host; }
+
+  const totalSize = entries.reduce((s, e) => s + e.responseSize, 0);
+  if (totalSize === 0) return [];
+
+  const thirdParty = entries.filter(e => e.host && e.host !== appDomain);
+  const thirdPartySize = thirdParty.reduce((s, e) => s + e.responseSize, 0);
+  const ratio = thirdPartySize / totalSize;
+  if (ratio <= 0.6) return [];
+
+  const byDomain = new Map<string, number>();
+  for (const e of thirdParty) byDomain.set(e.host, (byDomain.get(e.host) ?? 0) + e.responseSize);
+  const topDomains = [...byDomain.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d]) => d).join(', ');
+
+  return [{
+    id: 'heavy-third-party-0',
+    type: 'heavy-third-party',
+    title: 'Heavy Third-Party Load',
+    description: `${(ratio * 100).toFixed(0)}% of transfer from third-party domains (${topDomains})`,
+    severity: 'warning',
+    entries: thirdParty,
+    meta: { ratio, appDomain, topDomains },
+  }];
+}
+
+// #8 Cache Miss Trend — static assets served with no-cache / no-store
+export function detectCacheMissTrend(entries: HarEntry[]): Issue[] {
+  const noCacheEntries = entries.filter(e => {
+    if (!/\.(js|css|png|jpg|jpeg|gif|svg|woff2?|ico|webp)(\?|$)/i.test(e.pathname)) return false;
+    const cc = getHeader(e.responseHeaders, 'cache-control');
+    return /no-cache|no-store/.test(cc);
+  });
+  if (noCacheEntries.length === 0) return [];
+  const totalStatic = entries.filter(e =>
+    /\.(js|css|png|jpg|jpeg|gif|svg|woff2?|ico|webp)(\?|$)/i.test(e.pathname),
+  ).length;
+  return [{
+    id: 'cache-miss-trend-0',
+    type: 'cache-miss-trend',
+    title: 'Cache Miss Trend',
+    description: `${noCacheEntries.length} of ${totalStatic} static assets served with no-cache / no-store`,
+    severity: 'warning',
+    entries: noCacheEntries,
+    meta: { count: noCacheEntries.length, totalStatic },
+  }];
+}
+
+// #9 Header Leakage — sensitive headers sent over plain HTTP
+export function detectHeaderLeakage(entries: HarEntry[]): Issue[] {
+  const SENSITIVE = /^(authorization|x-api-key|api-key|token|x-auth-token|x-access-token|set-cookie)$/i;
+  const leakyEntries = entries.filter(e => {
+    if (!e.url.startsWith('http://')) return false;
+    const allHeaders = { ...e.requestHeaders, ...e.responseHeaders };
+    return Object.keys(allHeaders).some(k => SENSITIVE.test(k));
+  });
+  if (leakyEntries.length === 0) return [];
+  return [{
+    id: 'header-leakage-0',
+    type: 'header-leakage',
+    title: 'Header Leakage over HTTP',
+    description: `${leakyEntries.length} request${leakyEntries.length > 1 ? 's' : ''} send sensitive headers over plain HTTP`,
+    severity: 'critical',
+    entries: leakyEntries,
+    meta: { count: leakyEntries.length },
+  }];
+}
+
+// #10 Large Payload DOM — HTML responses > 500 KB
+export function detectLargePayloadDom(entries: HarEntry[]): Issue[] {
+  const heavyHtml = entries.filter(e => {
+    const mime = e.mimeType ?? '';
+    return mime.includes('text/html') && e.responseSize > 500_000;
+  });
+  if (heavyHtml.length === 0) return [];
+  const largest = heavyHtml.reduce((a, b) => (a.responseSize > b.responseSize ? a : b));
+  return [{
+    id: 'large-payload-dom-0',
+    type: 'large-payload-dom',
+    title: 'Large HTML Payload',
+    description: `${heavyHtml.length} HTML response${heavyHtml.length > 1 ? 's' : ''} exceed 500 KB (largest: ${(largest.responseSize / 1024).toFixed(0)} KB)`,
+    severity: 'warning',
+    entries: heavyHtml,
+    meta: { count: heavyHtml.length, largestBytes: largest.responseSize },
+  }];
+}
+
+// #3 Uncompressed Bloat — response > 1 MB without Content-Encoding
+export function detectUncompressedBloat(entries: HarEntry[]): Issue[] {
+  const bloatEntries = entries.filter(
+    e => e.responseSize > 1_000_000 && !getHeader(e.responseHeaders, 'content-encoding'),
+  );
+  if (bloatEntries.length === 0) return [];
+  const totalBytes = bloatEntries.reduce((s, e) => s + e.responseSize, 0);
+  return [{
+    id: 'uncompressed-bloat-0',
+    type: 'uncompressed-bloat',
+    title: 'Uncompressed Bloat',
+    description: `${bloatEntries.length} response${bloatEntries.length > 1 ? 's' : ''} > 1 MB served without compression (${(totalBytes / 1_048_576).toFixed(1)} MB total)`,
+    severity: 'warning',
+    entries: bloatEntries,
+    meta: { count: bloatEntries.length, totalBytes },
+  }];
 }

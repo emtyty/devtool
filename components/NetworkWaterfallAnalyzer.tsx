@@ -9,6 +9,10 @@ import {
   DEFAULT_RULES, Rule, HarEntry, LogEntry, ParseResult, Operator, RuleTarget, Severity,
   computeSummary, normalizeUrlPattern, detectDuplicates, DuplicateGroup,
   getCacheInfo, getCompressionInfo, getPerfInsight, generateCurl, HarSummary,
+  Issue,
+  detectN1Waterfall, detectInfinitePolling, detectCorsPreflightStorm,
+  detectZombieApiCalls, detectRedirectLoops, detectHeavyThirdParty,
+  detectCacheMissTrend, detectHeaderLeakage, detectLargePayloadDom, detectUncompressedBloat,
 } from '../lib/harAnalyzer';
 
 // ── Toast ─────────────────────────────────────────────────────────
@@ -893,6 +897,274 @@ function DuplicateGroupRow({ group, onHighlight }: { key?: React.Key; group: Dup
   );
 }
 
+// ── Advanced Issues Panel ─────────────────────────────────────────
+
+const ISSUE_TYPE_LABELS: Record<string, string> = {
+  'n1-waterfall':         'N+1 Waterfall',
+  'infinite-polling':     'Infinite Polling',
+  'cors-preflight-storm': 'CORS Storm',
+  'zombie-api':           'Zombie API',
+  'redirect-loop':        'Redirect Loop',
+  'heavy-third-party':    'Heavy 3rd-Party',
+};
+
+interface IssueDocs { what: string; why: string; fix: string; impact: string }
+
+const ISSUE_DOCS: Record<string, IssueDocs> = {
+  'n1-waterfall': {
+    what: 'Multiple sequential requests to the same endpoint fired with <20ms between starts.',
+    why: 'Creates a "staircase" waterfall — each iteration waits for the previous to begin. Causes massive TTFB and UI lag.',
+    fix: 'Batch with Promise.all(), collect IDs first then call a bulk endpoint, or use a DataLoader pattern.',
+    impact: 'Critical UI Lag / High TTFB',
+  },
+  'infinite-polling': {
+    what: 'Identical GET requests repeating at a fixed interval throughout the session.',
+    why: 'Drains CPU on the client, creates constant server load, and wastes bandwidth even when data hasn\'t changed.',
+    fix: 'Replace with WebSockets, Server-Sent Events (SSE), or HTTP long-polling. If polling is necessary, add exponential back-off.',
+    impact: 'CPU Drain / Unnecessary Server Load',
+  },
+  'cors-preflight-storm': {
+    what: 'OPTIONS preflight count equals or exceeds actual API calls on multiple endpoints.',
+    why: 'Browser cannot cache preflights (Access-Control-Max-Age=0 or missing). Every request doubles in latency.',
+    fix: 'Set Access-Control-Max-Age to a high value (86400). Ensure CORS headers are consistent so the browser can cache preflight results.',
+    impact: 'Doubled Latency on Every API Call',
+  },
+  'zombie-api': {
+    what: 'Repeated HTTP 200 OK responses with an empty body (≤10 bytes) on the same endpoint.',
+    why: 'Wastes connection slots, TCP handshakes, and bandwidth for calls that deliver no usable data to the client.',
+    fix: 'Return 204 No Content when there is no body, or investigate why the endpoint returns empty JSON {} repeatedly.',
+    impact: 'Wasted Connections / Misleading Status',
+  },
+  'redirect-loop': {
+    what: 'The same URL receives 3 or more consecutive 301/302 redirect responses.',
+    why: 'Browser aborts the chain after a limit (~20 hops), resulting in a fatal ERR_TOO_MANY_REDIRECTS or timeout.',
+    fix: 'Trace the redirect chain on the server. Ensure each path leads to a final destination without looping back.',
+    impact: 'Fatal Error / Request Timeout',
+  },
+  'heavy-third-party': {
+    what: 'Third-party domains account for more than 60% of total transfer size.',
+    why: 'Creates privacy risk (user data sent to external parties), single-point-of-failure fragility, and slower FCP/LCP.',
+    fix: 'Self-host critical scripts, lazy-load analytics after interaction, use <link rel="preconnect"> for known third-parties, and audit which scripts are truly necessary.',
+    impact: 'Privacy Risk / Performance Fragility',
+  },
+  'uncompressed-bloat': {
+    what: 'Responses over 1 MB sent without Content-Encoding (gzip/br/deflate).',
+    why: 'Wastes bandwidth and slows page load — a 3 MB uncompressed JSON can be ~200 KB after gzip. Particularly painful on mobile networks.',
+    fix: 'Enable gzip or Brotli compression on your server/CDN for all text-based responses (JSON, HTML, JS, CSS).',
+    impact: 'High Bandwidth / Slow Load',
+  },
+  'cache-miss-trend': {
+    what: 'Static assets (JS, CSS, images, fonts) served with Cache-Control: no-cache or no-store.',
+    why: 'Prevents the browser from caching immutable assets, forcing a full re-download on every page load.',
+    fix: 'For fingerprinted/hashed assets (e.g. main.a1b2c3.js), use Cache-Control: max-age=31536000, immutable. Reserve no-cache for truly dynamic resources.',
+    impact: 'Repeated Downloads / Slow Repeat Visits',
+  },
+  'header-leakage': {
+    what: 'Sensitive auth headers (Authorization, X-Api-Key, Set-Cookie, etc.) sent over plain HTTP.',
+    why: 'Plain HTTP traffic can be intercepted by a network attacker. Credentials transmitted this way are exposed in clear text.',
+    fix: 'Enforce HTTPS everywhere. Add HSTS headers and redirect all HTTP traffic to HTTPS at the load balancer level.',
+    impact: 'Security Risk / Credential Exposure',
+  },
+  'large-payload-dom': {
+    what: 'HTML responses larger than 500 KB.',
+    why: 'Large HTML documents delay First Contentful Paint (FCP), increase parse time, and block rendering on slow connections.',
+    fix: 'Use server-side pagination, lazy-load non-critical content, or split server-rendered HTML with streaming (React SSR / Suspense).',
+    impact: 'Slow FCP / High Parse Time',
+  },
+};
+
+function IssueInfoTooltip({ type }: { type: string }) {
+  const doc = ISSUE_DOCS[type];
+  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  if (!doc) return null;
+
+  const handleMouseEnter = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const TOOLTIP_H = 220;
+    const above = window.innerHeight - rect.bottom < TOOLTIP_H + 8;
+    setPos({
+      top: above ? rect.top - 8 : rect.bottom + 8,
+      left: Math.min(rect.left, window.innerWidth - 296),
+      above,
+    });
+  };
+
+  return (
+    <div
+      ref={triggerRef}
+      className="shrink-0"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={() => setPos(null)}
+    >
+      <Info size={11} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-help transition-colors" />
+      {pos && (
+        <div
+          style={{
+            position: 'fixed',
+            top: pos.above ? undefined : pos.top,
+            bottom: pos.above ? window.innerHeight - pos.top : undefined,
+            left: pos.left,
+            width: 288,
+            zIndex: 9999,
+          }}
+          className="bg-slate-900 dark:bg-slate-800 border border-slate-700 text-white rounded-xl shadow-2xl p-3 text-[10px] leading-relaxed pointer-events-none"
+        >
+          <div className="space-y-2">
+            <div>
+              <span className="font-black text-slate-400 uppercase tracking-wider text-[8px] block mb-0.5">What</span>
+              <span className="text-slate-200">{doc.what}</span>
+            </div>
+            <div>
+              <span className="font-black text-amber-400 uppercase tracking-wider text-[8px] block mb-0.5">Why it matters</span>
+              <span className="text-slate-200">{doc.why}</span>
+            </div>
+            <div>
+              <span className="font-black text-emerald-400 uppercase tracking-wider text-[8px] block mb-0.5">How to fix</span>
+              <span className="text-slate-200">{doc.fix}</span>
+            </div>
+            <div className="pt-1 border-t border-slate-700">
+              <span className="font-black text-red-400 uppercase tracking-wider text-[8px]">Impact: </span>
+              <span className="text-red-300 font-semibold">{doc.impact}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdvancedIssuesPanel({
+  issues,
+  onHighlight,
+  onScrollTo,
+}: {
+  issues: Issue[];
+  onHighlight: (ids: Set<string>) => void;
+  onScrollTo: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  if (issues.length === 0) return null;
+
+  const criticalCount = issues.filter(i => i.severity === 'critical').length;
+
+  const severityChipCls = (sev: Severity) => {
+    if (sev === 'critical') return 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400';
+    if (sev === 'error')    return 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400';
+    return 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400';
+  };
+
+  const borderAccent = (sev: Severity) => {
+    if (sev === 'critical') return 'border-l-red-500';
+    if (sev === 'error')    return 'border-l-orange-500';
+    return 'border-l-amber-400';
+  };
+
+
+  return (
+    <div className="border border-violet-200 dark:border-violet-800 rounded-xl overflow-hidden">
+      {/* Panel header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-violet-50 dark:bg-violet-900/20 text-left cursor-pointer hover:bg-violet-100/70 dark:hover:bg-violet-900/30 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={14} className="text-violet-500 shrink-0" />
+          <span className="text-xs font-black text-violet-700 dark:text-violet-400">Advanced Issues</span>
+          <span className="text-[10px] bg-violet-200 dark:bg-violet-800 text-violet-700 dark:text-violet-300 font-black px-1.5 py-0.5 rounded">
+            {issues.length} issue{issues.length !== 1 ? 's' : ''}
+          </span>
+          {criticalCount > 0 && (
+            <span className="text-[10px] bg-red-600 text-white font-black px-1.5 py-0.5 rounded">
+              {criticalCount} critical
+            </span>
+          )}
+        </div>
+        {open ? <ChevronUp size={14} className="text-violet-500" /> : <ChevronDown size={14} className="text-violet-500" />}
+      </button>
+
+      {open && (
+        <div className="divide-y divide-violet-100 dark:divide-violet-900/40 bg-white dark:bg-slate-900">
+          {issues.map(issue => {
+            const isActive   = activeId === issue.id;
+            const isExpanded = expandedId === issue.id;
+            return (
+              <div key={issue.id} className={`border-l-4 ${borderAccent(issue.severity)}`}>
+                {/* Issue summary row */}
+                <div
+                  onClick={() => {
+                    const next = activeId === issue.id ? null : issue.id;
+                    setActiveId(next);
+                    setExpandedId(id => id === issue.id ? null : issue.id);
+                    if (next) {
+                      onHighlight(new Set(issue.entries.map(en => en.id)));
+                      if (issue.entries.length > 0) onScrollTo(issue.entries[0].id);
+                    } else {
+                      onHighlight(new Set());
+                    }
+                  }}
+                  className={`px-4 py-2.5 cursor-pointer transition-colors ${
+                    isActive ? 'bg-violet-50 dark:bg-violet-900/15' : 'hover:bg-slate-50 dark:hover:bg-white/3'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded shrink-0 ${severityChipCls(issue.severity)}`}>
+                      {issue.severity}
+                    </span>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
+                      {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
+                    </span>
+                    <IssueInfoTooltip type={issue.type} />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex-1 min-w-0 truncate">{issue.title}</span>
+                    {isActive && (
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded border bg-violet-100 dark:bg-violet-900/40 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 shrink-0">
+                        highlighted ×
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 pl-0 leading-relaxed">
+                    {issue.description}
+                  </p>
+                </div>
+
+                {/* Expanded entry list */}
+                {isExpanded && issue.entries.length > 0 && (
+                  <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 px-4 py-2 space-y-0.5">
+                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
+                      {issue.entries.length} affected request{issue.entries.length !== 1 ? 's' : ''}
+                    </div>
+                    {issue.entries.slice(0, 12).map(e => (
+                      <div
+                        key={e.id}
+                        onClick={ev => { ev.stopPropagation(); onScrollTo(e.id); }}
+                        className="flex items-center gap-2 text-[10px] py-0.5 rounded px-1 cursor-pointer hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                        title="Click to scroll waterfall to this request"
+                      >
+                        <span className={`font-black w-8 shrink-0 ${statusColor(e.status)}`}>{e.status || '—'}</span>
+                        <span className={`text-[8px] font-black px-1 py-0.5 rounded shrink-0 ${methodColor(e.method)}`}>{e.method}</span>
+                        <span className="text-slate-600 dark:text-slate-300 font-mono flex-1 truncate" title={e.url}>{e.pathname}</span>
+                        <span className="text-slate-400 font-mono shrink-0">{formatMs(e.time)}</span>
+                        <ChevronRight size={9} className="text-violet-400 shrink-0" />
+                      </div>
+                    ))}
+                    {issue.entries.length > 12 && (
+                      <p className="text-[10px] text-slate-400 pt-1">…and {issue.entries.length - 12} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Domain Stats ──────────────────────────────────────────────────
 
 function DomainStatsView({ summary }: { summary: HarSummary }) {
@@ -927,6 +1199,123 @@ function DomainStatsView({ summary }: { summary: HarSummary }) {
                 <td className="px-4 py-2 text-right font-mono text-slate-400">{formatBytes(r.totalSize)}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Total Timing View ─────────────────────────────────────────────
+
+const TIMING_PHASES = [
+  { key: 'send',     label: 'Send',     color: '#3b82f6', desc: 'Blocked + DNS + Connect + SSL + Send' },
+  { key: 'ttfb',     label: 'TTFB',     color: '#f59e0b', desc: 'Waiting for first byte (server processing)' },
+  { key: 'download', label: 'Download', color: '#10b981', desc: 'Response body download (Receive)' },
+] as const;
+
+function TotalTimingView({ entries }: { entries: HarEntry[] }) {
+  const [sortKey, setSortKey] = useState<'total' | 'send' | 'ttfb' | 'download'>('total');
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+
+  const rows = useMemo(() => {
+    return entries.map(e => {
+      const t = e.timings;
+      const send     = t.blocked + t.dns + t.connect + t.ssl + t.send;
+      const ttfb     = t.wait;
+      const download = t.receive;
+      const total    = send + ttfb + download;
+      return { entry: e, send, ttfb, download, total };
+    });
+  }, [entries]);
+
+  const sorted = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const diff = a[sortKey] - b[sortKey];
+      return sortDir === 'desc' ? -diff : diff;
+    });
+  }, [rows, sortKey, sortDir]);
+
+  const maxTotal = useMemo(() => Math.max(...rows.map(r => r.total), 1), [rows]);
+
+  const avg = useMemo(() => {
+    if (!rows.length) return { send: 0, ttfb: 0, download: 0, total: 0 };
+    const sum = rows.reduce((acc, r) => ({ send: acc.send + r.send, ttfb: acc.ttfb + r.ttfb, download: acc.download + r.download, total: acc.total + r.total }), { send: 0, ttfb: 0, download: 0, total: 0 });
+    return { send: sum.send / rows.length, ttfb: sum.ttfb / rows.length, download: sum.download / rows.length, total: sum.total / rows.length };
+  }, [rows]);
+
+  const toggleSort = (k: typeof sortKey) => {
+    if (sortKey === k) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSortKey(k); setSortDir('desc'); }
+  };
+
+  const SortBtn = ({ k, label }: { k: typeof sortKey; label: string }) => (
+    <button onClick={() => toggleSort(k)} className="flex items-center gap-0.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+      {label}
+      <span className="text-[8px]">{sortKey === k ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}</span>
+    </button>
+  );
+
+  return (
+    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+      {/* Legend + summary */}
+      <div className="flex items-center gap-4 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 flex-wrap">
+        {TIMING_PHASES.map(p => (
+          <div key={p.key} className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: p.color }} />
+            <span className="font-semibold">{p.label}</span>
+            <span className="hidden sm:inline text-slate-400">— {p.desc}</span>
+          </div>
+        ))}
+        <div className="ml-auto text-[10px] text-slate-400 font-mono">
+          avg: <span style={{ color: TIMING_PHASES[0].color }}>{formatMs(avg.send)}</span>
+          {' / '}
+          <span style={{ color: TIMING_PHASES[1].color }}>{formatMs(avg.ttfb)}</span>
+          {' / '}
+          <span style={{ color: TIMING_PHASES[2].color }}>{formatMs(avg.download)}</span>
+          {' = '}
+          <span className="font-black text-slate-600 dark:text-slate-200">{formatMs(avg.total)}</span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left w-14 shrink-0">Status</th>
+              <th className="px-2 py-2 text-left w-12 shrink-0">Method</th>
+              <th className="px-3 py-2 text-left">URL / Path</th>
+              <th className="px-3 py-2 text-right w-20"><SortBtn k="send" label="Send" /></th>
+              <th className="px-3 py-2 text-right w-20"><SortBtn k="ttfb" label="TTFB" /></th>
+              <th className="px-3 py-2 text-right w-24"><SortBtn k="download" label="Download" /></th>
+              <th className="px-3 py-2 text-right w-20"><SortBtn k="total" label="Total" /></th>
+              <th className="px-3 py-2 w-36">Breakdown</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {sorted.map(({ entry: e, send, ttfb, download, total }) => {
+              const totalForBar = Math.max(total, 1);
+              const statusCls = e.status >= 500 ? 'text-red-500' : e.status >= 400 ? 'text-orange-500' : e.status >= 300 ? 'text-yellow-500' : 'text-emerald-600 dark:text-emerald-400';
+              return (
+                <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-white/3 transition-colors">
+                  <td className={`px-3 py-1.5 font-black tabular-nums ${statusCls}`}>{e.status}</td>
+                  <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{e.method}</td>
+                  <td className="px-3 py-1.5 font-mono text-slate-700 dark:text-slate-300 max-w-0 truncate" title={e.pathname}>{e.pathname}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-mono" style={{ color: TIMING_PHASES[0].color }}>{formatMs(send)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-mono" style={{ color: TIMING_PHASES[1].color }}>{formatMs(ttfb)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-mono" style={{ color: TIMING_PHASES[2].color }}>{formatMs(download)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-black text-slate-700 dark:text-slate-200">{formatMs(total)}</td>
+                  <td className="px-3 py-1.5">
+                    {/* Stacked bar */}
+                    <div className="h-3 rounded overflow-hidden flex" style={{ width: `${Math.max(4, (total / maxTotal) * 100)}%`, minWidth: 4 }}>
+                      <div style={{ width: `${(send / totalForBar) * 100}%`, background: TIMING_PHASES[0].color }} />
+                      <div style={{ width: `${(ttfb / totalForBar) * 100}%`, background: TIMING_PHASES[1].color }} />
+                      <div style={{ width: `${(download / totalForBar) * 100}%`, background: TIMING_PHASES[2].color }} />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1830,7 +2219,7 @@ function UploadPanel({ onHar, onLog, harName, logName, onProcess, isReady, onMan
 // ── Main Component ────────────────────────────────────────────────
 
 type SortKey = 'relStartMs' | 'time' | 'status' | 'responseSize' | 'method';
-type ViewTab = 'requests' | 'domains';
+type ViewTab = 'requests' | 'domains' | 'timing';
 
 interface FilterState {
   search: string;
@@ -1876,10 +2265,12 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const [interleavedLogs, setInterleavedLogs] = useState(false);
   const [logLevelFilter, setLogLevelFilter] = useState<'all' | 'error' | 'warn' | 'error+warn'>('all');
   const [expandedLogEntry, setExpandedLogEntry] = useState<string | null>(null);
+  const [highlightedIssueIds, setHighlightedIssueIds] = useState<Set<string>>(new Set());
 
   // ── Virtual scroll ────────────────────────────────────────────
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const waterfallSectionRef = useRef<HTMLDivElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const compareWorkerRef = useRef<Worker | null>(null);
   const mergedRowsRef = useRef<any[]>([]);
@@ -1922,6 +2313,22 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const summary = useMemo(() => data ? computeSummary(data.entries) : null, [data]);
 
   const duplicates = useMemo(() => data ? detectDuplicates(data.entries) : [], [data]);
+
+  const advancedIssues = useMemo((): Issue[] => {
+    if (!data) return [];
+    return [
+      ...detectN1Waterfall(data.entries),
+      ...detectInfinitePolling(data.entries),
+      ...detectCorsPreflightStorm(data.entries),
+      ...detectZombieApiCalls(data.entries),
+      ...detectRedirectLoops(data.entries),
+      ...detectHeavyThirdParty(data.entries),
+      ...detectUncompressedBloat(data.entries),
+      ...detectCacheMissTrend(data.entries),
+      ...detectHeaderLeakage(data.entries),
+      ...detectLargePayloadDom(data.entries),
+    ];
+  }, [data]);
 
   const filteredEntries = useMemo(() => {
     if (!data) return [];
@@ -2081,11 +2488,41 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const endIdx   = Math.min(mergedRows.length, Math.ceil((scrollTop + CONTAINER_HEIGHT) / ROW_HEIGHT) + BUFFER);
   const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => setScrollTop(e.currentTarget.scrollTop), []);
 
+  // Scroll page + virtual list to a specific entry (without opening detail panel)
+  const scrollToEntry = useCallback((targetId: string) => {
+    // 1. Switch to requests tab so waterfall is visible
+    setViewTab('requests');
+    // 2. Scroll page so waterfall section is visible
+    if (waterfallSectionRef.current) {
+      const rect = waterfallSectionRef.current.getBoundingClientRect();
+      if (rect.top < 0 || rect.top > window.innerHeight * 0.5) {
+        waterfallSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+    // 3. Scroll virtual list to the entry (slight delay to let tab switch render)
+    setTimeout(() => {
+      if (!scrollRef.current) return;
+      const rows = mergedRowsRef.current;
+      const idx = rows.findIndex((r: any) => {
+        if (r.type === 'log') return false;
+        if (r.type === 'group') return r.representative.id === targetId;
+        return r.entry.id === targetId;
+      });
+      if (idx < 0) return;
+      const targetTop = idx * ROW_HEIGHT;
+      const { scrollTop: st, clientHeight } = scrollRef.current;
+      if (targetTop < st || targetTop + ROW_HEIGHT > st + clientHeight) {
+        scrollRef.current.scrollTo({ top: Math.max(0, targetTop - clientHeight / 3), behavior: 'smooth' });
+      }
+    }, 50);
+  }, []);
+
   // ── Actions ───────────────────────────────────────────────────
   const reset = () => {
     setHarText(null); setLogText(null); setHarName(null); setLogName(null);
     setData(null); setSelected(null); setSelectedLog(null); setError(null);
     setCompareData(null); setCompareText(null); setZoomRange(null); setHighlightedPattern(null);
+    setHighlightedIssueIds(new Set());
   };
 
   const saveRules = (r: Rule[]) => {
@@ -2347,14 +2784,25 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
       {/* ── Issues panel ───────────────────────────────────────── */}
       {duplicates.length > 0 && <IssuesPanel duplicates={duplicates} onHighlight={(pattern, method) => {
         setHighlightedPattern(prev => prev?.pattern === pattern && prev?.method === method ? null : { pattern, method });
+        setHighlightedIssueIds(new Set());
       }} />}
 
+      {/* ── Advanced Issues panel ──────────────────────────────── */}
+      <AdvancedIssuesPanel
+        issues={advancedIssues}
+        onHighlight={ids => {
+          setHighlightedIssueIds(ids);
+          setHighlightedPattern(null);
+        }}
+        onScrollTo={scrollToEntry}
+      />
+
       {/* ── View tab bar ────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-700">
-        {(['requests', 'domains'] as ViewTab[]).map(tab => (
+      <div ref={waterfallSectionRef} className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-700">
+        {(['requests', 'domains', 'timing'] as ViewTab[]).map(tab => (
           <button key={tab} onClick={() => setViewTab(tab)}
             className={`px-4 py-2 text-xs font-bold capitalize transition-colors cursor-pointer border-b-2 -mb-px ${viewTab === tab ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}>
-            {tab === 'requests' ? 'Requests' : 'By Domain'}
+            {tab === 'requests' ? 'Requests' : tab === 'domains' ? 'By Domain' : 'Total Timing'}
           </button>
         ))}
         <div className="flex-1" />
@@ -2370,6 +2818,9 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
 
       {/* ── Domain stats view ─────────────────────────────────── */}
       {viewTab === 'domains' && summary && <DomainStatsView summary={summary} />}
+
+      {/* ── Total Timing view ─────────────────────────────────── */}
+      {viewTab === 'timing' && <TotalTimingView entries={data.entries} />}
 
       {/* ── Waterfall table ────────────────────────────────────── */}
       {viewTab === 'requests' && (
@@ -2437,7 +2888,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
                             duration={effectiveDuration}
                             isSelected={selected?.id === row.representative.id}
                             isCorrelated={correlatedEntryIds.has(row.representative.id)}
-                            isHighlighted={!!highlightedPattern && normalizeUrlPattern(row.representative.pathname) === highlightedPattern.pattern && row.representative.method === highlightedPattern.method}
+                            isHighlighted={(!!highlightedPattern && normalizeUrlPattern(row.representative.pathname) === highlightedPattern.pattern && row.representative.method === highlightedPattern.method) || highlightedIssueIds.has(row.representative.id)}
                             logCount={logCountsPerEntry.get(row.representative.id) ?? 0}
                             isLogExpanded={expandedLogEntry === row.representative.id}
                             onClick={() => { setSelectedLog(null); setSelected(s => s?.id === row.representative.id ? null : row.representative); }}
@@ -2462,7 +2913,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
                           duration={effectiveDuration}
                           isSelected={selected?.id === row.entry.id}
                           isCorrelated={correlatedEntryIds.has(row.entry.id)}
-                          isHighlighted={!!highlightedPattern && normalizeUrlPattern(row.entry.pathname) === highlightedPattern.pattern && row.entry.method === highlightedPattern.method}
+                          isHighlighted={(!!highlightedPattern && normalizeUrlPattern(row.entry.pathname) === highlightedPattern.pattern && row.entry.method === highlightedPattern.method) || highlightedIssueIds.has(row.entry.id)}
                           logCount={logCountsPerEntry.get(row.entry.id) ?? 0}
                           isLogExpanded={expandedLogEntry === row.entry.id}
                           onClick={() => { setSelectedLog(null); setSelected(s => s?.id === row.entry.id ? null : row.entry); }}
@@ -2510,12 +2961,29 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
               const isSelectedLog   = selectedLog?.id === log.id;
               const isCorrelatedLog = selected ? correlatedLogIds.has(log.id) : false;
               return (
-                <div key={log.id} onClick={() => { setSelected(null); setSelectedLog(l => l?.id === log.id ? null : log); }}
+                <div key={log.id} onClick={() => {
+                    const isDeselecting = selectedLog?.id === log.id;
+                    setSelected(null);
+                    setSelectedLog(isDeselecting ? null : log);
+                    if (!isDeselecting && data) {
+                      // Find entry in-flight at log time, else nearest by start time
+                      const inFlight = data.entries.filter(e => log.relMs >= e.relStartMs && log.relMs <= e.relStartMs + e.time);
+                      const target = inFlight.length > 0
+                        ? inFlight.reduce((a, b) => Math.abs(a.relStartMs - log.relMs) < Math.abs(b.relStartMs - log.relMs) ? a : b)
+                        : data.entries.reduce((a, b) => Math.abs(a.relStartMs - log.relMs) < Math.abs(b.relStartMs - log.relMs) ? a : b);
+                      scrollToEntry(target.id);
+                    }
+                  }}
                   className={`flex items-start gap-3 px-4 py-1.5 border-b border-slate-50 dark:border-slate-800/50 text-xs cursor-pointer transition-colors ${isSelectedLog ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-inset ring-blue-200 dark:ring-blue-800' : isCorrelatedLog ? 'bg-amber-50 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-white/3'}`}>
                   <div className="w-1 shrink-0 self-stretch rounded-full mt-0.5" style={{ backgroundColor: logLevelDotColor(log.level) }} />
                   <span className="font-mono text-slate-400 shrink-0 text-[10px]">{formatMs(log.relMs)}</span>
                   <span className={`font-black uppercase text-[9px] shrink-0 w-10 ${levelColor(log.level)}`}>{log.level}</span>
                   <span className="text-slate-600 dark:text-slate-300 break-all flex-1">{log.message}</span>
+                  {isSelectedLog && (
+                    <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-bold text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded px-1" title="Waterfall scrolled to nearest request">
+                      <TrendingUp size={9} /> ↑ waterfall
+                    </span>
+                  )}
                   {log.tags.length > 0 && (
                     <div className="flex gap-1 shrink-0">{log.tags.map((t, i) => <TagBadge key={i} tag={t.tag} color={t.color} />)}</div>
                   )}
