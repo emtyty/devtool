@@ -79,6 +79,7 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 │   ├── ResizableSplit.tsx         # Resizable split pane component
 │   ├── McpPage.tsx                # MCP server documentation page
 │   ├── PrivacyPage.tsx            # Privacy policy page
+│   ├── SettingsPage.tsx           # Tool visibility settings (enable/disable per tool)
 │   └── LandingPage.tsx            # (unused) Landing page
 │
 ├── utils/                         # Pure utility functions — NO React (15 files)
@@ -124,14 +125,15 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 ## Architecture
 
 - **SPA with URL routing** — `App.tsx` manages `AppMode` state, renders selected tool via conditional rendering
-- **Lazy loading** — All 23 tool components use `React.lazy()` + `Suspense` for code splitting
+- **Lazy loading** — All tool components use `React.lazy()` + `Suspense` for code splitting
 - **URL routing** — HTML5 History API (`window.history.pushState`) maps each tool to a clean path. Unknown paths redirect to `/` (Smart Detect). Browser back/forward supported via `popstate` event.
 - **No router library** — Navigation is state-driven with `MODE_TO_SLUG` / `SLUG_TO_MODE` maps in `App.tsx`
-- **No global state** — Each tool manages its own state via `useState`. User preferences (theme, favorites) in `localStorage`.
+- **No global state** — Each tool manages its own state via `useState`. User preferences (theme, favorites, hidden tools) in `localStorage`.
+- **Tool visibility** — `useHiddenTools()` hook + `SettingsPage` let users hide/show tools. Hidden tools are filtered from the sidebar, redirect to `/` if accessed by URL, and auto-removed from favorites. Stored in `devtoolkit:hidden-tools`.
 - **Dark mode** — `.dark` class on `<html>`, CSS overrides in `index.css`, toggle in App.tsx
 - **Path alias** — `@/*` maps to project root
 
-### URL Route Map (25 routes)
+### URL Route Map (26 routes)
 
 | Path | Tool |
 |------|------|
@@ -160,6 +162,7 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 | `/csp-tools` | CSP Tools |
 | `/mcp-server` | MCP Server Page |
 | `/privacy` | Privacy Policy |
+| `/settings` | Settings (tool visibility) |
 
 ## Key Libraries
 
@@ -206,7 +209,7 @@ Detailed coding conventions are documented in `.coding-rules/` (18 files). Key r
 
 - **Functional components only** — no class components, default export per file
 - **Tailwind utility classes** — no CSS modules, no CSS-in-JS, no inline styles
-- **No global state** — useState + localStorage, no Redux/Zustand
+- **No global state** — useState + localStorage, no Redux/Zustand. Keys: `devtoolkit:theme`, `devtoolkit:favorites`, `devtoolkit:hidden-tools`
 - **Business logic in `utils/`** — components handle UI only, `utils/` must be pure (no React)
 - **All tools lazy-loaded** — `React.lazy()` + `Suspense` with fallback
 - **Prettier on save** — run `npm run format` before commit
