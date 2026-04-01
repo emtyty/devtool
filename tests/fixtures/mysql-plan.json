@@ -1,0 +1,42 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "1234.56"
+    },
+    "nested_loop": [
+      {
+        "table": {
+          "table_name": "orders",
+          "access_type": "ALL",
+          "rows_examined_per_scan": 10000,
+          "rows_produced_per_join": 10000,
+          "filtered": "100.00",
+          "cost_info": {
+            "read_cost": "1000.00",
+            "eval_cost": "100.00",
+            "prefix_cost": "1100.00"
+          },
+          "using_filesort": true
+        }
+      },
+      {
+        "table": {
+          "table_name": "customers",
+          "access_type": "eq_ref",
+          "possible_keys": ["PRIMARY"],
+          "key": "PRIMARY",
+          "key_length": "4",
+          "rows_examined_per_scan": 1,
+          "rows_produced_per_join": 10000,
+          "filtered": "100.00",
+          "cost_info": {
+            "read_cost": "100.00",
+            "eval_cost": "10.00",
+            "prefix_cost": "1234.56"
+          }
+        }
+      }
+    ]
+  }
+}

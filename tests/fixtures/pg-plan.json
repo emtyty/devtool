@@ -1,0 +1,43 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Hash Join",
+      "Join Type": "Inner",
+      "Hash Cond": "(orders.customer_id = customers.customer_id)",
+      "Startup Cost": 10.50,
+      "Total Cost": 42.80,
+      "Plan Rows": 500,
+      "Plan Width": 64,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "orders",
+          "Alias": "orders",
+          "Startup Cost": 0.00,
+          "Total Cost": 18.40,
+          "Plan Rows": 840,
+          "Plan Width": 32
+        },
+        {
+          "Node Type": "Hash",
+          "Startup Cost": 8.20,
+          "Total Cost": 8.20,
+          "Plan Rows": 184,
+          "Plan Width": 36,
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Relation Name": "customers",
+              "Alias": "c",
+              "Startup Cost": 0.00,
+              "Total Cost": 8.20,
+              "Plan Rows": 184,
+              "Plan Width": 36,
+              "Filter": "(country = 'USA'::text)"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

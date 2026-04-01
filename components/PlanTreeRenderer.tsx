@@ -25,13 +25,18 @@ function getOperatorMeta(op: string): OperatorMeta {
     case 'Key Lookup':
       return { Icon: Key,        iconClass: 'text-orange-500', borderClass: 'border-orange-300', headerClass: 'bg-orange-50' };
     case 'Index Scan':
+    case 'Bitmap Heap Scan':
+    case 'Bitmap Index Scan':
       return { Icon: ScanLine,   iconClass: 'text-orange-500', borderClass: 'border-orange-300', headerClass: 'bg-orange-50' };
     case 'Index Seek':
     case 'Clustered Index Seek':
+    case 'Constant Lookup':   // MySQL const/system access type
       return { Icon: Search,     iconClass: 'text-emerald-600',borderClass: 'border-emerald-300',headerClass: 'bg-emerald-50' };
     case 'Hash Match':
+    case 'Hash':          // PostgreSQL build-side hash node
       return { Icon: Hash,       iconClass: 'text-blue-500',   borderClass: 'border-blue-300',   headerClass: 'bg-blue-50' };
     case 'Nested Loops':
+    case 'Nested Loop':   // PostgreSQL singular form
       return { Icon: RefreshCcw, iconClass: 'text-blue-500',   borderClass: 'border-blue-300',   headerClass: 'bg-blue-50' };
     case 'Merge Join':
       return { Icon: GitMerge,   iconClass: 'text-blue-500',   borderClass: 'border-blue-300',   headerClass: 'bg-blue-50' };
@@ -47,11 +52,15 @@ function getOperatorMeta(op: string): OperatorMeta {
     case 'Gather Streams':
     case 'Repartition Streams':
     case 'Distribute Streams':
+    case 'Concatenation':     // PostgreSQL Append node (UNION ALL)
       return { Icon: GitFork,    iconClass: 'text-slate-500',  borderClass: 'border-slate-300',  headerClass: 'bg-slate-50' };
     case 'Compute Scalar':
       return { Icon: Calculator, iconClass: 'text-slate-500',  borderClass: 'border-slate-300',  headerClass: 'bg-slate-50' };
     case 'Top':
       return { Icon: ChevronsUp, iconClass: 'text-slate-500',  borderClass: 'border-slate-300',  headerClass: 'bg-slate-50' };
+    case 'Spool':
+    case 'Materialize':       // PostgreSQL Materialize node
+      return { Icon: Box,        iconClass: 'text-slate-500',  borderClass: 'border-slate-300',  headerClass: 'bg-slate-50' };
     default:
       return { Icon: Box,        iconClass: 'text-slate-400',  borderClass: 'border-slate-200',  headerClass: 'bg-slate-50' };
   }
@@ -130,6 +139,9 @@ const OPERATOR_DESCRIPTIONS: Record<string, string> = {
   'Gather Streams':       'Combines multiple parallel streams into a single serial stream.',
   'Distribute Streams':   'Splits a serial stream into multiple parallel streams.',
   'Repartition Streams':  'Repartitions rows from multiple streams into multiple streams.',
+  'Constant Lookup':      'Returns a single row by constant value — extremely fast.',
+  'Concatenation':        'Appends multiple result sets (UNION ALL).',
+  'Spool':                'Materializes intermediate results into a temporary structure.',
 };
 
 function getOperatorDescription(physicalOp: string, logicalOp: string): string | undefined {
