@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -32,8 +32,9 @@ const NetworkWaterfallAnalyzer = lazy(() => import('./components/NetworkWaterfal
 const CspTools                 = lazy(() => import('./components/CspTools'));
 const JsonExtractor            = lazy(() => import('./components/JsonExtractor'));
 const PdfEditor                = lazy(() => import('./components/PdfEditor'));
+const SettingsPage             = lazy(() => import('./components/SettingsPage'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'settings';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -64,6 +65,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   csptools:         'csp-tools',
   jsonextractor:    'json-extractor',
   pdfeditor:        'pdf-editor',
+  settings:         'settings',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -136,6 +138,47 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ];
+
+// ── Always-accessible modes (never redirected even if "hidden") ───
+const ALWAYS_ACCESSIBLE = new Set<AppMode>(['smartdetect', 'privacy', 'settings']);
+
+// ── Hidden tools ──────────────────────────────────────────────────
+const HIDDEN_TOOLS_KEY = 'devtoolkit:hidden-tools';
+
+function useHiddenTools() {
+  const [hiddenTools, setHiddenTools] = useState<AppMode[]>(() => {
+    try {
+      const stored = localStorage.getItem(HIDDEN_TOOLS_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const persist = (next: AppMode[]) => {
+    localStorage.setItem(HIDDEN_TOOLS_KEY, JSON.stringify(next));
+    return next;
+  };
+
+  const toggle = useCallback((id: AppMode) => {
+    setHiddenTools(prev => persist(prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id]));
+  }, []);
+
+  const hideGroup = useCallback((ids: AppMode[]) => {
+    setHiddenTools(prev => persist([...new Set([...prev, ...ids])]));
+  }, []);
+
+  const showGroup = useCallback((ids: AppMode[]) => {
+    setHiddenTools(prev => persist(prev.filter(h => !ids.includes(h))));
+  }, []);
+
+  const resetAll = useCallback(() => {
+    localStorage.removeItem(HIDDEN_TOOLS_KEY);
+    setHiddenTools([]);
+  }, []);
+
+  return { hiddenTools, toggle, hideGroup, showGroup, resetAll };
+}
 
 // ── Favorites ─────────────────────────────────────────────────────
 const NAV_ITEM_MAP: Partial<Record<AppMode, NavItem>> = Object.fromEntries(
@@ -244,6 +287,25 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragIndex = useRef<number | null>(null);
   const { favorites, toggleFavorite, reorder } = useFavorites();
+  const { hiddenTools, toggle: toggleHidden, hideGroup, showGroup, resetAll: resetHiddenTools } = useHiddenTools();
+
+  // Redirect to home if current mode is hidden (handles direct URL access too)
+  useEffect(() => {
+    if (!ALWAYS_ACCESSIBLE.has(mode) && hiddenTools.includes(mode)) {
+      setMode('smartdetect');
+      window.history.replaceState({}, '', '/');
+    }
+  }, [mode, hiddenTools]);
+
+  // Auto-remove favorites that become hidden (with a short delay for smoothness)
+  useEffect(() => {
+    const favInHidden = favorites.filter(f => hiddenTools.includes(f));
+    if (favInHidden.length === 0) return;
+    const timer = setTimeout(() => {
+      favInHidden.forEach(id => toggleFavorite(id));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [hiddenTools]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lastScrollY = useRef(0);
   const scrollDelta = useRef(0);
@@ -399,54 +461,81 @@ const App: React.FC = () => {
           )}
 
           {/* ── Regular nav sections ── */}
-          {NAV_SECTIONS.map((section, si) => (
-            <React.Fragment key={si}>
-              {si > 0 && <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />}
-              {section.title && (
-                <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
-                  {section.title}
-                </div>
-              )}
-              {section.items.map(tab => {
-                const isFav = favorites.includes(tab.id);
-                const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
-                const starClass = isFav
-                  ? 'pl-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 cursor-pointer shrink-0'
-                  : isMaxed
-                  ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100 cursor-not-allowed shrink-0'
-                  : 'pl-2 py-2 text-slate-300 dark:text-slate-600 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
-                return (
-                  <div
-                    key={tab.id}
-                    className={`group flex items-center rounded-lg transition-all ${
-                      mode === tab.id
-                        ? 'bg-blue-50 dark:bg-blue-500/15'
-                        : 'hover:bg-slate-50 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <button
-                      onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
-                      title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
-                      className={`transition-all ${starClass}`}
-                    >
-                      <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
-                    </button>
-                    <button
-                      onClick={() => switchMode(tab.id)}
-                      className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+          {NAV_SECTIONS.map((section, si) => {
+            const visibleItems = section.items.filter(tab => !hiddenTools.includes(tab.id));
+            if (visibleItems.length === 0) return null;
+            return (
+              <React.Fragment key={si}>
+                {si > 0 && <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />}
+                {section.title && (
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
+                    {section.title}
+                  </div>
+                )}
+                {visibleItems.map(tab => {
+                  const isFav = favorites.includes(tab.id);
+                  const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
+                  const starClass = isFav
+                    ? 'pl-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 cursor-pointer shrink-0'
+                    : isMaxed
+                    ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100 cursor-not-allowed shrink-0'
+                    : 'pl-2 py-2 text-slate-300 dark:text-slate-600 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`group flex items-center rounded-lg transition-all ${
                         mode === tab.id
-                          ? 'text-blue-600 dark:text-blue-400'
-                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                          ? 'bg-blue-50 dark:bg-blue-500/15'
+                          : 'hover:bg-slate-50 dark:hover:bg-white/5'
                       }`}
                     >
-                      {tab.icon}
-                      {tab.label}
-                    </button>
-                  </div>
-                );
-              })}
-            </React.Fragment>
-          ))}
+                      <button
+                        onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
+                        title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                        className={`transition-all ${starClass}`}
+                      >
+                        <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
+                      </button>
+                      <button
+                        onClick={() => switchMode(tab.id)}
+                        className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                          mode === tab.id
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        {tab.icon}
+                        {tab.label}
+                      </button>
+                    </div>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+
+          {/* ── Settings ── */}
+          <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
+          <div className={`flex items-center rounded-lg transition-all ${
+            mode === 'settings' ? 'bg-blue-50 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/5'
+          }`}>
+            <button
+              onClick={() => switchMode('settings')}
+              className={`flex items-center gap-2.5 flex-1 px-3 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left cursor-pointer transition-colors ${
+                mode === 'settings'
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <Settings size={16} />
+              Settings
+              {hiddenTools.length > 0 && (
+                <span className="ml-auto text-[10px] font-black bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 rounded px-1.5 py-0.5">
+                  {hiddenTools.length}
+                </span>
+              )}
+            </button>
+          </div>
         </aside>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
@@ -489,6 +578,14 @@ const App: React.FC = () => {
            mode === 'csptools'         ? <CspTools initialData={pendingData} /> :
            mode === 'jsonextractor'    ? <JsonExtractor /> :
            mode === 'pdfeditor'        ? <PdfEditor /> :
+           mode === 'settings'         ? <SettingsPage
+             sections={NAV_SECTIONS.slice(1)}
+             hiddenTools={hiddenTools}
+             onToggle={(id: string) => toggleHidden(id as AppMode)}
+             onHideGroup={(ids: string[]) => hideGroup(ids as AppMode[])}
+             onShowGroup={(ids: string[]) => showGroup(ids as AppMode[])}
+             onResetAll={resetHiddenTools}
+           /> :
            !session ? (
             <DropZone onFile={processFile} error={error} />
           ) : (
@@ -521,7 +618,7 @@ const App: React.FC = () => {
               <div className="hidden lg:block">
                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-4">All Tools</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2">
-                  {FOOTER_TOOLS.map(t => (
+                  {FOOTER_TOOLS.filter(t => !hiddenTools.includes(t.id)).map(t => (
                     <button
                       key={t.id}
                       onClick={() => switchMode(t.id)}
