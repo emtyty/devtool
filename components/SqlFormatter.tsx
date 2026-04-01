@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Code2, Layers, Copy, Check, Minimize2, Maximize2 } from 'lucide-react';
+import { Code2, Layers, Copy, Check, Minimize2, Maximize2, FileCode2 } from 'lucide-react';
 import { format as prettyPrintSql } from 'sql-formatter';
 import ResizableSplit from './ResizableSplit';
 
@@ -72,13 +72,171 @@ function highlightSql(sql: string): string {
   return result.join('');
 }
 
+// ── Dialect definitions ──────────────────────────────────────────────────────
+
+type Dialect = { id: string; label: string; sample: string };
+
+const DIALECTS: Dialect[] = [
+  {
+    id: 'tsql',
+    label: 'T-SQL',
+    sample: `SELECT TOP 10
+  e.EmployeeID,
+  e.FirstName + ' ' + e.LastName AS FullName,
+  d.DepartmentName,
+  s.Salary
+FROM Employees e
+INNER JOIN Departments d ON e.DepartmentID = d.DepartmentID
+LEFT JOIN Salaries s ON e.EmployeeID = s.EmployeeID
+WHERE e.HireDate >= '2020-01-01' AND s.Salary > 50000
+ORDER BY s.Salary DESC`,
+  },
+  {
+    id: 'postgresql',
+    label: 'PostgreSQL',
+    sample: `SELECT e.employee_id,
+  e.first_name || ' ' || e.last_name AS full_name,
+  d.department_name,
+  s.salary,
+  RANK() OVER (PARTITION BY d.department_id ORDER BY s.salary DESC) AS salary_rank
+FROM employees e
+JOIN departments d USING (department_id)
+LEFT JOIN salaries s USING (employee_id)
+WHERE e.hire_date >= '2020-01-01'::date AND s.salary > 50000
+ORDER BY salary_rank
+LIMIT 10`,
+  },
+  {
+    id: 'mysql',
+    label: 'MySQL',
+    sample: `SELECT e.employee_id,
+  CONCAT(e.first_name, ' ', e.last_name) AS full_name,
+  d.department_name,
+  s.salary
+FROM employees e
+INNER JOIN departments d ON e.department_id = d.department_id
+LEFT JOIN salaries s ON e.employee_id = s.employee_id
+WHERE e.hire_date >= '2020-01-01' AND s.salary > 50000
+ORDER BY s.salary DESC
+LIMIT 10`,
+  },
+  {
+    id: 'mariadb',
+    label: 'MariaDB',
+    sample: `SELECT e.employee_id,
+  CONCAT(e.first_name, ' ', e.last_name) AS full_name,
+  d.department_name,
+  s.salary
+FROM employees e
+INNER JOIN departments d ON e.department_id = d.department_id
+LEFT JOIN salaries s ON e.employee_id = s.employee_id
+WHERE e.hire_date >= '2020-01-01' AND s.salary > 50000
+ORDER BY s.salary DESC
+LIMIT 10`,
+  },
+  {
+    id: 'sqlite',
+    label: 'SQLite',
+    sample: `SELECT e.employee_id,
+  e.first_name || ' ' || e.last_name AS full_name,
+  d.department_name,
+  s.salary
+FROM employees e
+JOIN departments d ON e.department_id = d.department_id
+LEFT JOIN salaries s ON e.employee_id = s.employee_id
+WHERE e.hire_date >= '2020-01-01' AND s.salary > 50000
+ORDER BY s.salary DESC
+LIMIT 10`,
+  },
+  {
+    id: 'plsql',
+    label: 'PL/SQL',
+    sample: `SELECT e.employee_id,
+  e.first_name || ' ' || e.last_name AS full_name,
+  d.department_name,
+  s.salary
+FROM employees e
+INNER JOIN departments d ON e.department_id = d.department_id
+LEFT JOIN salaries s ON e.employee_id = s.employee_id
+WHERE e.hire_date >= DATE '2020-01-01' AND s.salary > 50000
+ORDER BY s.salary DESC
+FETCH FIRST 10 ROWS ONLY`,
+  },
+  {
+    id: 'bigquery',
+    label: 'BigQuery',
+    sample: 'SELECT\n  e.employee_id,\n  CONCAT(e.first_name, \' \', e.last_name) AS full_name,\n  d.department_name,\n  s.salary,\n  RANK() OVER (PARTITION BY d.department_id ORDER BY s.salary DESC) AS salary_rank\nFROM `project.dataset.employees` e\nJOIN `project.dataset.departments` d USING (department_id)\nLEFT JOIN `project.dataset.salaries` s USING (employee_id)\nWHERE e.hire_date >= \'2020-01-01\'\nORDER BY salary_rank\nLIMIT 10',
+  },
+  {
+    id: 'redshift',
+    label: 'Redshift',
+    sample: `SELECT e.employee_id,
+  e.first_name || ' ' || e.last_name AS full_name,
+  d.department_name,
+  s.salary,
+  RANK() OVER (PARTITION BY d.department_id ORDER BY s.salary DESC) AS salary_rank
+FROM employees e
+JOIN departments d USING (department_id)
+LEFT JOIN salaries s USING (employee_id)
+WHERE e.hire_date >= '2020-01-01'
+ORDER BY salary_rank
+LIMIT 10`,
+  },
+  {
+    id: 'snowflake',
+    label: 'Snowflake',
+    sample: `SELECT e.employee_id,
+  e.first_name || ' ' || e.last_name AS full_name,
+  d.department_name,
+  s.salary,
+  RANK() OVER (PARTITION BY d.department_id ORDER BY s.salary DESC) AS salary_rank
+FROM employees e
+JOIN departments d USING (department_id)
+LEFT JOIN salaries s USING (employee_id)
+WHERE e.hire_date >= '2020-01-01'::date
+ORDER BY salary_rank
+LIMIT 10`,
+  },
+  {
+    id: 'spark',
+    label: 'Spark SQL',
+    sample: `SELECT e.employee_id,
+  CONCAT(e.first_name, ' ', e.last_name) AS full_name,
+  d.department_name,
+  s.salary,
+  RANK() OVER (PARTITION BY d.department_id ORDER BY s.salary DESC) AS salary_rank
+FROM employees e
+JOIN departments d ON e.department_id = d.department_id
+LEFT JOIN salaries s ON e.employee_id = s.employee_id
+WHERE e.hire_date >= '2020-01-01'
+ORDER BY salary_rank
+LIMIT 10`,
+  },
+  {
+    id: 'sql',
+    label: 'Standard SQL',
+    sample: `SELECT e.employee_id,
+  e.first_name || ' ' || e.last_name AS full_name,
+  d.department_name,
+  s.salary
+FROM employees AS e
+INNER JOIN departments AS d ON e.department_id = d.department_id
+LEFT JOIN salaries AS s ON e.employee_id = s.employee_id
+WHERE e.hire_date >= '2020-01-01' AND s.salary > 50000
+ORDER BY s.salary DESC`,
+  },
+];
+
+// ── Component ────────────────────────────────────────────────────────────────
+
 export default function SqlFormatter({ initialData }: { initialData?: string | null }) {
   const [input, setInput] = useState('');
-
-  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
   const [output, setOutput] = useState('');
   const [copied, setCopied] = useState(false);
   const [sqlMode, setSqlMode] = useState<'format' | 'minify'>('format');
+  const [dialect, setDialect] = useState<string>('tsql');
+
+  useEffect(() => { if (initialData) setInput(initialData); }, [initialData]);
 
   const updateOutput = useCallback(() => {
     if (!input.trim()) { setOutput(''); return; }
@@ -87,11 +245,11 @@ export default function SqlFormatter({ initialData }: { initialData?: string | n
       return;
     }
     try {
-      setOutput(prettyPrintSql(input, { language: 'tsql', tabWidth: 2 }));
+      setOutput(prettyPrintSql(input, { language: dialect as Parameters<typeof prettyPrintSql>[1]['language'], tabWidth: 2 }));
     } catch {
       setOutput(`-- Error formatting SQL --\n${input}`);
     }
-  }, [input, sqlMode]);
+  }, [input, sqlMode, dialect]);
 
   useEffect(() => { updateOutput(); }, [updateOutput]);
 
@@ -104,9 +262,15 @@ export default function SqlFormatter({ initialData }: { initialData?: string | n
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const loadSample = () => {
+    const found = DIALECTS.find(d => d.id === dialect);
+    if (found) setInput(found.sample);
+  };
+
   const leftPanel = (
     <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[400px] h-full">
-      <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+      {/* Header row 1: label + mode toggle */}
+      <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
           <Code2 size={14} className="text-slate-400" /> SQL Input
         </span>
@@ -129,6 +293,26 @@ export default function SqlFormatter({ initialData }: { initialData?: string | n
           </button>
         </div>
       </div>
+
+      {/* Header row 2: dialect picker + sample button */}
+      <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-3">
+        <select
+          value={dialect}
+          onChange={(e: { target: HTMLSelectElement }) => setDialect(e.target.value)}
+          className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer"
+        >
+          {DIALECTS.map(d => (
+            <option key={d.id} value={d.id}>{d.label}</option>
+          ))}
+        </select>
+        <button
+          onClick={loadSample}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-300 transition-all whitespace-nowrap"
+        >
+          <FileCode2 size={11} /> Load Sample
+        </button>
+      </div>
+
       <textarea
         className="flex-1 p-6 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed"
         value={input}

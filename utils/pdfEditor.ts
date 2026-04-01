@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
+import { PDFDocument, PDFDict, PDFName, PDFStream, StandardFonts, rgb, degrees } from 'pdf-lib';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -159,6 +159,60 @@ export async function loadPageForEditing(
   return { dataUrl, textItems, viewWidth: canvas.width, viewHeight: canvas.height };
 }
 
+// ── Embedded font extraction ─────────────────────────────────────────────────
+// Returns a map of PDF font resource name (e.g. "F1") → raw TTF/OTF bytes.
+// Only TrueType (FontFile2) and OpenType/CFF (FontFile3) are extractable;
+// Type1 (FontFile) is skipped because pdf-lib cannot re-embed raw Type1 data.
+// Most modern PDFs use subset fonts — extracted bytes are valid but only contain
+// glyphs present in the original document. New characters not in the subset will
+// render as missing glyphs (.notdef boxes) with no error.
+async function extractEmbeddedFonts(srcDoc: PDFDocument): Promise<Map<string, Uint8Array>> {
+  const result = new Map<string, Uint8Array>();
+  try {
+    for (const page of srcDoc.getPages()) {
+      const resources = page.node.get(PDFName.of('Resources'));
+      if (!(resources instanceof PDFDict)) continue;
+
+      const fontDict = srcDoc.context.lookupMaybe(
+        resources.get(PDFName.of('Font')),
+        PDFDict,
+      );
+      if (!fontDict) continue;
+
+      for (const [nameObj, ref] of fontDict.entries()) {
+        const fontName = nameObj.asString?.() ?? String(nameObj);
+        if (result.has(fontName)) continue; // already extracted from another page
+
+        const fontDictEntry = srcDoc.context.lookupMaybe(ref, PDFDict);
+        if (!fontDictEntry) continue;
+
+        const descriptor = srcDoc.context.lookupMaybe(
+          fontDictEntry.get(PDFName.of('FontDescriptor')),
+          PDFDict,
+        );
+        if (!descriptor) continue;
+
+        // TrueType: FontFile2
+        const ttf = srcDoc.context.lookupMaybe(
+          descriptor.get(PDFName.of('FontFile2')),
+          PDFStream,
+        );
+        if (ttf) { result.set(fontName, ttf.getContents()); continue; }
+
+        // OpenType/CFF: FontFile3
+        const otf = srcDoc.context.lookupMaybe(
+          descriptor.get(PDFName.of('FontFile3')),
+          PDFStream,
+        );
+        if (otf) { result.set(fontName, otf.getContents()); }
+      }
+    }
+  } catch {
+    // Non-critical — fall back to standard fonts if extraction fails
+  }
+  return result;
+}
+
 export async function exportPdf(
   file: File,
   pages: PdfPageData[],
@@ -170,7 +224,7 @@ export async function exportPdf(
 
   const hasEdits = textEdits.size > 0;
 
-  // Embed fonts only when text edits exist
+  // Always embed standard fallback fonts
   let helvetica: Awaited<ReturnType<typeof newDoc.embedFont>> | undefined;
   let timesRoman: typeof helvetica | undefined;
   let courier: typeof helvetica | undefined;
@@ -180,6 +234,21 @@ export async function exportPdf(
       newDoc.embedFont(StandardFonts.TimesRoman),
       newDoc.embedFont(StandardFonts.Courier),
     ]);
+  }
+
+  // Extract embedded fonts from the source PDF and re-embed into the new doc.
+  // Keyed by PDF resource name (e.g. "F1", "F2"). Falls back to standard fonts
+  // if a font can't be extracted or re-embedded (Type1, corrupted stream, etc.).
+  const embeddedFontCache = new Map<string, Awaited<ReturnType<typeof newDoc.embedFont>>>();
+  if (hasEdits) {
+    const rawFonts = await extractEmbeddedFonts(srcDoc);
+    for (const [name, bytes] of rawFonts) {
+      try {
+        embeddedFontCache.set(name, await newDoc.embedFont(bytes));
+      } catch {
+        // Unsupported format or corrupted stream — will fall back to standard font
+      }
+    }
   }
 
   const indices = pages.map(p => p.originalIndex);
@@ -222,42 +291,63 @@ export async function exportPdf(
         const rectOriginX = pdfX + descender * Math.sin(theta);
         const rectOriginY = pdfY - descender * Math.cos(theta);
 
-        // Mask original text with a rotated white rectangle
+        // Resolve font: prefer extracted embedded font, fall back to closest standard font.
+        // The PDF resource name for this text item is item.fontName (e.g. "F1", "F2").
+        const pdfResourceName = (item as any).fontName as string | undefined;
+        let font = embeddedFontCache.get(pdfResourceName ?? '');
+
+        if (!font) {
+          // Embedded font not available — pick the closest standard font by name heuristic
+          let fontFamily = 'sans-serif';
+          const styleFontFamily = styles[pdfResourceName ?? '']?.fontFamily ?? '';
+          if (styleFontFamily) {
+            const f = styleFontFamily.toLowerCase();
+            if (f.includes('serif') && !f.includes('sans')) fontFamily = 'serif';
+            else if (f.includes('mono') || f.includes('courier')) fontFamily = 'monospace';
+          } else {
+            const fn = (pdfResourceName ?? '').toLowerCase();
+            if (fn.includes('times') || (fn.includes('serif') && !fn.includes('sans')))
+              fontFamily = 'serif';
+            else if (fn.includes('courier') || fn.includes('mono')) fontFamily = 'monospace';
+          }
+          font = fontFamily === 'serif' ? timesRoman! : fontFamily === 'monospace' ? courier! : helvetica!;
+        }
+
+        const lines = newText.split('\n');
+
+        // Measure widest line in the substituted font so the mask always covers
+        // the replacement text, regardless of font metric differences.
+        const maxNewTextWidth = lines.reduce((max, line) => {
+          const w = font.widthOfTextAtSize(line || ' ', pdfFontSize);
+          return Math.max(max, w);
+        }, 0);
+        const maskWidth = Math.max(pdfWidth, maxNewTextWidth) + 6;
+
+        // If the single-line replacement is wider than the original slot, scale
+        // the font down to fit (stops text spilling over adjacent content).
+        let drawFontSize = pdfFontSize;
+        if (lines.length === 1 && maxNewTextWidth > pdfWidth && pdfWidth > 0) {
+          drawFontSize = Math.max(pdfFontSize * (pdfWidth / maxNewTextWidth), pdfFontSize * 0.5);
+        }
+
+        // Mask original text with a rotated white rectangle sized to the wider of
+        // original or replacement text.
         pdfPage.drawRectangle({
           x: rectOriginX,
           y: rectOriginY,
-          width: pdfWidth + 4,
+          width: maskWidth,
           height: Math.max(pdfFontSize * 1.4, pdfFontSize * 1.2),
           color: rgb(1, 1, 1),
           opacity: 1,
           rotate: degrees(pdfRotation),
         });
 
-        // Select best matching standard font
-        let fontFamily = 'sans-serif';
-        const styleFontFamily = styles[(item as any).fontName]?.fontFamily ?? '';
-        if (styleFontFamily) {
-          const f = styleFontFamily.toLowerCase();
-          if (f.includes('serif') && !f.includes('sans')) fontFamily = 'serif';
-          else if (f.includes('mono') || f.includes('courier')) fontFamily = 'monospace';
-        } else {
-          const fn = ((item as any).fontName ?? '').toLowerCase();
-          if (fn.includes('times') || (fn.includes('serif') && !fn.includes('sans')))
-            fontFamily = 'serif';
-          else if (fn.includes('courier') || fn.includes('mono')) fontFamily = 'monospace';
-        }
-
-        let font = helvetica!;
-        if (fontFamily === 'serif') font = timesRoman!;
-        else if (fontFamily === 'monospace') font = courier!;
-
         // Draw replacement text at same baseline, with same rotation
-        const lines = newText.split('\n');
         lines.forEach((lineText, lineIdx) => {
           pdfPage.drawText(lineText, {
             x: pdfX,
-            y: pdfY - lineIdx * pdfFontSize * 1.2,
-            size: pdfFontSize,
+            y: pdfY - lineIdx * drawFontSize * 1.2,
+            size: drawFontSize,
             font,
             color: rgb(0, 0, 0),
             rotate: degrees(pdfRotation),
