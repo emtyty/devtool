@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1a2d4a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e2d45" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#162034" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle dot grid -->
+  <pattern id="dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+    <circle cx="2" cy="2" r="1.2" fill="#1e3a5f" opacity="0.6"/>
+  </pattern>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+
+  <!-- Glowing orb top-right -->
+  <radialGradient id="orb" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.15"/>
+    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+  </radialGradient>
+  <ellipse cx="1050" cy="120" rx="300" ry="220" fill="url(#orb)"/>
+
+  <!-- Logo badge -->
+  <rect x="80" y="72" width="72" height="72" rx="16" fill="#2563eb"/>
+  <rect x="80" y="72" width="72" height="72" rx="16" fill="url(#accent)" opacity="0.6"/>
+  <text x="116" y="122" font-family="'Courier New', monospace" font-size="30" font-weight="900" fill="white" text-anchor="middle">&lt;/&gt;</text>
+
+  <!-- Brand name -->
+  <text x="172" y="102" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="700" fill="#94a3b8" letter-spacing="4">DEVTOOLKIT</text>
+  <text x="172" y="130" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" fill="#475569" letter-spacing="1">by Coding4Pizza</text>
+
+  <!-- Divider -->
+  <rect x="80" y="172" width="160" height="3" rx="2" fill="url(#accent)"/>
+
+  <!-- Headline -->
+  <text x="80" y="250" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="64" font-weight="900" fill="white">25 Dev Tools.</text>
+  <text x="80" y="326" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="64" font-weight="900" fill="white">Zero Server.</text>
+
+  <!-- Subline -->
+  <text x="80" y="388" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" fill="#64748b">Privacy-first. Runs 100% in your browser.</text>
+
+  <!-- Tool pills — row 1 -->
+  <g transform="translate(80, 428)">
+    <rect width="130" height="34" rx="17" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+    <text x="65" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">JSON Tools</text>
+  </g>
+  <g transform="translate(224, 428)">
+    <rect width="140" height="34" rx="17" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+    <text x="70" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">SQL Formatter</text>
+  </g>
+  <g transform="translate(378, 428)">
+    <rect width="148" height="34" rx="17" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+    <text x="74" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">Query Plan AI</text>
+  </g>
+  <g transform="translate(540, 428)">
+    <rect width="140" height="34" rx="17" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+    <text x="70" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">Mock Data Gen</text>
+  </g>
+  <g transform="translate(694, 428)">
+    <rect width="130" height="34" rx="17" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+    <text x="65" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">JWT Decoder</text>
+  </g>
+  <g transform="translate(838, 428)">
+    <rect width="150" height="34" rx="17" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+    <text x="75" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">Markdown Preview</text>
+  </g>
+
+  <!-- Tool pills — row 2 -->
+  <g transform="translate(80, 476)">
+    <rect width="140" height="34" rx="17" fill="#1a2540" stroke="#334155" stroke-width="1"/>
+    <text x="70" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle">Text Diff</text>
+  </g>
+  <g transform="translate(234, 476)">
+    <rect width="148" height="34" rx="17" fill="#1a2540" stroke="#334155" stroke-width="1"/>
+    <text x="74" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle">Color Converter</text>
+  </g>
+  <g transform="translate(396, 476)">
+    <rect width="140" height="34" rx="17" fill="#1a2540" stroke="#334155" stroke-width="1"/>
+    <text x="70" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle">Cron Builder</text>
+  </g>
+  <g transform="translate(550, 476)">
+    <rect width="148" height="34" rx="17" fill="#1a2540" stroke="#334155" stroke-width="1"/>
+    <text x="74" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle">UUID Generator</text>
+  </g>
+  <g transform="translate(712, 476)">
+    <rect width="130" height="34" rx="17" fill="#1a2540" stroke="#334155" stroke-width="1"/>
+    <text x="65" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle">CSP Tools</text>
+  </g>
+  <g transform="translate(856, 476)">
+    <rect width="132" height="34" rx="17" fill="#1a2540" stroke="#334155" stroke-width="1"/>
+    <text x="66" y="22" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle">+ 19 more...</text>
+  </g>
+
+  <!-- Bottom accent bar -->
+  <rect x="0" y="622" width="1200" height="8" rx="0" fill="url(#accent)"/>
+</svg>
