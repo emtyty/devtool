@@ -1,8 +1,58 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2 } from 'lucide-react';
+import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown, Copy, MoreHorizontal, Paintbrush, WrapText, Pin, PinOff, EyeOff, Eye } from 'lucide-react';
 
 type Row = Record<string, string>;
+
+// ── Conditional Formatting ────────────────────────────────────────
+type CFRule = { id: string; col: string; op: string; value: string; color: string };
+
+const CF_COLORS = [
+  { label: 'Red',    swatch: '#ef4444', cell: 'rgba(239,68,68,0.15)' },
+  { label: 'Orange', swatch: '#f97316', cell: 'rgba(249,115,22,0.15)' },
+  { label: 'Yellow', swatch: '#eab308', cell: 'rgba(234,179,8,0.22)' },
+  { label: 'Green',  swatch: '#22c55e', cell: 'rgba(34,197,94,0.15)' },
+  { label: 'Blue',   swatch: '#3b82f6', cell: 'rgba(59,130,246,0.15)' },
+  { label: 'Purple', swatch: '#a855f7', cell: 'rgba(168,85,247,0.15)' },
+  { label: 'Pink',   swatch: '#ec4899', cell: 'rgba(236,72,153,0.15)' },
+  { label: 'Teal',   swatch: '#14b8a6', cell: 'rgba(20,184,166,0.15)' },
+];
+
+const CF_OPS = [
+  { value: 'contains',     label: 'contains' },
+  { value: 'not_contains', label: 'not contains' },
+  { value: 'equals',       label: '= equals' },
+  { value: 'not_equals',   label: '≠ not equals' },
+  { value: 'starts_with',  label: 'starts with' },
+  { value: 'ends_with',    label: 'ends with' },
+  { value: 'gt',           label: '> greater than' },
+  { value: 'lt',           label: '< less than' },
+  { value: 'gte',          label: '≥ greater or equal' },
+  { value: 'lte',          label: '≤ less or equal' },
+  { value: 'is_empty',     label: 'is empty' },
+  { value: 'is_not_empty', label: 'is not empty' },
+];
+
+function matchCFRule(cellVal: string, op: string, ruleVal: string): boolean {
+  const cv = cellVal.toLowerCase(), rv = ruleVal.toLowerCase();
+  const num = Number(cellVal), rnum = Number(ruleVal);
+  const isNum = !isNaN(num) && cellVal !== '', rIsNum = !isNaN(rnum) && ruleVal !== '';
+  switch (op) {
+    case 'contains':     return cv.includes(rv);
+    case 'not_contains': return !cv.includes(rv);
+    case 'equals':       return cv === rv;
+    case 'not_equals':   return cv !== rv;
+    case 'starts_with':  return cv.startsWith(rv);
+    case 'ends_with':    return cv.endsWith(rv);
+    case 'gt':           return isNum && rIsNum && num > rnum;
+    case 'lt':           return isNum && rIsNum && num < rnum;
+    case 'gte':          return isNum && rIsNum && num >= rnum;
+    case 'lte':          return isNum && rIsNum && num <= rnum;
+    case 'is_empty':     return cellVal === '';
+    case 'is_not_empty': return cellVal !== '';
+    default:             return false;
+  }
+}
 
 const ROW_H = 33;   // px — must match actual row height
 const OVERSCAN = 25;
@@ -176,6 +226,19 @@ const TableLens: React.FC = () => {
   const [distinctLoading, setDistinctLoading] = useState(false);
   const [distinctPage, setDistinctPage] = useState(1);
   const DISTINCT_PAGE = 50;
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
+  const [colMenuCol, setColMenuCol] = useState<string | null>(null);
+  const [colMenuRect, setColMenuRect] = useState<DOMRect | null>(null);
+  const colMenuRef = useRef<HTMLDivElement>(null);
+  const [cfRules, setCFRules] = useState<CFRule[]>([]);
+  const [showCFPanel, setShowCFPanel] = useState(false);
+  const [wrapText, setWrapText] = useState(false);
+  const [hiddenRows, setHiddenRows] = useState<Set<number>>(new Set());
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [frozenCols, setFrozenCols] = useState<Set<string>>(new Set());
   const [batchCol, setBatchCol] = useState('');
   const [batchVal, setBatchVal] = useState('');
   const [fileName, setFileName] = useState('');
@@ -200,31 +263,71 @@ const TableLens: React.FC = () => {
     return () => ro.disconnect();
   }, [hasData]);
 
-  // Reset scroll when filters change
+  // Reset scroll when filters or sort change
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setScrollTop(0);
-  }, [debouncedFilters]);
+  }, [debouncedFilters, sortCol, sortDir]);
 
-  // Filtered rows — uses debounced filters
+  // Filtered rows — uses debounced filters, excludes hidden rows
   const filteredRows = useMemo(() =>
     data
       .map((row, idx) => ({ idx, row }))
-      .filter(({ row }) =>
+      .filter(({ row, idx }: { row: Row; idx: number }) =>
+        !hiddenRows.has(idx) &&
         columns.every(col => {
           const f = (debouncedFilters[col] || '').toLowerCase();
           return !f || String(row[col] ?? '').toLowerCase().includes(f);
         })
       ),
-    [data, debouncedFilters, columns]
+    [data, debouncedFilters, columns, hiddenRows]
   );
 
-  // Virtual scroll window
-  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
-  const endIdx = Math.min(filteredRows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
-  const visibleRows = filteredRows.slice(startIdx, endIdx);
-  const padTop = startIdx * ROW_H;
-  const padBot = Math.max(0, (filteredRows.length - endIdx) * ROW_H);
+  const visibleColumns = useMemo(() => [
+    ...columns.filter((c: string) => frozenCols.has(c) && !hiddenCols.has(c)),
+    ...columns.filter((c: string) => !frozenCols.has(c) && !hiddenCols.has(c)),
+  ], [columns, frozenCols, hiddenCols]);
+
+  const frozenLeftOffsets = useMemo(() => {
+    const offsets: Record<string, number> = {};
+    let left = 36 + 40; // checkbox + row#
+    for (const col of visibleColumns) {
+      if (!frozenCols.has(col)) break;
+      offsets[col] = left;
+      left += colWidths[col] ?? 140;
+    }
+    return offsets;
+  }, [visibleColumns, frozenCols, colWidths]);
+
+  const sortedRows = useMemo(() => {
+    if (!sortCol) return filteredRows;
+    return [...filteredRows].sort((a, b) => {
+      const av = String(a.row[sortCol] ?? '');
+      const bv = String(b.row[sortCol] ?? '');
+      const an = Number(av), bn = Number(bv);
+      const cmp = !isNaN(an) && !isNaN(bn) && av !== '' && bv !== '' ? an - bn : av.localeCompare(bv);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [filteredRows, sortCol, sortDir]);
+
+  const handleSort = useCallback((col: string) => {
+    if (sortCol !== col) {
+      setSortCol(col);
+      setSortDir('asc');
+    } else if (sortDir === 'asc') {
+      setSortDir('desc');
+    } else {
+      setSortCol(null);
+      setSortDir('asc');
+    }
+  }, [sortCol, sortDir]);
+
+  // Virtual scroll window (bypassed when text wrap is on)
+  const startIdx = wrapText ? 0 : Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const endIdx = wrapText ? sortedRows.length : Math.min(sortedRows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
+  const visibleRows = sortedRows.slice(startIdx, endIdx);
+  const padTop = wrapText ? 0 : startIdx * ROW_H;
+  const padBot = wrapText ? 0 : Math.max(0, (sortedRows.length - endIdx) * ROW_H);
 
   useEffect(() => {
     if (!distinctCol) { setDistinctValues([]); setDistinctPage(1); return; }
@@ -248,6 +351,25 @@ const TableLens: React.FC = () => {
     [data, rawData, columns]
   );
 
+  const startResize = useCallback((col: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { col, startX: e.clientX, startW: colWidths[col] ?? 140 };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { col: resizeCol, startW, startX } = resizeRef.current;
+      const newW = Math.max(60, startW + ev.clientX - startX);
+      setColWidths((prev: Record<string, number>) => ({ ...prev, [resizeCol]: newW }));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [colWidths]);
+
   const loadParsed = useCallback((cols: string[], rows: Row[], name: string) => {
     setColumns(cols);
     setRawData(rows.map(r => ({ ...r })));
@@ -258,6 +380,11 @@ const TableLens: React.FC = () => {
     setDistinctCol('');
     setBatchCol(cols[0] || '');
     setFileName(name);
+    setColWidths({});
+    setCFRules([]);
+    setHiddenRows(new Set());
+    setHiddenCols(new Set());
+    setFrozenCols(new Set());
     setScrollTop(0);
   }, []);
 
@@ -336,6 +463,98 @@ const TableLens: React.FC = () => {
         : new Set(filteredRows.map(r => r.idx))
     );
   }, [filteredRows]);
+
+  const deleteSelectedRows = useCallback(() => {
+    setData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
+    setRawData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
+    setSelected(new Set());
+  }, [selected]);
+
+  const duplicateSelectedRows = useCallback(() => {
+    const sortedIdx = Array.from(selected as Set<number>).sort((a: number, b: number) => a - b);
+    const insertAt = sortedIdx[sortedIdx.length - 1] + 1;
+    setData((prev: Row[]) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, ...sortedIdx.map((i: number) => ({ ...prev[i] })));
+      return next;
+    });
+    setRawData((prev: Row[]) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, ...sortedIdx.map((i: number) => ({ ...prev[i] })));
+      return next;
+    });
+    setSelected(new Set());
+  }, [selected]);
+
+  const deleteColumn = useCallback((col: string) => {
+    const omitCol = (r: Row): Row => Object.fromEntries(Object.entries(r).filter(([k]) => k !== col)) as Row;
+    setColumns((prev: string[]) => prev.filter((c: string) => c !== col));
+    setData((prev: Row[]) => prev.map(omitCol));
+    setRawData((prev: Row[]) => prev.map(omitCol));
+    setColWidths((prev: Record<string, number>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
+    setFilterInputs((prev: Record<string, string>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
+    setColMenuCol(null);
+  }, []);
+
+  const duplicateColumn = useCallback((col: string) => {
+    const newCol = `${col}_copy`;
+    setColumns((prev: string[]) => {
+      const idx = prev.indexOf(col);
+      const next = [...prev];
+      next.splice(idx + 1, 0, newCol);
+      return next;
+    });
+    setData((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })));
+    setRawData((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })));
+    setColMenuCol(null);
+  }, []);
+
+  useEffect(() => {
+    if (!colMenuCol) return;
+    const close = (e: MouseEvent) => {
+      if (!colMenuRef.current?.contains(e.target as Node)) setColMenuCol(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [colMenuCol]);
+
+  const hideSelectedRows = useCallback(() => {
+    setHiddenRows((prev: Set<number>) => new Set([...Array.from(prev as Set<number>), ...Array.from(selected as Set<number>)]));
+    setSelected(new Set());
+  }, [selected]);
+
+  const showAllHiddenRows = useCallback(() => setHiddenRows(new Set()), []);
+
+  const hideColumn = useCallback((col: string) => {
+    setHiddenCols((prev: Set<string>) => new Set([...Array.from(prev as Set<string>), col]));
+    setColMenuCol(null);
+  }, []);
+
+  const showAllHiddenCols = useCallback(() => setHiddenCols(new Set()), []);
+
+  const toggleFreezeColumn = useCallback((col: string) => {
+    setFrozenCols((prev: Set<string>) => {
+      const next = new Set(prev as Set<string>);
+      if (next.has(col)) { next.delete(col); } else { next.add(col); }
+      return next;
+    });
+    setColMenuCol(null);
+  }, []);
+
+  const addCFRule = useCallback(() => {
+    setCFRules((prev: CFRule[]) => [
+      ...prev,
+      { id: String(Date.now()), col: columns[0] || '', op: 'contains', value: '', color: CF_COLORS[0].cell },
+    ]);
+  }, [columns]);
+
+  const updateCFRule = useCallback((idx: number, key: keyof CFRule, val: string) => {
+    setCFRules((prev: CFRule[]) => prev.map((r: CFRule, i: number) => i === idx ? { ...r, [key]: val } : r));
+  }, []);
+
+  const removeCFRule = useCallback((idx: number) => {
+    setCFRules((prev: CFRule[]) => prev.filter((_: CFRule, i: number) => i !== idx));
+  }, []);
 
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'export';
   const activeFilters = columns.filter(c => filterInputs[c]);
@@ -420,8 +639,48 @@ const TableLens: React.FC = () => {
           {isFiltering && (
             <Loader2 size={12} className="text-blue-400 animate-spin shrink-0" />
           )}
+          {hiddenRows.size > 0 && (
+            <>
+              <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full shrink-0">
+                {hiddenRows.size} hidden row{hiddenRows.size > 1 ? 's' : ''}
+              </span>
+              <button onClick={showAllHiddenRows} className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors cursor-pointer shrink-0">
+                <Eye size={11} /> Show
+              </button>
+            </>
+          )}
+          {hiddenCols.size > 0 && (
+            <>
+              <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full shrink-0">
+                {hiddenCols.size} hidden col{hiddenCols.size > 1 ? 's' : ''}
+              </span>
+              <button onClick={showAllHiddenCols} className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors cursor-pointer shrink-0">
+                <Eye size={11} /> Show
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setWrapText((w: boolean) => !w)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
+              wrapText
+                ? 'border-teal-300 dark:border-teal-600 text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10'
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <WrapText size={12} /> Wrap
+          </button>
+          <button
+            onClick={() => setShowCFPanel((p: boolean) => !p)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
+              showCFPanel || cfRules.length > 0
+                ? 'border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10'
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Paintbrush size={12} /> Format{cfRules.length > 0 ? ` (${cfRules.length})` : ''}
+          </button>
           <button
             onClick={() => { setData([]); setColumns([]); setRawData([]); setFileName(''); setFilterInputs({}); setSelected(new Set()); }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
@@ -479,10 +738,63 @@ const TableLens: React.FC = () => {
             <button onClick={applyBatch} className="text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all cursor-pointer">
               Apply to all
             </button>
+            <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
+            <button onClick={duplicateSelectedRows} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 px-2 py-1.5 cursor-pointer transition-colors">
+              <Copy size={12} /> Duplicate
+            </button>
+            <button onClick={hideSelectedRows} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-500 dark:hover:text-slate-400 px-2 py-1.5 cursor-pointer transition-colors">
+              <EyeOff size={12} /> Hide
+            </button>
+            <button onClick={deleteSelectedRows} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 px-2 py-1.5 cursor-pointer transition-colors">
+              <Trash2 size={12} /> Delete
+            </button>
             <button onClick={() => setSelected(new Set())} className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1.5 cursor-pointer transition-colors">
               Deselect
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Conditional Formatting Panel */}
+      {showCFPanel && (
+        <div className="shrink-0 bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-500/30 rounded-xl px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black text-purple-500 dark:text-purple-400 uppercase tracking-[0.15em]">Conditional Formatting</span>
+            <button onClick={addCFRule} className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 cursor-pointer transition-colors">+ Add rule</button>
+          </div>
+          {cfRules.length === 0 ? (
+            <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-1">No rules yet — click "+ Add rule" to highlight cells.</p>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {cfRules.map((rule: CFRule, i: number) => (
+                <div key={rule.id} className="flex items-center gap-2 flex-wrap">
+                  <select value={rule.col} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateCFRule(i, 'col', e.target.value)}
+                    className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer">
+                    {columns.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select value={rule.op} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateCFRule(i, 'op', e.target.value)}
+                    className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer">
+                    {CF_OPS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                  </select>
+                  {!['is_empty', 'is_not_empty'].includes(rule.op) && (
+                    <input value={rule.value} onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCFRule(i, 'value', e.target.value)}
+                      placeholder="value..."
+                      className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-28 focus:outline-none focus:border-purple-400" />
+                  )}
+                  <div className="flex items-center gap-1">
+                    {CF_COLORS.map(c => (
+                      <button key={c.label} title={c.label} onClick={() => updateCFRule(i, 'color', c.cell)}
+                        style={{ backgroundColor: c.swatch, outline: rule.color === c.cell ? `2px solid ${c.swatch}` : undefined, outlineOffset: '2px' }}
+                        className="w-4 h-4 rounded-full cursor-pointer transition-transform hover:scale-110" />
+                    ))}
+                  </div>
+                  <button onClick={() => removeCFRule(i)} className="text-slate-300 dark:text-slate-600 hover:text-red-400 cursor-pointer transition-colors ml-1">
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -563,38 +875,58 @@ const TableLens: React.FC = () => {
         {/* Table */}
         <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
 
-          {/* Sticky header — outside the scroll container */}
-          <div className="overflow-x-auto shrink-0 border-b border-slate-200 dark:border-slate-700">
-            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }} id="tl-header">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800">
-                  <th className="w-9 px-3 py-2 border-r border-slate-200 dark:border-slate-700">
-                    <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} className="cursor-pointer accent-blue-600" />
-                  </th>
-                  <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-slate-200 dark:border-slate-700">#</th>
-                  {columns.map(col => (
-                    <th key={col} className="px-3 py-2 text-left border-r border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px]">
-                      <div className="font-black text-slate-600 dark:text-slate-300 truncate mb-1.5 text-[11px] uppercase tracking-wide">{col}</div>
-                      <FilterCell
-                        value={filterInputs[col] || ''}
-                        onChange={v => setFilterInputs(prev => ({ ...prev, [col]: v }))}
-                        getOptions={() => Array.from<string>(new Set(data.map((r: Row) => String(r[col] ?? '')))).sort()}
-                        active={!!(debouncedFilters[col])}
-                      />
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            </table>
-          </div>
-
-          {/* Scrollable body — virtual scroll */}
+          {/* Single scroll container — thead sticky inside, no split tables */}
           <div
             ref={scrollRef}
             className="flex-1 overflow-auto"
             onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
           >
             <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
+              <thead className="sticky top-0 z-20">
+                <tr className="bg-slate-50 dark:bg-slate-800">
+                  <th className="w-9 px-3 py-2 border-r border-b border-slate-200 dark:border-slate-700 sticky left-0 z-20 bg-slate-50 dark:bg-slate-800">
+                    <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} className="cursor-pointer accent-blue-600" />
+                  </th>
+                  <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-b border-slate-200 dark:border-slate-700 sticky left-9 z-20 bg-slate-50 dark:bg-slate-800">#</th>
+                  {visibleColumns.map((col: string) => {
+                    const w = colWidths[col] ?? 140;
+                    const isFrozen = frozenCols.has(col);
+                    return (
+                      <th key={col} style={{ width: w, minWidth: w, maxWidth: w, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col], zIndex: 21 } : {}) }} className={`relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 ${isFrozen ? 'bg-slate-100 dark:bg-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]' : 'bg-slate-50 dark:bg-slate-800'}`}>
+                        <div className="flex items-center gap-0.5 mb-1.5">
+                          <button
+                            onClick={() => handleSort(col)}
+                            className="flex items-center gap-1 group flex-1 min-w-0 text-left cursor-pointer"
+                          >
+                            <span title={col} className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
+                            <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
+                              {sortCol === col
+                                ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                                : <ArrowUpDown size={11} />}
+                            </span>
+                          </button>
+                          <button
+                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); setColMenuCol(col); setColMenuRect(e.currentTarget.getBoundingClientRect()); }}
+                            className="shrink-0 p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                          >
+                            <MoreHorizontal size={11} />
+                          </button>
+                        </div>
+                        <FilterCell
+                          value={filterInputs[col] || ''}
+                          onChange={(v: string) => setFilterInputs((prev: Record<string, string>) => ({ ...prev, [col]: v }))}
+                          getOptions={() => Array.from<string>(new Set(data.map((r: Row) => String(r[col] ?? '')))).sort()}
+                          active={!!(debouncedFilters[col])}
+                        />
+                        <div
+                          onMouseDown={(e: React.MouseEvent) => startResize(col, e)}
+                          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-400 dark:hover:bg-blue-500 transition-colors"
+                        />
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
               <tbody>
                 {/* top padding */}
                 {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={columns.length + 2} /></tr>}
@@ -612,7 +944,7 @@ const TableLens: React.FC = () => {
                   return (
                     <tr
                       key={idx}
-                      style={{ height: ROW_H }}
+                      style={wrapText ? undefined : { height: ROW_H }}
                       className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${
                         isSelected
                           ? 'bg-blue-50 dark:bg-blue-500/[0.08]'
@@ -623,23 +955,29 @@ const TableLens: React.FC = () => {
                           : 'bg-slate-50/40 dark:bg-slate-800/20'
                       } hover:bg-blue-50/40 dark:hover:bg-blue-500/[0.04]`}
                     >
-                      <td className="w-9 px-3 border-r border-slate-100 dark:border-slate-800">
+                      <td className={`w-9 px-3 border-r border-slate-100 dark:border-slate-800 sticky left-0 z-10 ${isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-900' : displayIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900'}`}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleRow(idx)} className="cursor-pointer accent-blue-600" />
                       </td>
-                      <td className="w-10 px-3 text-right border-r border-slate-100 dark:border-slate-800 font-medium">
+                      <td className={`w-10 px-3 text-right border-r border-slate-100 dark:border-slate-800 font-medium sticky left-9 z-10 ${isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-900' : displayIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900'}`}>
                         {isModified
                           ? <span className="text-amber-500 font-bold">{displayIdx + 1}</span>
                           : <span className="text-slate-400 dark:text-slate-500">{displayIdx + 1}</span>
                         }
                       </td>
-                      {columns.map(col => {
+                      {visibleColumns.map((col: string) => {
                         const isEditing = editCell?.row === idx && editCell?.col === col;
                         const cellModified = isModified && row[col] !== rawData[idx]?.[col];
+                        const cfColor = !isSelected && cfRules.length > 0
+                          ? cfRules.find((r: CFRule) => r.col === col && matchCFRule(String(row[col] ?? ''), r.op, r.value))?.color
+                          : undefined;
+                        const isFrozen = frozenCols.has(col);
+                        const frozenBg = isFrozen ? (isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-800' : displayIdx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800' : 'bg-slate-100 dark:bg-slate-800') : '';
                         return (
                           <td
                             key={col}
                             onClick={() => { setEditCell({ row: idx, col }); setEditVal(row[col] ?? ''); }}
-                            className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer max-w-[240px] min-w-[140px] ${
+                            style={{ width: colWidths[col] ?? 140, minWidth: colWidths[col] ?? 140, maxWidth: colWidths[col] ?? 140, backgroundColor: cfColor, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col] } : {}) }}
+                            className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer ${wrapText ? '' : 'overflow-hidden'} ${isFrozen ? `z-10 ${frozenBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]` : ''} ${
                               cellModified ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
                             }`}
                           >
@@ -654,7 +992,7 @@ const TableLens: React.FC = () => {
                                 className="w-full bg-white dark:bg-slate-800 border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none text-slate-700 dark:text-slate-200 min-w-[80px]"
                               />
                             ) : (
-                              <span className="truncate block">{String(row[col] ?? '')}</span>
+                              <span title={wrapText ? undefined : String(row[col] ?? '')} className={wrapText ? 'block whitespace-pre-wrap break-words' : 'truncate block'}>{String(row[col] ?? '')}</span>
                             )}
                           </td>
                         );
@@ -683,6 +1021,43 @@ const TableLens: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Column context menu portal */}
+      {colMenuCol && colMenuRect && createPortal(
+        <div
+          ref={colMenuRef}
+          style={{ position: 'fixed', top: colMenuRect.bottom + 4, left: colMenuRect.left, zIndex: 9999 }}
+          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 min-w-[160px]"
+        >
+          <button
+            onMouseDown={(e: React.MouseEvent) => { e.preventDefault(); toggleFreezeColumn(colMenuCol as string); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+          >
+            {frozenCols.has(colMenuCol as string) ? <PinOff size={12} /> : <Pin size={12} />}
+            {frozenCols.has(colMenuCol as string) ? 'Unfreeze column' : 'Freeze column'}
+          </button>
+          <button
+            onMouseDown={(e: React.MouseEvent) => { e.preventDefault(); hideColumn(colMenuCol as string); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+          >
+            <EyeOff size={12} /> Hide column
+          </button>
+          <button
+            onMouseDown={(e: React.MouseEvent) => { e.preventDefault(); duplicateColumn(colMenuCol); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+          >
+            <Copy size={12} /> Duplicate column
+          </button>
+          <div className="mx-3 my-1 border-t border-slate-100 dark:border-slate-700" />
+          <button
+            onMouseDown={(e: React.MouseEvent) => { e.preventDefault(); deleteColumn(colMenuCol); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer transition-colors"
+          >
+            <Trash2 size={12} /> Delete column
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
