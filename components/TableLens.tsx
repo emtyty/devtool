@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown, Copy, MoreHorizontal } from 'lucide-react';
 
 type Row = Record<string, string>;
 
@@ -180,6 +180,9 @@ const TableLens: React.FC = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
+  const [colMenuCol, setColMenuCol] = useState<string | null>(null);
+  const [colMenuRect, setColMenuRect] = useState<DOMRect | null>(null);
+  const colMenuRef = useRef<HTMLDivElement>(null);
   const [batchCol, setBatchCol] = useState('');
   const [batchVal, setBatchVal] = useState('');
   const [fileName, setFileName] = useState('');
@@ -384,6 +387,60 @@ const TableLens: React.FC = () => {
     );
   }, [filteredRows]);
 
+  const deleteSelectedRows = useCallback(() => {
+    setData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
+    setRawData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
+    setSelected(new Set());
+  }, [selected]);
+
+  const duplicateSelectedRows = useCallback(() => {
+    const sortedIdx = Array.from(selected as Set<number>).sort((a: number, b: number) => a - b);
+    const insertAt = sortedIdx[sortedIdx.length - 1] + 1;
+    setData((prev: Row[]) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, ...sortedIdx.map((i: number) => ({ ...prev[i] })));
+      return next;
+    });
+    setRawData((prev: Row[]) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, ...sortedIdx.map((i: number) => ({ ...prev[i] })));
+      return next;
+    });
+    setSelected(new Set());
+  }, [selected]);
+
+  const deleteColumn = useCallback((col: string) => {
+    const omitCol = (r: Row): Row => Object.fromEntries(Object.entries(r).filter(([k]) => k !== col)) as Row;
+    setColumns((prev: string[]) => prev.filter((c: string) => c !== col));
+    setData((prev: Row[]) => prev.map(omitCol));
+    setRawData((prev: Row[]) => prev.map(omitCol));
+    setColWidths((prev: Record<string, number>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
+    setFilterInputs((prev: Record<string, string>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
+    setColMenuCol(null);
+  }, []);
+
+  const duplicateColumn = useCallback((col: string) => {
+    const newCol = `${col}_copy`;
+    setColumns((prev: string[]) => {
+      const idx = prev.indexOf(col);
+      const next = [...prev];
+      next.splice(idx + 1, 0, newCol);
+      return next;
+    });
+    setData((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })));
+    setRawData((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })));
+    setColMenuCol(null);
+  }, []);
+
+  useEffect(() => {
+    if (!colMenuCol) return;
+    const close = (e: MouseEvent) => {
+      if (!colMenuRef.current?.contains(e.target as Node)) setColMenuCol(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [colMenuCol]);
+
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'export';
   const activeFilters = columns.filter(c => filterInputs[c]);
 
@@ -526,6 +583,13 @@ const TableLens: React.FC = () => {
             <button onClick={applyBatch} className="text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all cursor-pointer">
               Apply to all
             </button>
+            <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
+            <button onClick={duplicateSelectedRows} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 px-2 py-1.5 cursor-pointer transition-colors">
+              <Copy size={12} /> Duplicate
+            </button>
+            <button onClick={deleteSelectedRows} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 px-2 py-1.5 cursor-pointer transition-colors">
+              <Trash2 size={12} /> Delete
+            </button>
             <button onClick={() => setSelected(new Set())} className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1.5 cursor-pointer transition-colors">
               Deselect
             </button>
@@ -627,17 +691,25 @@ const TableLens: React.FC = () => {
                     const w = colWidths[col] ?? 140;
                     return (
                       <th key={col} style={{ width: w, minWidth: w, maxWidth: w }} className="relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 bg-slate-50 dark:bg-slate-800">
-                        <button
-                          onClick={() => handleSort(col)}
-                          className="flex items-center gap-1 mb-1.5 group w-full text-left cursor-pointer"
-                        >
-                          <span title={col} className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
-                          <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
-                            {sortCol === col
-                              ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
-                              : <ArrowUpDown size={11} />}
-                          </span>
-                        </button>
+                        <div className="flex items-center gap-0.5 mb-1.5">
+                          <button
+                            onClick={() => handleSort(col)}
+                            className="flex items-center gap-1 group flex-1 min-w-0 text-left cursor-pointer"
+                          >
+                            <span title={col} className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
+                            <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
+                              {sortCol === col
+                                ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                                : <ArrowUpDown size={11} />}
+                            </span>
+                          </button>
+                          <button
+                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); setColMenuCol(col); setColMenuRect(e.currentTarget.getBoundingClientRect()); }}
+                            className="shrink-0 p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                          >
+                            <MoreHorizontal size={11} />
+                          </button>
+                        </div>
                         <FilterCell
                           value={filterInputs[col] || ''}
                           onChange={(v: string) => setFilterInputs((prev: Record<string, string>) => ({ ...prev, [col]: v }))}
@@ -742,6 +814,30 @@ const TableLens: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Column context menu portal */}
+      {colMenuCol && colMenuRect && createPortal(
+        <div
+          ref={colMenuRef}
+          style={{ position: 'fixed', top: colMenuRect.bottom + 4, left: colMenuRect.left, zIndex: 9999 }}
+          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 min-w-[160px]"
+        >
+          <button
+            onMouseDown={(e: React.MouseEvent) => { e.preventDefault(); duplicateColumn(colMenuCol); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+          >
+            <Copy size={12} /> Duplicate column
+          </button>
+          <div className="mx-3 my-1 border-t border-slate-100 dark:border-slate-700" />
+          <button
+            onMouseDown={(e: React.MouseEvent) => { e.preventDefault(); deleteColumn(colMenuCol); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer transition-colors"
+          >
+            <Trash2 size={12} /> Delete column
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
