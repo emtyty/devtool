@@ -882,7 +882,7 @@ const TableLens: React.FC = () => {
             onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
           >
             <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
-              <thead className="sticky top-0 z-10">
+              <thead className="sticky top-0 z-20">
                 <tr className="bg-slate-50 dark:bg-slate-800">
                   <th className="w-9 px-3 py-2 border-r border-b border-slate-200 dark:border-slate-700 sticky left-0 z-20 bg-slate-50 dark:bg-slate-800">
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} className="cursor-pointer accent-blue-600" />
@@ -892,7 +892,7 @@ const TableLens: React.FC = () => {
                     const w = colWidths[col] ?? 140;
                     const isFrozen = frozenCols.has(col);
                     return (
-                      <th key={col} style={{ width: w, minWidth: w, maxWidth: w, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col], zIndex: 21 } : {}) }} className={`relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 bg-slate-50 dark:bg-slate-800 ${isFrozen ? 'shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
+                      <th key={col} style={{ width: w, minWidth: w, maxWidth: w, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col], zIndex: 21 } : {}) }} className={`relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 ${isFrozen ? 'bg-slate-100 dark:bg-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]' : 'bg-slate-50 dark:bg-slate-800'}`}>
                         <div className="flex items-center gap-0.5 mb-1.5">
                           <button
                             onClick={() => handleSort(col)}
@@ -971,7 +971,7 @@ const TableLens: React.FC = () => {
                           ? cfRules.find((r: CFRule) => r.col === col && matchCFRule(String(row[col] ?? ''), r.op, r.value))?.color
                           : undefined;
                         const isFrozen = frozenCols.has(col);
-                        const frozenBg = isFrozen ? (isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-900' : displayIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900') : '';
+                        const frozenBg = isFrozen ? (isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-800' : displayIdx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800' : 'bg-slate-100 dark:bg-slate-800') : '';
                         return (
                           <td
                             key={col}
