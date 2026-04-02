@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2 } from 'lucide-react';
+import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 
 type Row = Record<string, string>;
 
@@ -176,6 +176,8 @@ const TableLens: React.FC = () => {
   const [distinctLoading, setDistinctLoading] = useState(false);
   const [distinctPage, setDistinctPage] = useState(1);
   const DISTINCT_PAGE = 50;
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [batchCol, setBatchCol] = useState('');
   const [batchVal, setBatchVal] = useState('');
   const [fileName, setFileName] = useState('');
@@ -200,11 +202,11 @@ const TableLens: React.FC = () => {
     return () => ro.disconnect();
   }, [hasData]);
 
-  // Reset scroll when filters change
+  // Reset scroll when filters or sort change
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setScrollTop(0);
-  }, [debouncedFilters]);
+  }, [debouncedFilters, sortCol, sortDir]);
 
   // Filtered rows — uses debounced filters
   const filteredRows = useMemo(() =>
@@ -219,12 +221,35 @@ const TableLens: React.FC = () => {
     [data, debouncedFilters, columns]
   );
 
+  const sortedRows = useMemo(() => {
+    if (!sortCol) return filteredRows;
+    return [...filteredRows].sort((a, b) => {
+      const av = String(a.row[sortCol] ?? '');
+      const bv = String(b.row[sortCol] ?? '');
+      const an = Number(av), bn = Number(bv);
+      const cmp = !isNaN(an) && !isNaN(bn) && av !== '' && bv !== '' ? an - bn : av.localeCompare(bv);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [filteredRows, sortCol, sortDir]);
+
+  const handleSort = useCallback((col: string) => {
+    if (sortCol !== col) {
+      setSortCol(col);
+      setSortDir('asc');
+    } else if (sortDir === 'asc') {
+      setSortDir('desc');
+    } else {
+      setSortCol(null);
+      setSortDir('asc');
+    }
+  }, [sortCol, sortDir]);
+
   // Virtual scroll window
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
-  const endIdx = Math.min(filteredRows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
-  const visibleRows = filteredRows.slice(startIdx, endIdx);
+  const endIdx = Math.min(sortedRows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
+  const visibleRows = sortedRows.slice(startIdx, endIdx);
   const padTop = startIdx * ROW_H;
-  const padBot = Math.max(0, (filteredRows.length - endIdx) * ROW_H);
+  const padBot = Math.max(0, (sortedRows.length - endIdx) * ROW_H);
 
   useEffect(() => {
     if (!distinctCol) { setDistinctValues([]); setDistinctPage(1); return; }
@@ -578,7 +603,17 @@ const TableLens: React.FC = () => {
                   <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-b border-slate-200 dark:border-slate-700 sticky left-9 z-20 bg-slate-50 dark:bg-slate-800">#</th>
                   {columns.map(col => (
                     <th key={col} className="px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px] bg-slate-50 dark:bg-slate-800">
-                      <div className="font-black text-slate-600 dark:text-slate-300 truncate mb-1.5 text-[11px] uppercase tracking-wide">{col}</div>
+                      <button
+                        onClick={() => handleSort(col)}
+                        className="flex items-center gap-1 mb-1.5 group w-full text-left cursor-pointer"
+                      >
+                        <span className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
+                        <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
+                          {sortCol === col
+                            ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                            : <ArrowUpDown size={11} />}
+                        </span>
+                      </button>
                       <FilterCell
                         value={filterInputs[col] || ''}
                         onChange={v => setFilterInputs(prev => ({ ...prev, [col]: v }))}
