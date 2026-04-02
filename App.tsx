@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -33,8 +33,9 @@ const CspTools                 = lazy(() => import('./components/CspTools'));
 const JsonExtractor            = lazy(() => import('./components/JsonExtractor'));
 const PdfEditor                = lazy(() => import('./components/PdfEditor'));
 const SettingsPage             = lazy(() => import('./components/SettingsPage'));
+const HelpPage                 = lazy(() => import('./components/HelpPage'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'settings';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'settings' | 'help';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -66,6 +67,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   jsonextractor:    'json-extractor',
   pdfeditor:        'pdf-editor',
   settings:         'settings',
+  help:             'help',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -140,7 +142,7 @@ const NAV_SECTIONS: NavSection[] = [
 ];
 
 // ── Always-accessible modes (never redirected even if "hidden") ───
-const ALWAYS_ACCESSIBLE = new Set<AppMode>(['smartdetect', 'privacy', 'settings']);
+const ALWAYS_ACCESSIBLE = new Set<AppMode>(['smartdetect', 'privacy', 'settings', 'help']);
 
 // ── Hidden tools ──────────────────────────────────────────────────
 const HIDDEN_TOOLS_KEY = 'devtoolkit:hidden-tools';
@@ -403,7 +405,10 @@ const App: React.FC = () => {
           />
         )}
 
-        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static top-[env(safe-area-inset-top)] bottom-0 left-0 z-40 pt-[57px] lg:pt-3 pb-[env(safe-area-inset-bottom)] lg:pb-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white flex flex-col fixed lg:static top-[env(safe-area-inset-top)] bottom-0 left-0 z-40 pt-[57px] lg:pt-0 pb-[env(safe-area-inset-bottom)] lg:pb-0 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+
+          {/* ── Scrollable tool list ── */}
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-3 gap-0.5 pb-2">
 
           {/* ── Favorites section ── */}
           {favorites.length > 0 && (
@@ -514,8 +519,25 @@ const App: React.FC = () => {
             );
           })}
 
-          {/* ── Settings ── */}
-          <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
+          </div>{/* end scrollable tool list */}
+
+          {/* ── Sticky footer: Help & Settings ── */}
+          <div className="shrink-0 px-3 pt-2 pb-3 flex flex-col gap-0.5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-[#0d1829]">
+          <div className={`flex items-center rounded-lg transition-all ${
+            mode === 'help' ? 'bg-blue-50 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/5'
+          }`}>
+            <button
+              onClick={() => switchMode('help')}
+              className={`flex items-center gap-2.5 flex-1 px-3 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left cursor-pointer transition-colors ${
+                mode === 'help'
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <BookOpen size={16} />
+              Help / Guide
+            </button>
+          </div>
           <div className={`flex items-center rounded-lg transition-all ${
             mode === 'settings' ? 'bg-blue-50 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/5'
           }`}>
@@ -536,6 +558,7 @@ const App: React.FC = () => {
               )}
             </button>
           </div>
+          </div>{/* end sticky footer */}
         </aside>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col dark:bg-[#0a1120]">
@@ -578,6 +601,7 @@ const App: React.FC = () => {
            mode === 'csptools'         ? <CspTools initialData={pendingData} /> :
            mode === 'jsonextractor'    ? <JsonExtractor /> :
            mode === 'pdfeditor'        ? <PdfEditor /> :
+           mode === 'help'              ? <HelpPage /> :
            mode === 'settings'         ? <SettingsPage
              sections={NAV_SECTIONS.slice(1)}
              hiddenTools={hiddenTools}
