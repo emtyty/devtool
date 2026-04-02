@@ -178,6 +178,8 @@ const TableLens: React.FC = () => {
   const DISTINCT_PAGE = 50;
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
   const [batchCol, setBatchCol] = useState('');
   const [batchVal, setBatchVal] = useState('');
   const [fileName, setFileName] = useState('');
@@ -273,6 +275,25 @@ const TableLens: React.FC = () => {
     [data, rawData, columns]
   );
 
+  const startResize = useCallback((col: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { col, startX: e.clientX, startW: colWidths[col] ?? 140 };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { col: resizeCol, startW, startX } = resizeRef.current;
+      const newW = Math.max(60, startW + ev.clientX - startX);
+      setColWidths((prev: Record<string, number>) => ({ ...prev, [resizeCol]: newW }));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [colWidths]);
+
   const loadParsed = useCallback((cols: string[], rows: Row[], name: string) => {
     setColumns(cols);
     setRawData(rows.map(r => ({ ...r })));
@@ -283,6 +304,7 @@ const TableLens: React.FC = () => {
     setDistinctCol('');
     setBatchCol(cols[0] || '');
     setFileName(name);
+    setColWidths({});
     setScrollTop(0);
   }, []);
 
@@ -601,27 +623,34 @@ const TableLens: React.FC = () => {
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} className="cursor-pointer accent-blue-600" />
                   </th>
                   <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-b border-slate-200 dark:border-slate-700 sticky left-9 z-20 bg-slate-50 dark:bg-slate-800">#</th>
-                  {columns.map(col => (
-                    <th key={col} className="px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px] bg-slate-50 dark:bg-slate-800">
-                      <button
-                        onClick={() => handleSort(col)}
-                        className="flex items-center gap-1 mb-1.5 group w-full text-left cursor-pointer"
-                      >
-                        <span className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
-                        <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
-                          {sortCol === col
-                            ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
-                            : <ArrowUpDown size={11} />}
-                        </span>
-                      </button>
-                      <FilterCell
-                        value={filterInputs[col] || ''}
-                        onChange={v => setFilterInputs(prev => ({ ...prev, [col]: v }))}
-                        getOptions={() => Array.from<string>(new Set(data.map((r: Row) => String(r[col] ?? '')))).sort()}
-                        active={!!(debouncedFilters[col])}
-                      />
-                    </th>
-                  ))}
+                  {columns.map(col => {
+                    const w = colWidths[col] ?? 140;
+                    return (
+                      <th key={col} style={{ width: w, minWidth: w, maxWidth: w }} className="relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 bg-slate-50 dark:bg-slate-800">
+                        <button
+                          onClick={() => handleSort(col)}
+                          className="flex items-center gap-1 mb-1.5 group w-full text-left cursor-pointer"
+                        >
+                          <span title={col} className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
+                          <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
+                            {sortCol === col
+                              ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                              : <ArrowUpDown size={11} />}
+                          </span>
+                        </button>
+                        <FilterCell
+                          value={filterInputs[col] || ''}
+                          onChange={(v: string) => setFilterInputs((prev: Record<string, string>) => ({ ...prev, [col]: v }))}
+                          getOptions={() => Array.from<string>(new Set(data.map((r: Row) => String(r[col] ?? '')))).sort()}
+                          active={!!(debouncedFilters[col])}
+                        />
+                        <div
+                          onMouseDown={(e: React.MouseEvent) => startResize(col, e)}
+                          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-400 dark:hover:bg-blue-500 transition-colors"
+                        />
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -668,7 +697,8 @@ const TableLens: React.FC = () => {
                           <td
                             key={col}
                             onClick={() => { setEditCell({ row: idx, col }); setEditVal(row[col] ?? ''); }}
-                            className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer max-w-[240px] min-w-[140px] ${
+                            style={{ width: colWidths[col] ?? 140, minWidth: colWidths[col] ?? 140, maxWidth: colWidths[col] ?? 140 }}
+                            className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer overflow-hidden ${
                               cellModified ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
                             }`}
                           >
@@ -683,7 +713,7 @@ const TableLens: React.FC = () => {
                                 className="w-full bg-white dark:bg-slate-800 border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none text-slate-700 dark:text-slate-200 min-w-[80px]"
                               />
                             ) : (
-                              <span className="truncate block">{String(row[col] ?? '')}</span>
+                              <span title={String(row[col] ?? '')} className="truncate block">{String(row[col] ?? '')}</span>
                             )}
                           </td>
                         );
