@@ -563,17 +563,21 @@ const TableLens: React.FC = () => {
         {/* Table */}
         <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
 
-          {/* Sticky header — outside the scroll container */}
-          <div className="overflow-x-auto shrink-0 border-b border-slate-200 dark:border-slate-700">
-            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }} id="tl-header">
-              <thead>
+          {/* Single scroll container — thead sticky inside, no split tables */}
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-auto"
+            onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+          >
+            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-slate-50 dark:bg-slate-800">
-                  <th className="w-9 px-3 py-2 border-r border-slate-200 dark:border-slate-700">
+                  <th className="w-9 px-3 py-2 border-r border-b border-slate-200 dark:border-slate-700 sticky left-0 z-20 bg-slate-50 dark:bg-slate-800">
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} className="cursor-pointer accent-blue-600" />
                   </th>
-                  <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-slate-200 dark:border-slate-700">#</th>
+                  <th className="w-10 px-3 py-2 text-slate-400 dark:text-slate-500 font-bold text-right border-r border-b border-slate-200 dark:border-slate-700 sticky left-9 z-20 bg-slate-50 dark:bg-slate-800">#</th>
                   {columns.map(col => (
-                    <th key={col} className="px-3 py-2 text-left border-r border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px]">
+                    <th key={col} className="px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 min-w-[140px] bg-slate-50 dark:bg-slate-800">
                       <div className="font-black text-slate-600 dark:text-slate-300 truncate mb-1.5 text-[11px] uppercase tracking-wide">{col}</div>
                       <FilterCell
                         value={filterInputs[col] || ''}
@@ -585,16 +589,6 @@ const TableLens: React.FC = () => {
                   ))}
                 </tr>
               </thead>
-            </table>
-          </div>
-
-          {/* Scrollable body — virtual scroll */}
-          <div
-            ref={scrollRef}
-            className="flex-1 overflow-auto"
-            onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
-          >
-            <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
               <tbody>
                 {/* top padding */}
                 {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={columns.length + 2} /></tr>}
@@ -623,10 +617,10 @@ const TableLens: React.FC = () => {
                           : 'bg-slate-50/40 dark:bg-slate-800/20'
                       } hover:bg-blue-50/40 dark:hover:bg-blue-500/[0.04]`}
                     >
-                      <td className="w-9 px-3 border-r border-slate-100 dark:border-slate-800">
+                      <td className={`w-9 px-3 border-r border-slate-100 dark:border-slate-800 sticky left-0 z-10 ${isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-900' : displayIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900'}`}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleRow(idx)} className="cursor-pointer accent-blue-600" />
                       </td>
-                      <td className="w-10 px-3 text-right border-r border-slate-100 dark:border-slate-800 font-medium">
+                      <td className={`w-10 px-3 text-right border-r border-slate-100 dark:border-slate-800 font-medium sticky left-9 z-10 ${isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-900' : displayIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900'}`}>
                         {isModified
                           ? <span className="text-amber-500 font-bold">{displayIdx + 1}</span>
                           : <span className="text-slate-400 dark:text-slate-500">{displayIdx + 1}</span>
