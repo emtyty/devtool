@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, ExternalLink } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -358,7 +358,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-dvh flex flex-col selection:bg-blue-500/30 pt-[env(safe-area-inset-top)]">
-      <header className={`no-print border-b border-slate-200 glass z-50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between fixed lg:static top-[env(safe-area-inset-top)] left-0 right-0 lg:shrink-0 transition-transform duration-300 ${barsHidden && !sidebarOpen ? '-translate-y-[calc(100%+env(safe-area-inset-top))] lg:translate-y-0' : 'translate-y-0'}`}>
+      <header className={`no-print border-b border-slate-200 glass z-50 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between fixed lg:static top-[env(safe-area-inset-top)] left-0 right-0 lg:shrink-0 transition-transform duration-300 ${barsHidden && !sidebarOpen ? '-translate-y-[calc(100%+env(safe-area-inset-top))] lg:translate-y-0' : 'translate-y-0'}`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(prev => !prev)}
@@ -369,29 +369,51 @@ const App: React.FC = () => {
           </button>
           <button
             onClick={() => switchMode('smartdetect')}
-            className="flex items-center gap-3 lg:gap-4 shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
+            className="flex items-center gap-4 shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
             aria-label="Go to home"
           >
-            <div className="w-9 h-9 lg:w-10 lg:h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <i className="fa-solid fa-code text-white text-lg lg:text-xl"></i>
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <i className="fa-solid fa-code text-white text-xl"></i>
             </div>
-            <div className="text-left">
-              <h1 className="text-lg lg:text-xl font-black tracking-tighter leading-none text-slate-800">DevToolKit</h1>
-              <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1 hidden sm:block">Local First Engine Data</p>
+            <div className="text-left min-w-0">
+              <h1 className="text-xl font-black tracking-tighter leading-none text-slate-800">DevToolKit</h1>
+              <p className="hidden sm:block text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1">Local First Engine Data</p>
             </div>
           </button>
         </div>
-        <button
-          onClick={toggleTheme}
-          className="theme-toggle"
-          aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={dark ? 'Light mode' : 'Dark mode'}
-        >
-          <span className="theme-toggle-knob">
-            <Sun size={12} className="theme-toggle-icon theme-toggle-sun" />
-            <Moon size={12} className="theme-toggle-icon theme-toggle-moon" />
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="https://coding4pizza.com/docs/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+            aria-label="Documentation"
+            title="Docs"
+          >
+            <BookOpen size={18} />
+          </a>
+          <a
+            href="https://github.com/emtyty/devtool"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+            aria-label="GitHub repository"
+            title="GitHub"
+          >
+            <i className="fa-brands fa-github text-lg"></i>
+          </a>
+          <button
+            onClick={toggleTheme}
+            className="theme-toggle"
+            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={dark ? 'Light mode' : 'Dark mode'}
+          >
+            <span className="theme-toggle-knob">
+              <Sun size={12} className="theme-toggle-icon theme-toggle-sun" />
+              <Moon size={12} className="theme-toggle-icon theme-toggle-moon" />
+            </span>
+          </button>
+        </div>
       </header>
 
       <div className={`flex flex-1 overflow-hidden transition-[padding] duration-300 lg:pt-0 ${barsHidden && !sidebarOpen ? 'pt-0' : 'pt-[57px]'}`}>
@@ -403,7 +425,10 @@ const App: React.FC = () => {
           />
         )}
 
-        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col p-3 gap-0.5 fixed lg:static top-[env(safe-area-inset-top)] bottom-0 left-0 z-40 pt-[57px] lg:pt-3 pb-[env(safe-area-inset-bottom)] lg:pb-3 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`no-print w-64 lg:w-52 shrink-0 border-r border-slate-200 bg-white flex flex-col fixed lg:static top-[env(safe-area-inset-top)] bottom-0 left-0 z-40 pt-[57px] lg:pt-0 pb-[env(safe-area-inset-bottom)] lg:pb-0 shadow-2xl lg:shadow-none transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+
+          {/* Scrollable nav area */}
+          <div className="flex-1 overflow-y-auto p-3 pb-0 gap-0.5 flex flex-col">
 
           {/* ── Favorites section ── */}
           {favorites.length > 0 && (
@@ -514,8 +539,11 @@ const App: React.FC = () => {
             );
           })}
 
-          {/* ── Settings ── */}
-          <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
+          </div>
+
+          {/* ── Settings (pinned bottom) ── */}
+          <div className="shrink-0 p-3 pt-0">
+          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
           <div className={`flex items-center rounded-lg transition-all ${
             mode === 'settings' ? 'bg-blue-50 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/5'
           }`}>
@@ -535,6 +563,8 @@ const App: React.FC = () => {
                 </span>
               )}
             </button>
+          </div>
+          </div>
           </div>
         </aside>
 
@@ -612,7 +642,7 @@ const App: React.FC = () => {
           </main>
 
           <footer className="no-print border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0d1424]">
-            <div className="w-full px-4 lg:px-6 py-6 lg:py-8 space-y-6">
+            <div className="w-full px-3 lg:px-6 py-4 lg:py-8 space-y-4 lg:space-y-6">
 
               {/* Tools grid — hidden on mobile, visible on lg+ */}
               <div className="hidden lg:block">
@@ -652,13 +682,15 @@ const App: React.FC = () => {
               </button>
 
               {/* Bottom bar */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-[0.4em]">Powered by Coding4Pizza With Love</p>
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-                  {['React 19', 'TypeScript', 'Vite', 'Tailwind CSS'].map(t => (
-                    <span key={t} className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{t}</span>
-                  ))}
-                  <span className="text-slate-300 dark:text-slate-700">|</span>
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 lg:pt-5 flex flex-col sm:flex-row items-center sm:justify-between gap-2">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-[0.2em] sm:tracking-[0.4em]">Coding4Pizza</p>
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="hidden sm:flex items-center gap-x-4">
+                    {['React 19', 'TypeScript', 'Vite', 'Tailwind CSS'].map(t => (
+                      <span key={t} className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{t}</span>
+                    ))}
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                  </div>
                   <a
                     href="https://www.npmjs.com/package/devtoolkit-mcp"
                     target="_blank"
@@ -674,6 +706,14 @@ const App: React.FC = () => {
                     className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-bold transition-colors"
                   >
                     GitHub
+                  </a>
+                  <a
+                    href="https://coding4pizza.com/docs/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-bold transition-colors"
+                  >
+                    Docs
                   </a>
                   <button
                     onClick={() => switchMode('privacy')}
