@@ -1,0 +1,19 @@
+{
+  "name": "DevToolKit — Free Developer Tools",
+  "short_name": "DevToolKit",
+  "description": "25 free, privacy-first developer tools running 100% in your browser. No server, no tracking.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "categories": ["developer", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
