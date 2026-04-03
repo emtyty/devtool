@@ -23,7 +23,8 @@
     "docs:dev": "cd docs && npm run dev",
     "docs:build": "cd docs && npm run build",
     "docs:preview": "cd docs && npm run preview",
-    "og:generate": "node scripts/gen-og-png.mjs"
+    "og:generate": "node scripts/gen-og-png.mjs",
+    "icons:generate": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "@6over3/zeroperl-ts": "^1.0.10",
