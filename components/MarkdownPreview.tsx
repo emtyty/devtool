@@ -269,20 +269,29 @@ Supports **CommonMark** + **GFM** (GitHub Flavored Markdown) + **Mermaid** diagr
 `;
 
 const EXPORT_STYLES = `
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }
-    h1,h2,h3,h4,h5,h6 { font-weight: 700; margin: 1.5em 0 0.5em; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.7; font-size: 15px; }
+    h1,h2,h3,h4,h5,h6 { font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; color: #0f172a; }
     h1 { font-size: 2em; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }
     h2 { font-size: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.2em; }
-    code { background: #f1f5f9; border-radius: 4px; padding: 0.2em 0.4em; font-family: monospace; font-size: 0.9em; }
-    pre { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 1em; overflow-x: auto; }
-    pre code { background: none; padding: 0; color: inherit; }
-    blockquote { border-left: 4px solid #3b82f6; margin: 0; padding: 0.5em 1em; background: #eff6ff; color: #1e40af; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #e2e8f0; padding: 0.5em 1em; }
-    th { background: #f8fafc; font-weight: 700; }
-    a { color: #3b82f6; } img { max-width: 100%; } hr { border: none; border-top: 2px solid #e2e8f0; }
-    ul, ol { padding-left: 1.5em; } li { margin: 0.25em 0; }
+    h3 { font-size: 1.25em; }
+    p { margin: 0.75em 0; }
+    code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 0.15em 0.4em; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.875em; color: #0f172a; }
+    pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25em 1.5em; overflow-x: auto; margin: 1em 0; }
+    pre code { background: none; border: none; padding: 0; color: #1e293b; }
+    blockquote { border-left: 4px solid #3b82f6; margin: 1em 0; padding: 0.5em 1em; background: #eff6ff; color: #1e40af; border-radius: 0 6px 6px 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.6em 1em; text-align: left; }
+    th { background: #f8fafc; font-weight: 700; color: #0f172a; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    a { color: #3b82f6; text-decoration: underline; }
+    img { max-width: 100%; border-radius: 6px; }
+    hr { border: none; border-top: 2px solid #e2e8f0; margin: 2em 0; }
+    ul, ol { padding-left: 1.75em; margin: 0.5em 0; }
+    li { margin: 0.3em 0; }
     input[type="checkbox"] { margin-right: 0.4em; }
+    strong { font-weight: 700; color: #0f172a; }
+    del { color: #94a3b8; }
+    svg { max-width: 100%; height: auto; display: block; margin: 1em auto; }
   `;
 
 export default function MarkdownPreview({ initialData }: { initialData?: string | null }) {
@@ -298,7 +307,13 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
   const lineCount = markdown.split('\n').length;
 
   const buildHtmlDoc = () => {
-    const content = previewRef.current?.innerHTML || '';
+    const node = previewRef.current;
+    if (!node) return '';
+    const clone = node.cloneNode(true) as HTMLElement;
+    // Remove mermaid action buttons (Copy/SVG/PNG overlays) — hidden by opacity-0
+    // in the app but would appear in exported HTML without Tailwind CSS
+    clone.querySelectorAll('button').forEach(el => el.remove());
+    const content = clone.innerHTML;
     return `<!DOCTYPE html>\n<html lang="en">\n<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Markdown Export</title><style>${EXPORT_STYLES}</style></head>\n<body>${content}</body>\n</html>`;
   };
 
