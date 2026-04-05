@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, ExternalLink } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, ExternalLink, FilePlus2 } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -32,9 +32,10 @@ const NetworkWaterfallAnalyzer = lazy(() => import('./components/NetworkWaterfal
 const CspTools                 = lazy(() => import('./components/CspTools'));
 const JsonExtractor            = lazy(() => import('./components/JsonExtractor'));
 const PdfEditor                = lazy(() => import('./components/PdfEditor'));
+const PdfMaker                 = lazy(() => import('./components/PdfMaker'));
 const SettingsPage             = lazy(() => import('./components/SettingsPage'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'settings';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -65,6 +66,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   csptools:         'csp-tools',
   jsonextractor:    'json-extractor',
   pdfeditor:        'pdf-editor',
+  pdfmaker:         'pdf-maker',
   settings:         'settings',
 };
 
@@ -116,6 +118,12 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={16} /> },
       { id: 'fileconverter', label: 'File Converter',    icon: <FileOutput size={16} /> },
       { id: 'tablelens',     label: 'Table Lens',        icon: <Sheet size={16} /> },
+    ],
+  },
+  {
+    title: 'PDF Tools',
+    items: [
+      { id: 'pdfmaker',      label: 'PDF Maker',         icon: <FilePlus2 size={16} /> },
       { id: 'pdfeditor',     label: 'PDF Editor',        icon: <Scissors size={16} /> },
     ],
   },
@@ -608,6 +616,7 @@ const App: React.FC = () => {
            mode === 'csptools'         ? <CspTools initialData={pendingData} /> :
            mode === 'jsonextractor'    ? <JsonExtractor /> :
            mode === 'pdfeditor'        ? <PdfEditor /> :
+           mode === 'pdfmaker'         ? <PdfMaker /> :
            mode === 'settings'         ? <SettingsPage
              sections={NAV_SECTIONS.slice(1)}
              hiddenTools={hiddenTools}

@@ -340,6 +340,21 @@ const PdfEditor: React.FC = () => {
     }
   }, []);
 
+  // Pick up PDF handed off from PDF Maker via sessionStorage
+  useEffect(() => {
+    const pending = sessionStorage.getItem('devtoolkit:pdf-editor:pending');
+    if (!pending) return;
+    sessionStorage.removeItem('devtoolkit:pdf-editor:pending');
+    try {
+      const [, base64] = pending.split(',');
+      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+      const f = new File([bytes], 'from-pdf-maker.pdf', { type: 'application/pdf' });
+      loadFile(f);
+    } catch {
+      // ignore malformed data
+    }
+  }, [loadFile]);
+
   // Load selected page for editing whenever it changes
   useEffect(() => {
     if (!file || selectedOriginalIndex < 0) return;

@@ -47,7 +47,7 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 ├── eslint.config.js               # ESLint config (+ eslint-config-prettier)
 ├── vite.config.ts                 # Vite config (+ html-query-plan patches)
 │
-├── components/                    # React components (32 files)
+├── components/                    # React components (34 files)
 │   ├── SmartDetect.tsx            # Content auto-detector (default route)
 │   ├── DataFormatter.tsx          # Convert lists → SQL IN/VALUES/UNION/CSV
 │   ├── ListCleaner.tsx            # Dedup, sort, trim, compare lists
@@ -80,9 +80,11 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 │   ├── McpPage.tsx                # MCP server documentation page
 │   ├── PrivacyPage.tsx            # Privacy policy page
 │   ├── SettingsPage.tsx           # Tool visibility settings (enable/disable per tool)
+│   ├── PdfMaker.tsx               # Combine images/PDFs/Word/Excel into one PDF
+│   ├── PdfEditor.tsx              # PDF editor (split, reorder, annotate pages)
 │   └── LandingPage.tsx            # (unused) Landing page
 │
-├── utils/                         # Pure utility functions — NO React (15 files)
+├── utils/                         # Pure utility functions — NO React (16 files)
 │   ├── smartDetect.ts             # Content type detection engine
 │   ├── formatter.ts               # SQL/list formatting utilities
 │   ├── colorMath.ts               # Color space conversions + WCAG contrast
@@ -97,7 +99,8 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 │   ├── mockDataGenerator.ts       # Faker.js data generation logic
 │   ├── metadataUtils.ts           # Metadata helper functions
 │   ├── cspEvaluator.ts            # CSP policy parser and security evaluator
-│   └── cspUtils.ts                # Console violation parser, suggestion builder
+│   ├── cspUtils.ts                # Console violation parser, suggestion builder
+│   └── pdfMaker.ts                # PDF generation: merge images/PDFs/DOCX/XLSX → PDF
 │
 ├── lib/                           # Complex analysis libraries (2 files)
 │   ├── SQLPlanAnalyzer.ts         # SQL execution plan parser/analyzer
@@ -133,7 +136,7 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 - **Dark mode** — `.dark` class on `<html>`, CSS overrides in `index.css`, toggle in App.tsx
 - **Path alias** — `@/*` maps to project root
 
-### URL Route Map (26 routes)
+### URL Route Map (28 routes)
 
 | Path | Tool |
 |------|------|
@@ -163,6 +166,8 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 | `/mcp-server` | MCP Server Page |
 | `/privacy` | Privacy Policy |
 | `/settings` | Settings (tool visibility) |
+| `/pdf-maker` | PDF Maker |
+| `/pdf-editor` | PDF Editor |
 
 ## Key Libraries
 
@@ -179,6 +184,9 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 | `papaparse` | CSV parsing and generation |
 | `xlsx` | Excel file handling |
 | `@6over3/zeroperl-ts` | Perl WASM runtime for ExifTool |
+| `pdf-lib` | Create/merge PDFs, embed images (PDF Maker) |
+| `mammoth` | .docx → HTML conversion (PDF Maker) |
+| `html2canvas` | Render HTML DOM → canvas for PDF embedding (PDF Maker) |
 
 ## Coding Rules
 
