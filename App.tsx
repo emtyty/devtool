@@ -118,11 +118,6 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'diagram',       label: 'Diagram',           icon: <Workflow size={16} /> },
       { id: 'fileconverter', label: 'File Converter',    icon: <FileOutput size={16} /> },
       { id: 'tablelens',     label: 'Table Lens',        icon: <Sheet size={16} /> },
-    ],
-  },
-  {
-    title: 'PDF Tools',
-    items: [
       { id: 'pdfmaker',      label: 'PDF Maker',         icon: <FilePlus2 size={16} /> },
       { id: 'pdfeditor',     label: 'PDF Editor',        icon: <Scissors size={16} /> },
     ],
