@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__get_symbols_overview",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npx eslint:*)",
+      "Bash(pkill -f \"node.*vite\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(npx kill-port:*)",
+      "Bash(npx tsc:*)",
+      "Bash(gh pr create --title 'feat\\(pdf-maker\\): add PDF Maker tool' --base main --body ':*)",
+      "Bash(gh --version)"
+    ]
+  }
+}
