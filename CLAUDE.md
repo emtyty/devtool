@@ -80,11 +80,11 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 │   ├── McpPage.tsx                # MCP server documentation page
 │   ├── PrivacyPage.tsx            # Privacy policy page
 │   ├── SettingsPage.tsx           # Tool visibility settings (enable/disable per tool)
-│   ├── PdfMaker.tsx               # Combine images/PDFs/Word/Excel into one PDF
+│   ├── PdfMaker.tsx               # Combine images/PDFs/Word/Excel/MD/HTML/TXT/CSV into one PDF
 │   ├── PdfEditor.tsx              # PDF editor (split, reorder, annotate pages)
 │   └── LandingPage.tsx            # (unused) Landing page
 │
-├── utils/                         # Pure utility functions — NO React (16 files)
+├── utils/                         # Pure utility functions — NO React (17 files)
 │   ├── smartDetect.ts             # Content type detection engine
 │   ├── formatter.ts               # SQL/list formatting utilities
 │   ├── colorMath.ts               # Color space conversions + WCAG contrast
@@ -100,7 +100,8 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 │   ├── metadataUtils.ts           # Metadata helper functions
 │   ├── cspEvaluator.ts            # CSP policy parser and security evaluator
 │   ├── cspUtils.ts                # Console violation parser, suggestion builder
-│   └── pdfMaker.ts                # PDF generation: merge images/PDFs/DOCX/XLSX → PDF
+│   ├── pdfMaker.ts                # PDF generation: merge images/PDFs/DOCX/XLSX/MD/HTML/TXT/CSV → PDF
+│   └── pdfTransfer.ts             # Cross-tool PDF handoff (PDF Maker → PDF Editor)
 │
 ├── lib/                           # Complex analysis libraries (2 files)
 │   ├── SQLPlanAnalyzer.ts         # SQL execution plan parser/analyzer
@@ -187,6 +188,7 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 | `pdf-lib` | Create/merge PDFs, embed images (PDF Maker) |
 | `mammoth` | .docx → HTML conversion (PDF Maker) |
 | `html2canvas` | Render HTML DOM → canvas for PDF embedding (PDF Maker) |
+| `marked` | Markdown → HTML conversion (PDF Maker) |
 
 ## Coding Rules
 

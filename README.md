@@ -30,7 +30,7 @@ A local-first developer toolkit. Professional-grade tools that run 100% in your 
 | **CSP Tools** | Analyze CSP headers for security issues, parse browser console violations, and merge domains into existing policies |
 | **Network Waterfall** | Analyze HAR files — waterfall timeline, performance rules, and console log correlation |
 | **JSON Extractor** | Extract a flat list of values from JSON by dot-notation path, auto-traversing nested arrays |
-| **PDF Maker** | Combine images (JPG/PNG/WebP), PDFs, Word (.docx), and Excel (.xlsx) into a single PDF — runs entirely in the browser |
+| **PDF Maker** | Combine images (JPG/PNG/WebP), PDFs, Word (.docx), Excel (.xlsx), Markdown (.md), HTML (.html), plain text (.txt), and CSV into a single PDF — runs entirely in the browser |
 | **PDF Editor** | Reorder or delete pages from a PDF and export a new file — no upload, no server |
 
 ## Getting Started
@@ -56,6 +56,8 @@ npm run dev
 - **pdf-lib** — Create and merge PDFs, embed images (PDF Maker)
 - **mammoth** — Convert .docx → HTML for PDF embedding
 - **html2canvas** — Render HTML DOM to canvas for PDF page generation
+- **marked** — Markdown → HTML conversion for PDF embedding (PDF Maker)
+- **papaparse** — CSV parsing (Table Lens, PDF Maker)
 - **xlsx** — Excel file parsing (Table Lens, PDF Maker)
 - **Lucide Icons** + **Font Awesome** — Icon sets
 
