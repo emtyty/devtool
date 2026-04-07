@@ -9,6 +9,7 @@ import {
   EditedPageView,
   TextEdits,
 } from '../utils/pdfEditor';
+import { takePendingPdf } from '../utils/pdfTransfer';
 
 const VIEW_SCALE = 1.5;
 
@@ -340,19 +341,12 @@ const PdfEditor: React.FC = () => {
     }
   }, []);
 
-  // Pick up PDF handed off from PDF Maker via sessionStorage
+  // Pick up PDF handed off from PDF Maker via in-memory transfer
   useEffect(() => {
-    const pending = sessionStorage.getItem('devtoolkit:pdf-editor:pending');
+    const pending = takePendingPdf();
     if (!pending) return;
-    sessionStorage.removeItem('devtoolkit:pdf-editor:pending');
-    try {
-      const [, base64] = pending.split(',');
-      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-      const f = new File([bytes], 'from-pdf-maker.pdf', { type: 'application/pdf' });
-      loadFile(f);
-    } catch {
-      // ignore malformed data
-    }
+    const f = new File([pending.bytes], pending.name, { type: 'application/pdf' });
+    loadFile(f);
   }, [loadFile]);
 
   // Load selected page for editing whenever it changes
