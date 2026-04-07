@@ -7,6 +7,7 @@ import {
   buildPdf, detectFileType, downloadPdf, getExcelSheetNames,
   type PdfItem, type PdfSettings,
 } from '../utils/pdfMaker';
+import { setPendingPdf } from '../utils/pdfTransfer';
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -20,13 +21,18 @@ const DEFAULT_SETTINGS: PdfSettings = {
 
 const FILE_TYPE_LABELS: Record<string, string> = {
   pdf: 'PDF', image: 'Image', docx: 'Word', xlsx: 'Excel',
+  markdown: 'Markdown', html: 'HTML', text: 'Text', csv: 'CSV',
 };
 
 const FILE_TYPE_COLORS: Record<string, string> = {
-  pdf:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  image: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  docx:  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-  xlsx:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  pdf:      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  image:    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  docx:     'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  xlsx:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  markdown: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  html:     'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  text:     'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+  csv:      'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
 };
 
 const FIDELITY_WARNING =
@@ -232,18 +238,10 @@ const PdfMaker: React.FC = () => {
 
   const handleOpenInEditor = useCallback(() => {
     if (!outputBytes) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        sessionStorage.setItem('devtoolkit:pdf-editor:pending', reader.result as string);
-      } catch {
-        // sessionStorage may be unavailable in some contexts
-      }
-      window.history.pushState({}, '', '/pdf-editor');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    };
-    reader.readAsDataURL(new Blob([outputBytes], { type: 'application/pdf' }));
-  }, [outputBytes]);
+    setPendingPdf(outputBytes, outputFilename.endsWith('.pdf') ? outputFilename : outputFilename + '.pdf');
+    window.history.pushState({}, '', '/pdf-editor');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, [outputBytes, outputFilename]);
 
   // ── Render ────────────────────────────────────────────────────────
 
@@ -253,7 +251,7 @@ const PdfMaker: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">PDF Maker</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Combine images, PDFs, Word, and Excel files into a single PDF — entirely in your browser.
+          Combine images, PDFs, Word, Excel, Markdown, and HTML files into a single PDF — entirely in your browser.
         </p>
       </div>
 
@@ -284,14 +282,14 @@ const PdfMaker: React.FC = () => {
               <span className="text-blue-600 dark:text-blue-400">browse</span>
             </p>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-              PDF · JPG · PNG · WebP · DOCX · XLSX
+              PDF · JPG · PNG · WebP · DOCX · XLSX · MD · HTML · TXT · CSV
             </p>
           </div>
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.docx,.xlsx"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.docx,.xlsx,.md,.html,.htm,.txt,.csv"
             className="hidden"
             onChange={handleFileInput}
           />
@@ -304,7 +302,7 @@ const PdfMaker: React.FC = () => {
               </p>
 
               {items.map((item, index) => {
-                const isWarning = item.fileType === 'docx' || item.fileType === 'xlsx';
+                const isWarning = item.fileType === 'docx' || item.fileType === 'xlsx' || item.fileType === 'markdown' || item.fileType === 'html';
                 const isExpanded = expandedSheets.has(item.id);
 
                 return (
