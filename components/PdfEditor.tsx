@@ -234,8 +234,8 @@ const TextOverlay: React.FC<TextOverlayProps> = ({ item, currentText, isEdited, 
       }}
       className={`absolute flex items-center whitespace-pre outline-none rounded-sm transition-colors duration-150 ${
         isEdited
-          ? 'bg-white text-black z-10'
-          : 'text-transparent hover:bg-black/5 cursor-text z-10 focus:bg-white focus:text-black focus:z-20 focus:ring-1 focus:ring-blue-400/50'
+          ? 'z-10'
+          : 'text-transparent hover:bg-black/5 cursor-text z-10 focus:z-20 focus:ring-1 focus:ring-blue-400/50'
       }`}
       style={{
         left: item.x,
@@ -247,6 +247,7 @@ const TextOverlay: React.FC<TextOverlayProps> = ({ item, currentText, isEdited, 
         lineHeight: 1,
         padding: '0 2px',
         marginLeft: '-2px',
+        ...(isEdited || isFocused ? { backgroundColor: 'white', color: 'black' } : {}),
         caretColor: isFocused ? 'auto' : 'transparent',
       }}
     >
