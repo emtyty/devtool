@@ -38,6 +38,9 @@ export function detectSQL(input: string): number {
   const t = input.trim();
   if (!t) return 0;
 
+  // EF Core / APM log format with embedded SQL
+  if (/^\[Parameters=\[/.test(t)) return 95;
+
   const sqlKeywords = /^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|MERGE|WITH|EXEC|EXECUTE|DECLARE|BEGIN|SET\s|USE\s|TRUNCATE|GRANT|REVOKE)/im;
   const sqlPatterns = /\b(FROM|WHERE|JOIN|GROUP\s+BY|ORDER\s+BY|HAVING|UNION|INTO|VALUES|SET|ON|AND|OR|INNER|LEFT|RIGHT|OUTER|CROSS|LIMIT|OFFSET|TOP|DISTINCT)\b/gi;
 

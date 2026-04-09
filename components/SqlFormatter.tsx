@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Code2, Layers, Copy, Check, Minimize2, Maximize2, FileCode2 } from 'lucide-react';
 import { format as prettyPrintSql } from 'sql-formatter';
+import { parseEfCoreLog } from '../utils/formatter';
 import ResizableSplit from './ResizableSplit';
 
 // ── SQL Syntax Highlighter ──────────────────────────────────────────────────
@@ -240,14 +241,16 @@ export default function SqlFormatter({ initialData }: { initialData?: string | n
 
   const updateOutput = useCallback(() => {
     if (!input.trim()) { setOutput(''); return; }
+    // Auto-detect EF Core / APM log format and extract clean SQL with params inlined
+    const sql = parseEfCoreLog(input) ?? input;
     if (sqlMode === 'minify') {
-      setOutput(input.replace(/\s+/g, ' ').trim());
+      setOutput(sql.replace(/\s+/g, ' ').trim());
       return;
     }
     try {
-      setOutput(prettyPrintSql(input, { language: dialect as Parameters<typeof prettyPrintSql>[1]['language'], tabWidth: 2 }));
+      setOutput(prettyPrintSql(sql, { language: dialect as Parameters<typeof prettyPrintSql>[1]['language'], tabWidth: 2 }));
     } catch {
-      setOutput(`-- Error formatting SQL --\n${input}`);
+      setOutput(`-- Error formatting SQL --\n${sql}`);
     }
   }, [input, sqlMode, dialect]);
 
@@ -317,7 +320,7 @@ export default function SqlFormatter({ initialData }: { initialData?: string | n
         className="flex-1 p-6 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed"
         value={input}
         onChange={e => setInput(e.target.value)}
-        placeholder="Paste raw SQL here..."
+        placeholder="Paste raw SQL or EF Core log here..."
       />
     </section>
   );

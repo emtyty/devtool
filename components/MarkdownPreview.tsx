@@ -299,6 +299,7 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
 
   useEffect(() => { if (initialData) setMarkdown(initialData); }, [initialData]);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [previewCopied, setPreviewCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -453,6 +454,21 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
               <Eye size={13} className="text-slate-400" />
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Preview</span>
+              <button
+                onClick={() => {
+                  const node = previewRef.current;
+                  if (!node) return;
+                  navigator.clipboard.writeText(node.innerText).then(() => {
+                    setPreviewCopied(true);
+                    setTimeout(() => setPreviewCopied(false), 2000);
+                  });
+                }}
+                title="Copy preview text"
+                className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
+              >
+                {previewCopied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+                {previewCopied ? 'Copied!' : 'Copy'}
+              </button>
             </div>
             <div className="flex-1 overflow-auto p-6">
               <div ref={previewRef} className="markdown-body max-w-none">

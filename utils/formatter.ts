@@ -1,5 +1,65 @@
 import { format as prettyPrintSql } from 'sql-formatter';
 
+// ── EF Core / APM Log SQL Extractor ─────────────────────────────────────────
+
+/**
+ * Detect and parse EF Core / APM log output containing SQL with parameters.
+ *
+ * Expected format (from APM / Elasticsearch logs):
+ *   [Parameters=["@p1='val1', @p2='guid' (Nullable = false) (DbType = Object)"],
+ *    CommandType='"Text"', CommandTimeout='30']"\n""SELECT ... @p1 ..."
+ *
+ * Returns the clean SQL with parameter values inlined, or `null` if the input
+ * doesn't match the EF Core log pattern.
+ */
+export function parseEfCoreLog(raw: string): string | null {
+  const trimmed = raw.trim();
+
+  // Must start with [Parameters=
+  if (!trimmed.startsWith('[Parameters=')) return null;
+
+  // Extract the parameter list between [" and "]
+  const paramStart = trimmed.indexOf('["');
+  const paramEnd = trimmed.indexOf('"]');
+  if (paramStart === -1 || paramEnd === -1) return null;
+
+  const paramString = trimmed.substring(paramStart + 2, paramEnd);
+
+  // Parse each @name='value', ignoring trailing annotations like (Nullable = false)
+  const params = new Map<string, string>();
+  const paramRegex = /(@[\w]+)='([^']*)'/g;
+  let m;
+  while ((m = paramRegex.exec(paramString)) !== null) {
+    params.set(m[1], m[2]);
+  }
+
+  // Locate the SQL query after the metadata block  "]...CommandTimeout='N']
+  // Then strip leading/trailing quotes, \n literals, and whitespace
+  const closingBracket = trimmed.indexOf(']', paramEnd + 2);
+  if (closingBracket === -1) return null;
+
+  let sqlPart = trimmed.substring(closingBracket + 1);
+  // Strip wrapping quotes and literal \n prefix
+  sqlPart = sqlPart.replace(/^["\\n\s]+/, '').replace(/["]+$/, '');
+  // Convert literal \n sequences to real newlines
+  sqlPart = sqlPart.replace(/\\n/g, '\n');
+
+  if (!sqlPart.trim()) return null;
+
+  // Inline parameter values — sort by name length DESC so longer names match first
+  // (e.g. @__p_10 before @__p_1)
+  const sorted = [...params.entries()].sort((a, b) => b[0].length - a[0].length);
+  for (const [name, value] of sorted) {
+    if (!value) continue; // skip empty / table-valued params
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const isNumeric = /^\d+(\.\d+)?$/.test(value);
+    const replacement = isNumeric ? value : `'${value}'`;
+    sqlPart = sqlPart.replace(new RegExp(escaped, 'g'), replacement);
+  }
+
+  return sqlPart.trim();
+}
+
 export enum SqlFormat {
   IN_CLAUSE = 'IN_CLAUSE',
   VALUES_LIST = 'VALUES_LIST',
