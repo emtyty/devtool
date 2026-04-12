@@ -34,8 +34,9 @@ const JsonExtractor            = lazy(() => import('./components/JsonExtractor')
 const PdfEditor                = lazy(() => import('./components/PdfEditor'));
 const PdfMaker                 = lazy(() => import('./components/PdfMaker'));
 const SettingsPage             = lazy(() => import('./components/SettingsPage'));
+const DbSchemaVisualizer       = lazy(() => import('./components/DbSchemaVisualizer'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -68,6 +69,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   pdfeditor:        'pdf-editor',
   pdfmaker:         'pdf-maker',
   settings:         'settings',
+  dbschema:         'db-schema',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -105,6 +107,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'jsonextractor', label: 'JSON Extractor',   icon: <ListTree size={16} /> },
       { id: 'markdown',      label: 'Markdown',          icon: <FileText size={16} /> },
       { id: 'stacktrace',    label: 'Stack Trace',       icon: <AlertTriangle size={16} /> },
+      { id: 'dbschema',      label: 'DB Schema',         icon: <Database size={16} /> },
     ],
   },
   {
@@ -612,6 +615,7 @@ const App: React.FC = () => {
            mode === 'jsonextractor'    ? <JsonExtractor /> :
            mode === 'pdfeditor'        ? <PdfEditor /> :
            mode === 'pdfmaker'         ? <PdfMaker /> :
+           mode === 'dbschema'         ? <DbSchemaVisualizer initialData={pendingData} /> :
            mode === 'settings'         ? <SettingsPage
              sections={NAV_SECTIONS.slice(1)}
              hiddenTools={hiddenTools}
