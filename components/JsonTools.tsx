@@ -4,15 +4,33 @@ import {
   Braces, Layers, Copy, Check, Maximize2, Minimize2, AlertCircle,
   Upload, Wrench, GitCompare, ChevronRight, ChevronDown, Plus, Minus,
   RefreshCw, TreePine, Code2, Quote, ArrowLeftRight, Unlink, Network,
+  ShieldCheck, XCircle, CheckCircle2, ChevronUp,
 } from 'lucide-react';
 import { jsonrepair } from 'jsonrepair';
 import JsonDiffV2, { findDiffs, type DiffItem } from './JsonDiffV2';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 
 const JsonDiagram = lazy(() => import('./JsonDiagram'));
 
 // --- Types ---
 
-type JsonTab = 'format' | 'diff' | 'ts' | 'unescape' | 'diagram';
+type JsonTab = 'format' | 'diff' | 'ts' | 'unescape' | 'diagram' | 'schema';
+
+interface SchemaError {
+  path: string;
+  message: string;
+  keyword: string;
+  schemaPath: string;
+}
+
+interface SchemaValidationResult {
+  valid: boolean;
+  errors: SchemaError[];
+  schemaType: 'json-schema' | 'openapi';
+  availableSchemas: string[];
+  selectedSchema: string;
+}
 type DiffViewMode = 'tree' | 'sidebyside';
 type OutputMode = 'text' | 'tree' | 'string';
 type DiffType = 'added' | 'removed' | 'changed' | 'nested';
@@ -398,6 +416,13 @@ export default function JsonTools({ initialData }: { initialData?: string | null
   // Diagram
   const [diagramParsed, setDiagramParsed] = useState<unknown>(null);
 
+  // Schema Validator
+  const [schemaInput, setSchemaInput] = useState('');
+  const [payloadInput, setPayloadInput] = useState('');
+  const [schemaResult, setSchemaResult] = useState<SchemaValidationResult | null>(null);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [selectedOpenApiSchema, setSelectedOpenApiSchema] = useState('');
+
   // --- Format handlers ---
 
   const indentVal = () => (indent === 'tab' ? '\t' : indent);
@@ -558,6 +583,93 @@ export default function JsonTools({ initialData }: { initialData?: string | null
     }
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Schema Validator handler ────────────────────────────────────────────────
+
+  const handleSchemaValidate = (overrideSchemaName?: string) => {
+    setSchemaError(null);
+    setSchemaResult(null);
+
+    // Parse schema
+    let schemaParsed: any;
+    try {
+      schemaParsed = JSON.parse(schemaInput.trim());
+    } catch {
+      setSchemaError('Schema is not valid JSON — fix it and try again.');
+      return;
+    }
+
+    // Parse payload
+    let payloadParsed: any;
+    try {
+      payloadParsed = JSON.parse(payloadInput.trim());
+    } catch {
+      setSchemaError('Payload is not valid JSON — fix it and try again.');
+      return;
+    }
+
+    // Detect OpenAPI / Swagger
+    const isOpenApi = !!(schemaParsed.openapi || schemaParsed.swagger);
+    const availableSchemas: string[] = [];
+    let resolvedSchema: any = schemaParsed;
+
+    if (isOpenApi) {
+      const defs =
+        schemaParsed.components?.schemas ??        // OpenAPI 3.x
+        schemaParsed.definitions ??                // Swagger 2.x
+        {};
+      availableSchemas.push(...Object.keys(defs));
+
+      const chosen = overrideSchemaName ?? selectedOpenApiSchema ?? availableSchemas[0] ?? '';
+      if (!chosen) {
+        setSchemaError('No schemas found in components.schemas / definitions.');
+        return;
+      }
+      setSelectedOpenApiSchema(chosen);
+      resolvedSchema = defs[chosen];
+      if (!resolvedSchema) {
+        setSchemaError(`Schema "${chosen}" not found in the spec.`);
+        return;
+      }
+      // Inline the full defs so $ref resolution works
+      resolvedSchema = {
+        ...resolvedSchema,
+        components: schemaParsed.components,
+        definitions: schemaParsed.definitions,
+      };
+    }
+
+    // Run ajv
+    const ajv = new Ajv({ allErrors: true, strict: false });
+    addFormats(ajv);
+
+    let valid: boolean;
+    let errors: SchemaError[] = [];
+
+    try {
+      const validate = ajv.compile(resolvedSchema);
+      valid = validate(payloadParsed) as boolean;
+      if (!valid && validate.errors) {
+        errors = validate.errors.map(e => ({
+          path: e.instancePath || '(root)',
+          message: e.message ?? 'Unknown error',
+          keyword: e.keyword,
+          schemaPath: e.schemaPath,
+        }));
+      }
+    } catch (err: any) {
+      setSchemaError(`Schema compilation failed: ${err.message}`);
+      return;
+    }
+
+    setSchemaResult({
+      valid,
+      errors,
+      schemaType: isOpenApi ? 'openapi' : 'json-schema',
+      availableSchemas,
+      selectedSchema: isOpenApi ? (selectedOpenApiSchema || availableSchemas[0] || '') : '',
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Tab Switcher */}
@@ -576,6 +688,9 @@ export default function JsonTools({ initialData }: { initialData?: string | null
         </button>
         <button onClick={() => setTab('diagram')} className={TAB_CLASSES(tab === 'diagram')}>
           <Network size={14} /> Diagram
+        </button>
+        <button onClick={() => setTab('schema')} className={TAB_CLASSES(tab === 'schema')}>
+          <ShieldCheck size={14} /> Schema Validator
         </button>
       </div>
 
@@ -1039,6 +1154,163 @@ export default function JsonTools({ initialData }: { initialData?: string | null
           ) : (
             <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl min-h-[400px] flex items-center justify-center">
               <p className="text-slate-400 text-xs italic">Paste JSON in the Format tab first, then switch here.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SCHEMA VALIDATOR TAB ── */}
+      {tab === 'schema' && (
+        <div className="space-y-6">
+          {/* Two inputs */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Schema input */}
+            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[320px]">
+              <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-2">
+                  <ShieldCheck size={12} /> JSON Schema / OpenAPI Spec
+                </span>
+                <button
+                  onClick={() => {
+                    setSchemaInput(JSON.stringify({
+                      type: 'object',
+                      properties: {
+                        id:    { type: 'integer' },
+                        name:  { type: 'string', minLength: 1 },
+                        email: { type: 'string', format: 'email' },
+                        age:   { type: 'integer', minimum: 0, maximum: 150 },
+                        role:  { type: 'string', enum: ['admin', 'editor', 'viewer'] },
+                      },
+                      required: ['id', 'name', 'email'],
+                    }, null, 2));
+                    setPayloadInput(JSON.stringify({
+                      id: 1,
+                      name: 'Alice',
+                      email: 'not-an-email',
+                      age: -5,
+                      role: 'superuser',
+                    }, null, 2));
+                    setSchemaResult(null);
+                    setSchemaError(null);
+                  }}
+                  className="text-[10px] font-black text-blue-500 hover:text-blue-700 uppercase tracking-widest transition-colors"
+                >
+                  Load Sample
+                </button>
+              </div>
+              <textarea
+                className="flex-1 p-5 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed"
+                value={schemaInput}
+                onChange={e => { setSchemaInput(e.target.value); setSchemaResult(null); setSchemaError(null); }}
+                placeholder={'Paste a JSON Schema or OpenAPI spec...\n\nExample JSON Schema:\n{\n  "type": "object",\n  "properties": {\n    "name": { "type": "string" },\n    "age":  { "type": "integer", "minimum": 0 }\n  },\n  "required": ["name"]\n}'}
+                spellCheck={false}
+              />
+            </section>
+
+            {/* Payload input */}
+            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[320px]">
+              <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
+                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                  JSON Payload
+                </span>
+              </div>
+              <textarea
+                className="flex-1 p-5 resize-none focus:outline-none font-mono text-sm text-slate-700 placeholder:text-slate-300 bg-white leading-relaxed"
+                value={payloadInput}
+                onChange={e => { setPayloadInput(e.target.value); setSchemaResult(null); setSchemaError(null); }}
+                placeholder={'Paste the JSON to validate...'}
+                spellCheck={false}
+              />
+            </section>
+          </div>
+
+          {/* OpenAPI schema picker */}
+          {schemaResult?.schemaType === 'openapi' && schemaResult.availableSchemas.length > 0 && (
+            <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-xl px-5 py-3">
+              <span className="text-[10px] font-black text-purple-700 uppercase tracking-widest whitespace-nowrap">Validate against</span>
+              <select
+                className="flex-1 text-xs font-mono bg-white border border-purple-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                value={schemaResult.selectedSchema}
+                onChange={e => {
+                  setSelectedOpenApiSchema(e.target.value);
+                  handleSchemaValidate(e.target.value);
+                }}
+              >
+                {schemaResult.availableSchemas.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Validate button */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => handleSchemaValidate()}
+              disabled={!schemaInput.trim() || !payloadInput.trim()}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-black px-8 py-3 rounded-xl text-xs uppercase tracking-widest transition-all shadow-lg shadow-purple-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ShieldCheck size={16} /> Validate
+            </button>
+          </div>
+
+          {/* Parse error */}
+          {schemaError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-600 text-xs font-bold">
+              <AlertCircle size={14} /> {schemaError}
+            </div>
+          )}
+
+          {/* Results */}
+          {schemaResult && (
+            <div className={`rounded-2xl border overflow-hidden shadow-sm ${schemaResult.valid ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-white'}`}>
+              {/* Result header */}
+              <div className={`px-6 py-4 flex items-center justify-between ${schemaResult.valid ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                <div className="flex items-center gap-3">
+                  {schemaResult.valid
+                    ? <CheckCircle2 size={20} className="text-white" />
+                    : <XCircle size={20} className="text-white" />
+                  }
+                  <span className="text-sm font-black text-white uppercase tracking-widest">
+                    {schemaResult.valid ? 'Valid — Payload matches the schema' : `Invalid — ${schemaResult.errors.length} error${schemaResult.errors.length !== 1 ? 's' : ''} found`}
+                  </span>
+                </div>
+                <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">
+                  {schemaResult.schemaType === 'openapi' ? `OpenAPI · ${schemaResult.selectedSchema}` : 'JSON Schema'}
+                </span>
+              </div>
+
+              {/* Error list */}
+              {!schemaResult.valid && schemaResult.errors.length > 0 && (
+                <div className="divide-y divide-red-100">
+                  {schemaResult.errors.map((err, i) => (
+                    <div key={i} className="px-6 py-4 flex items-start gap-4">
+                      <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-red-100 flex items-center justify-center text-[10px] font-black text-red-600">
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="text-xs font-mono font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded">
+                            {err.path}
+                          </code>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            [{err.keyword}]
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-700">{err.message}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{err.schemaPath}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {schemaResult.valid && (
+                <div className="px-6 py-10 flex flex-col items-center gap-2">
+                  <CheckCircle2 size={36} className="text-emerald-400" />
+                  <p className="text-sm font-bold text-emerald-700">All fields pass validation</p>
+                </div>
+              )}
             </div>
           )}
         </div>
