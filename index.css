@@ -393,3 +393,26 @@
     min-height: 40px;
   }
 }
+
+/* ── Git Diff Viewer: syntax highlighting (Atom One palette) ─────────────── */
+.hljs-keyword, .hljs-built_in, .hljs-type, .hljs-selector-tag { color: #a626a4; }
+.hljs-string, .hljs-regexp, .hljs-literal, .hljs-subst { color: #50a14f; }
+.hljs-number, .hljs-symbol, .hljs-bullet { color: #986801; }
+.hljs-comment, .hljs-quote { color: #a0a1a7; font-style: italic; }
+.hljs-function, .hljs-title, .hljs-name, .hljs-section { color: #4078f2; }
+.hljs-variable, .hljs-property, .hljs-attribute, .hljs-attr, .hljs-selector-attr { color: #e45649; }
+.hljs-tag, .hljs-selector-class, .hljs-selector-id { color: #e45649; }
+.hljs-meta, .hljs-meta-keyword { color: #a0a1a7; }
+.hljs-operator, .hljs-punctuation { color: #383a42; }
+.hljs-params { color: #383a42; }
+
+.dark .hljs-keyword, .dark .hljs-built_in, .dark .hljs-type, .dark .hljs-selector-tag { color: #c678dd; }
+.dark .hljs-string, .dark .hljs-regexp, .dark .hljs-literal, .dark .hljs-subst { color: #98c379; }
+.dark .hljs-number, .dark .hljs-symbol, .dark .hljs-bullet { color: #d19a66; }
+.dark .hljs-comment, .dark .hljs-quote { color: #5c6370; }
+.dark .hljs-function, .dark .hljs-title, .dark .hljs-name, .dark .hljs-section { color: #61afef; }
+.dark .hljs-variable, .dark .hljs-property, .dark .hljs-attribute, .dark .hljs-attr, .dark .hljs-selector-attr { color: #e06c75; }
+.dark .hljs-tag, .dark .hljs-selector-class, .dark .hljs-selector-id { color: #e06c75; }
+.dark .hljs-meta, .dark .hljs-meta-keyword { color: #5c6370; }
+.dark .hljs-operator, .dark .hljs-punctuation { color: #abb2bf; }
+.dark .hljs-params { color: #abb2bf; }

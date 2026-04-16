@@ -38,6 +38,7 @@
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "heic2any": "^0.0.4",
+    "highlight.js": "^11.11.1",
     "html-query-plan": "^2.6.1",
     "html-to-pdfmake": "^2.5.33",
     "html2canvas": "^1.4.1",

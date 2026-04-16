@@ -578,7 +578,7 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [geminiKey, setGeminiKey] = useState<string>(() => localStorage.getItem(LS_KEY) || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'classic' | 'modern'>('classic');
+  const [viewMode, setViewMode] = useState<'classic' | 'modern'>('modern');
   const [classicXml, setClassicXml] = useState<string | null>(null);
   const [dialectHint, setDialectHint] = useState<SupportedDialect | 'auto'>('auto');
   const [detectedDialect, setDetectedDialect] = useState<SupportedDialect | null>(null);

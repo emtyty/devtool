@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, ExternalLink, FilePlus2 } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, ExternalLink, FilePlus2, FileDiff } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -35,8 +35,9 @@ const PdfEditor                = lazy(() => import('./components/PdfEditor'));
 const PdfMaker                 = lazy(() => import('./components/PdfMaker'));
 const SettingsPage             = lazy(() => import('./components/SettingsPage'));
 const DbSchemaVisualizer       = lazy(() => import('./components/DbSchemaVisualizer'));
+const GitDiffViewer            = lazy(() => import('./components/GitDiffViewer'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema' | 'gitdiff';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -70,6 +71,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   pdfmaker:         'pdf-maker',
   settings:         'settings',
   dbschema:         'db-schema',
+  gitdiff:          'git-diff',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -131,6 +133,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={16} /> },
       { id: 'texttools',     label: 'Text Tools',        icon: <Replace size={16} /> },
       { id: 'textdiff',      label: 'Text Compare',      icon: <GitCompare size={16} /> },
+      { id: 'gitdiff',       label: 'Git Diff Viewer',   icon: <FileDiff size={16} /> },
       { id: 'logs',             label: 'Log Analyzer',      icon: <ScrollText size={16} /> },
       { id: 'networkwaterfall', label: 'Network Waterfall', icon: <Waves size={16} /> },
       { id: 'metadata',         label: 'Binary Metadata',   icon: <i className="fa-solid fa-fingerprint text-[16px]" /> },
@@ -616,6 +619,7 @@ const App: React.FC = () => {
            mode === 'pdfeditor'        ? <PdfEditor /> :
            mode === 'pdfmaker'         ? <PdfMaker /> :
            mode === 'dbschema'         ? <DbSchemaVisualizer initialData={pendingData} /> :
+           mode === 'gitdiff'          ? <GitDiffViewer initialData={pendingData} /> :
            mode === 'settings'         ? <SettingsPage
              sections={NAV_SECTIONS.slice(1)}
              hiddenTools={hiddenTools}
