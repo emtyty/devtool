@@ -1,74 +1,15 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown, Copy, MoreHorizontal, Paintbrush, WrapText, Pin, PinOff, EyeOff, Eye } from 'lucide-react';
+import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown, Copy, MoreHorizontal, Paintbrush, WrapText, Pin, PinOff, EyeOff, Eye, Undo2, Redo2, Replace, Sigma } from 'lucide-react';
+import {
+  Row, CFRule, SortKey, CF_COLORS, CF_OPS, matchCFRule,
+  exportData, computeSummary, findMatches, replaceAll, multiSort, parseJSON,
+  type FindOptions, type ColumnSummary, type ExportFormat,
+} from '@/utils/tableLensUtils';
+import { useHistory } from '@/utils/tableLensHistory';
 
-type Row = Record<string, string>;
-
-// ── Conditional Formatting ────────────────────────────────────────
-type CFRule = { id: string; col: string; op: string; value: string; color: string };
-
-const CF_COLORS = [
-  { label: 'Red',    swatch: '#ef4444', cell: 'rgba(239,68,68,0.15)' },
-  { label: 'Orange', swatch: '#f97316', cell: 'rgba(249,115,22,0.15)' },
-  { label: 'Yellow', swatch: '#eab308', cell: 'rgba(234,179,8,0.22)' },
-  { label: 'Green',  swatch: '#22c55e', cell: 'rgba(34,197,94,0.15)' },
-  { label: 'Blue',   swatch: '#3b82f6', cell: 'rgba(59,130,246,0.15)' },
-  { label: 'Purple', swatch: '#a855f7', cell: 'rgba(168,85,247,0.15)' },
-  { label: 'Pink',   swatch: '#ec4899', cell: 'rgba(236,72,153,0.15)' },
-  { label: 'Teal',   swatch: '#14b8a6', cell: 'rgba(20,184,166,0.15)' },
-];
-
-const CF_OPS = [
-  { value: 'contains',     label: 'contains' },
-  { value: 'not_contains', label: 'not contains' },
-  { value: 'equals',       label: '= equals' },
-  { value: 'not_equals',   label: '≠ not equals' },
-  { value: 'starts_with',  label: 'starts with' },
-  { value: 'ends_with',    label: 'ends with' },
-  { value: 'gt',           label: '> greater than' },
-  { value: 'lt',           label: '< less than' },
-  { value: 'gte',          label: '≥ greater or equal' },
-  { value: 'lte',          label: '≤ less or equal' },
-  { value: 'is_empty',     label: 'is empty' },
-  { value: 'is_not_empty', label: 'is not empty' },
-];
-
-function matchCFRule(cellVal: string, op: string, ruleVal: string): boolean {
-  const cv = cellVal.toLowerCase(), rv = ruleVal.toLowerCase();
-  const num = Number(cellVal), rnum = Number(ruleVal);
-  const isNum = !isNaN(num) && cellVal !== '', rIsNum = !isNaN(rnum) && ruleVal !== '';
-  switch (op) {
-    case 'contains':     return cv.includes(rv);
-    case 'not_contains': return !cv.includes(rv);
-    case 'equals':       return cv === rv;
-    case 'not_equals':   return cv !== rv;
-    case 'starts_with':  return cv.startsWith(rv);
-    case 'ends_with':    return cv.endsWith(rv);
-    case 'gt':           return isNum && rIsNum && num > rnum;
-    case 'lt':           return isNum && rIsNum && num < rnum;
-    case 'gte':          return isNum && rIsNum && num >= rnum;
-    case 'lte':          return isNum && rIsNum && num <= rnum;
-    case 'is_empty':     return cellVal === '';
-    case 'is_not_empty': return cellVal !== '';
-    default:             return false;
-  }
-}
-
-const ROW_H = 33;   // px — must match actual row height
+const ROW_H = 33;
 const OVERSCAN = 25;
-
-// ── Utilities ────────────────────────────────────────────────────
-function toCSV(cols: string[], rows: Row[]): string {
-  const e = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  return [cols.map(e).join(','), ...rows.map(r => cols.map(c => e(r[c])).join(','))].join('\n');
-}
-
-function downloadCSV(name: string, content: string) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8;' }));
-  a.download = name;
-  a.click();
-}
 
 function useDebounce<T>(value: T, ms: number): T {
   const [dv, setDv] = useState(value);
@@ -79,7 +20,7 @@ function useDebounce<T>(value: T, ms: number): T {
   return dv;
 }
 
-// ── FilterCell — lazy distinct values, only computed on dropdown open ──
+// ── FilterCell ───────────────────────────────────────────────────
 interface FilterCellProps {
   value: string;
   onChange: (v: string) => void;
@@ -87,7 +28,7 @@ interface FilterCellProps {
   active: boolean;
 }
 
-const PAGE = 60; // items per page in dropdown
+const PAGE = 60;
 
 const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, active }) => {
   const [open, setOpen] = useState(false);
@@ -108,12 +49,11 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
   const openDrop = () => {
     if (!inputRef.current) return;
     setDropRect(inputRef.current.getBoundingClientRect());
-    setOptions(getOptions()); // lazy — computed only here
+    setOptions(getOptions());
     setPage(1);
     setOpen(true);
   };
 
-  // Reset page when search text changes
   useEffect(() => { setPage(1); }, [value]);
 
   useEffect(() => {
@@ -128,7 +68,6 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
 
   useEffect(() => {
     if (!open) return;
-    // Only close on scroll that happens OUTSIDE the dropdown
     const close = (e: Event) => {
       if (dropRef.current?.contains(e.target as Node)) return;
       setOpen(false);
@@ -206,14 +145,20 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
   );
 };
 
-// ── Main component ────────────────────────────────────────────────
-const TableLens: React.FC = () => {
+// ── Props ────────────────────────────────────────────────────────
+export interface TableLensProps {
+  /** When provided, file picker is hidden and data comes from parent */
+  externalData?: { columns: string[]; rows: Row[]; fileName?: string };
+  /** Called when data changes in external mode */
+  onDataChange?: (rows: Row[]) => void;
+}
+
+// ── Main component ───────────────────────────────────────────────
+const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => {
   const [rawData, setRawData] = useState<Row[]>([]);
   const [data, setData] = useState<Row[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
 
-  // filterInputs = immediate (for controlled inputs)
-  // debouncedFilters = 300ms delayed (for actual row filtering)
   const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
   const debouncedFilters = useDebounce(filterInputs, 300);
   const isFiltering = JSON.stringify(filterInputs) !== JSON.stringify(debouncedFilters);
@@ -226,8 +171,15 @@ const TableLens: React.FC = () => {
   const [distinctLoading, setDistinctLoading] = useState(false);
   const [distinctPage, setDistinctPage] = useState(1);
   const DISTINCT_PAGE = 50;
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Multi-column sort (P1)
+  const [sortKeys, setSortKeys] = useState<SortKey[]>([]);
+
+  // Column reorder (drag)
+  const [colOrder, setColOrder] = useState<string[]>([]);
+  const dragColRef = useRef<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
   const [colMenuCol, setColMenuCol] = useState<string | null>(null);
@@ -252,7 +204,39 @@ const TableLens: React.FC = () => {
   const [scrollTop, setScrollTop] = useState(0);
   const [containerH, setContainerH] = useState(500);
 
+  // Global search (P0)
+  const [globalSearch, setGlobalSearch] = useState('');
+  const debouncedGlobalSearch = useDebounce(globalSearch, 300);
+
+  // Find & Replace (P0)
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findIsRegex, setFindIsRegex] = useState(false);
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false);
+  const [findColumnScope, setFindColumnScope] = useState('');
+  const [replaceValue, setReplaceValue] = useState('');
+
+  // Export format
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
+
+  // Summary footer (P0)
+  const [showSummary, setShowSummary] = useState(false);
+
+  // Undo/Redo (P1)
+  const history = useHistory(50);
+
   const hasData = data.length > 0;
+
+  // ── Tracked data setter (pushes to undo history) ───────────────
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
+  const setDataWithHistory = useCallback((updater: (prev: Row[]) => Row[], label: string) => {
+    const next = updater(dataRef.current);
+    history.push(next, label);
+    setData(next);
+    onDataChange?.(next);
+  }, [history, onDataChange]);
 
   // Track container height for virtual scroll
   useLayoutEffect(() => {
@@ -267,30 +251,37 @@ const TableLens: React.FC = () => {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setScrollTop(0);
-  }, [debouncedFilters, sortCol, sortDir]);
+  }, [debouncedFilters, sortKeys, debouncedGlobalSearch]);
 
-  // Filtered rows — uses debounced filters, excludes hidden rows
-  const filteredRows = useMemo(() =>
-    data
+  // Filtered rows — column filters + global search + hidden rows
+  const filteredRows = useMemo(() => {
+    const gq = debouncedGlobalSearch.toLowerCase();
+    return data
       .map((row, idx) => ({ idx, row }))
       .filter(({ row, idx }: { row: Row; idx: number }) =>
         !hiddenRows.has(idx) &&
-        columns.every(col => {
+        columns.every((col: string) => {
           const f = (debouncedFilters[col] || '').toLowerCase();
           return !f || String(row[col] ?? '').toLowerCase().includes(f);
-        })
-      ),
-    [data, debouncedFilters, columns, hiddenRows]
-  );
+        }) &&
+        (!gq || columns.some((col: string) => String(row[col] ?? '').toLowerCase().includes(gq)))
+      );
+  }, [data, debouncedFilters, columns, hiddenRows, debouncedGlobalSearch]);
+
+  const orderedColumns = useMemo(() => {
+    if (colOrder.length === 0) return columns;
+    const colSet = new Set(columns);
+    return colOrder.filter((c: string) => colSet.has(c));
+  }, [columns, colOrder]);
 
   const visibleColumns = useMemo(() => [
-    ...columns.filter((c: string) => frozenCols.has(c) && !hiddenCols.has(c)),
-    ...columns.filter((c: string) => !frozenCols.has(c) && !hiddenCols.has(c)),
-  ], [columns, frozenCols, hiddenCols]);
+    ...orderedColumns.filter((c: string) => frozenCols.has(c) && !hiddenCols.has(c)),
+    ...orderedColumns.filter((c: string) => !frozenCols.has(c) && !hiddenCols.has(c)),
+  ], [orderedColumns, frozenCols, hiddenCols]);
 
   const frozenLeftOffsets = useMemo(() => {
     const offsets: Record<string, number> = {};
-    let left = 36 + 40; // checkbox + row#
+    let left = 36 + 40;
     for (const col of visibleColumns) {
       if (!frozenCols.has(col)) break;
       offsets[col] = left;
@@ -299,30 +290,39 @@ const TableLens: React.FC = () => {
     return offsets;
   }, [visibleColumns, frozenCols, colWidths]);
 
-  const sortedRows = useMemo(() => {
-    if (!sortCol) return filteredRows;
-    return [...filteredRows].sort((a, b) => {
-      const av = String(a.row[sortCol] ?? '');
-      const bv = String(b.row[sortCol] ?? '');
-      const an = Number(av), bn = Number(bv);
-      const cmp = !isNaN(an) && !isNaN(bn) && av !== '' && bv !== '' ? an - bn : av.localeCompare(bv);
-      return sortDir === 'asc' ? cmp : -cmp;
+  // Multi-column sort
+  const sortedRows = useMemo(
+    () => multiSort(filteredRows, sortKeys),
+    [filteredRows, sortKeys],
+  );
+
+  const handleSort = useCallback((col: string, additive: boolean) => {
+    setSortKeys(prev => {
+      const existing = prev.findIndex(k => k.col === col);
+      if (additive) {
+        // Shift+click: add or toggle
+        if (existing >= 0) {
+          const next = [...prev];
+          if (next[existing].dir === 'asc') {
+            next[existing] = { col, dir: 'desc' };
+          } else {
+            next.splice(existing, 1); // remove on third click
+          }
+          return next;
+        }
+        if (prev.length >= 3) return prev; // max 3
+        return [...prev, { col, dir: 'asc' }];
+      }
+      // Plain click: single sort cycle
+      if (existing >= 0 && prev.length === 1) {
+        if (prev[0].dir === 'asc') return [{ col, dir: 'desc' }];
+        return []; // clear
+      }
+      return [{ col, dir: 'asc' }];
     });
-  }, [filteredRows, sortCol, sortDir]);
+  }, []);
 
-  const handleSort = useCallback((col: string) => {
-    if (sortCol !== col) {
-      setSortCol(col);
-      setSortDir('asc');
-    } else if (sortDir === 'asc') {
-      setSortDir('desc');
-    } else {
-      setSortCol(null);
-      setSortDir('asc');
-    }
-  }, [sortCol, sortDir]);
-
-  // Virtual scroll window (bypassed when text wrap is on)
+  // Virtual scroll window
   const startIdx = wrapText ? 0 : Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const endIdx = wrapText ? sortedRows.length : Math.min(sortedRows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
   const visibleRows = sortedRows.slice(startIdx, endIdx);
@@ -351,6 +351,29 @@ const TableLens: React.FC = () => {
     [data, rawData, columns]
   );
 
+  // Find & Replace — match set
+  const findOpts: FindOptions = useMemo(() => ({
+    isRegex: findIsRegex,
+    caseSensitive: findCaseSensitive,
+    columnScope: findColumnScope || undefined,
+  }), [findIsRegex, findCaseSensitive, findColumnScope]);
+
+  const findMatchSet = useMemo(
+    () => showFindReplace ? findMatches(data, columns, findQuery, findOpts) : new Set<string>(),
+    [showFindReplace, data, columns, findQuery, findOpts],
+  );
+
+  // Summary footer
+  const summaryData = useMemo<Record<string, ColumnSummary>>(() => {
+    if (!showSummary) return {};
+    const rows = sortedRows.map(r => r.row);
+    const result: Record<string, ColumnSummary> = {};
+    for (const col of visibleColumns) {
+      result[col] = computeSummary(col, rows);
+    }
+    return result;
+  }, [showSummary, sortedRows, visibleColumns]);
+
   const startResize = useCallback((col: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -373,7 +396,9 @@ const TableLens: React.FC = () => {
   const loadParsed = useCallback((cols: string[], rows: Row[], name: string) => {
     setColumns(cols);
     setRawData(rows.map(r => ({ ...r })));
-    setData(rows.map(r => ({ ...r })));
+    const dataCopy = rows.map(r => ({ ...r }));
+    setData(dataCopy);
+    history.init(dataCopy);
     setFilterInputs({});
     setSelected(new Set());
     setEditCell(null);
@@ -386,17 +411,33 @@ const TableLens: React.FC = () => {
     setHiddenCols(new Set());
     setFrozenCols(new Set());
     setScrollTop(0);
-  }, []);
+    setSortKeys([]);
+    setColOrder([]);
+    setGlobalSearch('');
+    setShowFindReplace(false);
+    setShowSummary(false);
+  }, [history]);
+
+  // External data support
+  useEffect(() => {
+    if (!externalData) return;
+    loadParsed(externalData.columns, externalData.rows, externalData.fileName || 'external');
+  }, [externalData, loadParsed]);
 
   const loadFile = useCallback(async (file: File) => {
     setLoading(true);
     const name = file.name;
-
-    // Yield to paint the loading UI before heavy work
     await new Promise(r => setTimeout(r, 30));
-
     try {
-      if (/\.(xlsx|xls)$/i.test(name)) {
+      if (/\.json$/i.test(name)) {
+        setLoadMsg('Parsing JSON...');
+        const text = await file.text();
+        const result = parseJSON(text);
+        if (!result || result.columns.length === 0) return;
+        setLoadMsg(`Loading ${result.rows.length.toLocaleString()} rows...`);
+        await new Promise(r => setTimeout(r, 16));
+        loadParsed(result.columns, result.rows, name);
+      } else if (/\.(xlsx|xls)$/i.test(name)) {
         setLoadMsg('Reading XLSX...');
         await new Promise(r => setTimeout(r, 16));
         const XLSX = await import('xlsx');
@@ -412,13 +453,15 @@ const TableLens: React.FC = () => {
         await new Promise(r => setTimeout(r, 16));
         loadParsed(cols, arr.map(r => Object.fromEntries(cols.map(c => [c, String(r[c] ?? '')]))), name);
       } else {
-        setLoadMsg('Parsing CSV...');
+        const isTSV = /\.(tsv|tab)$/i.test(name);
+        setLoadMsg(isTSV ? 'Parsing TSV...' : 'Parsing CSV...');
         const Papa = await import('papaparse');
         await new Promise<void>(resolve => {
           Papa.default.parse(file, {
             header: true,
             skipEmptyLines: true,
             worker: false,
+            delimiter: isTSV ? '\t' : undefined,
             complete: (result: { meta: { fields?: string[] }; data: Row[] }) => {
               const cols = result.meta.fields || [];
               const rows = result.data.map(r => Object.fromEntries(cols.map(c => [c, String(r[c] ?? '')])));
@@ -439,14 +482,20 @@ const TableLens: React.FC = () => {
 
   const commitEdit = useCallback(() => {
     if (!editCell) return;
-    setData(prev => prev.map((r, i) => i === editCell.row ? { ...r, [editCell.col]: editVal } : r));
+    setDataWithHistory(
+      prev => prev.map((r, i) => i === editCell.row ? { ...r, [editCell.col]: editVal } : r),
+      `Edit cell [${editCell.row},${editCell.col}]`,
+    );
     setEditCell(null);
-  }, [editCell, editVal]);
+  }, [editCell, editVal, setDataWithHistory]);
 
   const applyBatch = useCallback(() => {
     if (!batchCol || selected.size === 0) return;
-    setData(prev => prev.map((r, i) => selected.has(i) ? { ...r, [batchCol]: batchVal } : r));
-  }, [batchCol, batchVal, selected]);
+    setDataWithHistory(
+      prev => prev.map((r, i) => selected.has(i) ? { ...r, [batchCol]: batchVal } : r),
+      `Batch edit ${selected.size} rows`,
+    );
+  }, [batchCol, batchVal, selected, setDataWithHistory]);
 
   const toggleRow = useCallback((idx: number) => {
     setSelected(prev => {
@@ -465,36 +514,39 @@ const TableLens: React.FC = () => {
   }, [filteredRows]);
 
   const deleteSelectedRows = useCallback(() => {
-    setData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
+    setDataWithHistory(
+      (prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)),
+      `Delete ${selected.size} rows`,
+    );
     setRawData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
     setSelected(new Set());
-  }, [selected]);
+  }, [selected, setDataWithHistory]);
 
   const duplicateSelectedRows = useCallback(() => {
     const sortedIdx = Array.from(selected as Set<number>).sort((a: number, b: number) => a - b);
     const insertAt = sortedIdx[sortedIdx.length - 1] + 1;
-    setData((prev: Row[]) => {
+    setDataWithHistory((prev: Row[]) => {
       const next = [...prev];
       next.splice(insertAt, 0, ...sortedIdx.map((i: number) => ({ ...prev[i] })));
       return next;
-    });
+    }, `Duplicate ${selected.size} rows`);
     setRawData((prev: Row[]) => {
       const next = [...prev];
       next.splice(insertAt, 0, ...sortedIdx.map((i: number) => ({ ...prev[i] })));
       return next;
     });
     setSelected(new Set());
-  }, [selected]);
+  }, [selected, setDataWithHistory]);
 
   const deleteColumn = useCallback((col: string) => {
     const omitCol = (r: Row): Row => Object.fromEntries(Object.entries(r).filter(([k]) => k !== col)) as Row;
     setColumns((prev: string[]) => prev.filter((c: string) => c !== col));
-    setData((prev: Row[]) => prev.map(omitCol));
+    setDataWithHistory((prev: Row[]) => prev.map(omitCol), `Delete column "${col}"`);
     setRawData((prev: Row[]) => prev.map(omitCol));
     setColWidths((prev: Record<string, number>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
     setFilterInputs((prev: Record<string, string>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
     setColMenuCol(null);
-  }, []);
+  }, [setDataWithHistory]);
 
   const duplicateColumn = useCallback((col: string) => {
     const newCol = `${col}_copy`;
@@ -504,10 +556,10 @@ const TableLens: React.FC = () => {
       next.splice(idx + 1, 0, newCol);
       return next;
     });
-    setData((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })));
+    setDataWithHistory((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })), `Duplicate column "${col}"`);
     setRawData((prev: Row[]) => prev.map((r: Row) => ({ ...r, [newCol]: r[col] })));
     setColMenuCol(null);
-  }, []);
+  }, [setDataWithHistory]);
 
   useEffect(() => {
     if (!colMenuCol) return;
@@ -556,11 +608,55 @@ const TableLens: React.FC = () => {
     setCFRules((prev: CFRule[]) => prev.filter((_: CFRule, i: number) => i !== idx));
   }, []);
 
+  // Find & Replace actions
+  const handleReplaceAll = useCallback(() => {
+    if (!findQuery) return;
+    const newData = replaceAll(data, columns, findQuery, replaceValue, findOpts);
+    if (newData !== data) {
+      history.push(data, `Replace all "${findQuery}" → "${replaceValue}"`);
+      setData(newData);
+      onDataChange?.(newData);
+    }
+  }, [data, columns, findQuery, replaceValue, findOpts, history, onDataChange]);
+
+  // Undo/Redo
+  const handleUndo = useCallback(() => {
+    const prev = history.undo();
+    if (prev) { setData(prev); onDataChange?.(prev); }
+  }, [history, onDataChange]);
+
+  const handleRedo = useCallback(() => {
+    const next = history.redo();
+    if (next) { setData(next); onDataChange?.(next); }
+  }, [history, onDataChange]);
+
+  // Keyboard shortcuts: Ctrl+Z, Ctrl+Y, Ctrl+F
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); handleRedo(); }
+      if (mod && e.key === 'f') { e.preventDefault(); setGlobalSearchFocused(true); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
+
+  const [globalSearchFocused, setGlobalSearchFocused] = useState(false);
+  const globalSearchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (globalSearchFocused && globalSearchRef.current) {
+      globalSearchRef.current.focus();
+      setGlobalSearchFocused(false);
+    }
+  }, [globalSearchFocused]);
+
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'export';
   const activeFilters = columns.filter(c => filterInputs[c]);
 
-  // ── Drop zone ────────────────────────────────────────────────────
-  if (!hasData) {
+  // ── Drop zone (no data loaded yet) ────────────────────────────
+  if (!hasData && !externalData) {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-8">
@@ -598,14 +694,14 @@ const TableLens: React.FC = () => {
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">or click to browse</p>
               </div>
               <div className="flex gap-2 mt-2">
-                {['CSV', 'XLSX', 'XLS'].map(f => (
+                {['CSV', 'TSV', 'JSON', 'XLSX'].map(f => (
                   <span key={f} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-500 dark:text-slate-400">{f}</span>
                 ))}
               </div>
             </>
           )}
         </div>
-        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+        <input ref={fileRef} type="file" accept=".csv,.tsv,.tab,.json,.xlsx,.xls" className="hidden"
           onChange={e => { e.target.files?.[0] && loadFile(e.target.files[0]); e.target.value = ''; }}
         />
       </div>
@@ -614,7 +710,10 @@ const TableLens: React.FC = () => {
 
   const allFilteredSelected = filteredRows.length > 0 && filteredRows.every(r => selected.has(r.idx));
 
-  // ── Main table view ─────────────────────────────────────────────
+  // Sort key helper for header badges
+  const getSortKeyIndex = (col: string) => sortKeys.findIndex(k => k.col === col);
+
+  // ── Main table view ────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-3" style={{ height: 'calc(100vh - 160px)', minHeight: 480 }}>
 
@@ -659,8 +758,81 @@ const TableLens: React.FC = () => {
               </button>
             </>
           )}
+          {sortKeys.length > 0 && (
+            <button
+              onClick={() => setSortKeys([])}
+              className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer shrink-0"
+            >
+              <X size={11} /> Clear {sortKeys.length} sort{sortKeys.length > 1 ? 's' : ''}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Global search */}
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              ref={globalSearchRef}
+              type="text"
+              value={globalSearch}
+              onChange={e => setGlobalSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Escape' && setGlobalSearch('')}
+              placeholder="Search all..."
+              className="pl-7 pr-7 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-40 focus:outline-none focus:border-blue-400 focus:w-56 transition-all"
+            />
+            {globalSearch && (
+              <button onClick={() => setGlobalSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+                <X size={10} />
+              </button>
+            )}
+          </div>
+          {/* Undo / Redo */}
+          <button
+            onClick={handleUndo}
+            disabled={!history.canUndo}
+            title={history.canUndo ? `Undo: ${history.undoLabel}` : 'Nothing to undo'}
+            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+              history.canUndo
+                ? 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                : 'border-slate-100 dark:border-slate-800 text-slate-300 dark:text-slate-700 cursor-not-allowed'
+            }`}
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            onClick={handleRedo}
+            disabled={!history.canRedo}
+            title={history.canRedo ? `Redo: ${history.redoLabel}` : 'Nothing to redo'}
+            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+              history.canRedo
+                ? 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                : 'border-slate-100 dark:border-slate-800 text-slate-300 dark:text-slate-700 cursor-not-allowed'
+            }`}
+          >
+            <Redo2 size={14} />
+          </button>
+          {/* Find & Replace toggle */}
+          <button
+            onClick={() => setShowFindReplace(p => !p)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
+              showFindReplace
+                ? 'border-orange-300 dark:border-orange-600 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10'
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Replace size={12} /> Find
+          </button>
+          {/* Summary toggle */}
+          <button
+            onClick={() => setShowSummary(p => !p)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
+              showSummary
+                ? 'border-emerald-300 dark:border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Sigma size={12} /> Summary
+          </button>
           <button
             onClick={() => setWrapText((w: boolean) => !w)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
@@ -687,20 +859,29 @@ const TableLens: React.FC = () => {
           >
             <Trash2 size={12} /> Clear
           </button>
+          <select
+            value={exportFormat}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setExportFormat(e.target.value as ExportFormat)}
+            className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold cursor-pointer"
+          >
+            <option value="csv">CSV</option>
+            <option value="tsv">TSV</option>
+            <option value="json">JSON</option>
+          </select>
           <button
-            onClick={() => downloadCSV(`${baseName}_all.csv`, toCSV(columns, data))}
+            onClick={() => exportData(orderedColumns, data, baseName, '_all', exportFormat)}
             className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all cursor-pointer"
           >
             <Download size={12} /> Export All
           </button>
           <button
-            onClick={() => downloadCSV(`${baseName}_filtered.csv`, toCSV(columns, filteredRows.map(r => r.row)))}
+            onClick={() => exportData(orderedColumns, filteredRows.map((r: { row: Row }) => r.row), baseName, '_filtered', exportFormat)}
             className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all cursor-pointer"
           >
             <Download size={12} /> Export Filtered
           </button>
           <button
-            onClick={() => downloadCSV(`${baseName}_changes.csv`, toCSV(columns, data.filter((_, i) => modifiedSet.has(i))))}
+            onClick={() => exportData(orderedColumns, data.filter((_: Row, i: number) => modifiedSet.has(i)), baseName, '_changes', exportFormat)}
             disabled={modifiedSet.size === 0}
             className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
               modifiedSet.size > 0
@@ -712,6 +893,69 @@ const TableLens: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Find & Replace Panel */}
+      {showFindReplace && (
+        <div className="shrink-0 flex items-center gap-3 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 rounded-xl px-4 py-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+            <input
+              value={findQuery}
+              onChange={e => setFindQuery(e.target.value)}
+              placeholder="Find..."
+              className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-40 focus:outline-none focus:border-orange-400"
+            />
+            <input
+              value={replaceValue}
+              onChange={e => setReplaceValue(e.target.value)}
+              placeholder="Replace with..."
+              className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-40 focus:outline-none focus:border-orange-400"
+            />
+            <select
+              value={findColumnScope}
+              onChange={e => setFindColumnScope(e.target.value)}
+              className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer"
+            >
+              <option value="">All columns</option>
+              {columns.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button
+              onClick={() => setFindIsRegex(p => !p)}
+              className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                findIsRegex ? 'border-orange-400 text-orange-600 bg-orange-100 dark:bg-orange-500/20 dark:text-orange-400' : 'border-slate-200 dark:border-slate-700 text-slate-400'
+              }`}
+            >
+              .*
+            </button>
+            <button
+              onClick={() => setFindCaseSensitive(p => !p)}
+              className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                findCaseSensitive ? 'border-orange-400 text-orange-600 bg-orange-100 dark:bg-orange-500/20 dark:text-orange-400' : 'border-slate-200 dark:border-slate-700 text-slate-400'
+              }`}
+            >
+              Aa
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
+              {findMatchSet.size} match{findMatchSet.size !== 1 ? 'es' : ''}
+            </span>
+            <button
+              onClick={handleReplaceAll}
+              disabled={findMatchSet.size === 0}
+              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                findMatchSet.size > 0
+                  ? 'bg-orange-500 hover:bg-orange-600 text-white cursor-pointer'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              Replace All
+            </button>
+            <button onClick={() => setShowFindReplace(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Batch edit bar */}
       {selected.size > 0 && (
@@ -875,7 +1119,7 @@ const TableLens: React.FC = () => {
         {/* Table */}
         <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
 
-          {/* Single scroll container — thead sticky inside, no split tables */}
+          {/* Single scroll container */}
           <div
             ref={scrollRef}
             className="flex-1 overflow-auto"
@@ -891,17 +1135,45 @@ const TableLens: React.FC = () => {
                   {visibleColumns.map((col: string) => {
                     const w = colWidths[col] ?? 140;
                     const isFrozen = frozenCols.has(col);
+                    const sortIdx = getSortKeyIndex(col);
+                    const sortKey = sortIdx >= 0 ? sortKeys[sortIdx] : null;
                     return (
-                      <th key={col} style={{ width: w, minWidth: w, maxWidth: w, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col], zIndex: 21 } : {}) }} className={`relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 ${isFrozen ? 'bg-slate-100 dark:bg-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]' : 'bg-slate-50 dark:bg-slate-800'}`}>
+                      <th
+                        key={col}
+                        draggable
+                        onDragStart={(e: React.DragEvent) => { dragColRef.current = col; e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragOver={(e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== col) setDragOverCol(col); }}
+                        onDragLeave={() => { if (dragOverCol === col) setDragOverCol(null); }}
+                        onDrop={(e: React.DragEvent) => {
+                          e.preventDefault();
+                          setDragOverCol(null);
+                          const from = dragColRef.current;
+                          if (!from || from === col) return;
+                          setColOrder(prev => {
+                            const base = prev.length > 0 ? prev : columns;
+                            const next = base.filter((c: string) => c !== from);
+                            const toIdx = next.indexOf(col);
+                            next.splice(toIdx, 0, from);
+                            return next;
+                          });
+                          dragColRef.current = null;
+                        }}
+                        onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); }}
+                        style={{ width: w, minWidth: w, maxWidth: w, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col], zIndex: 21 } : {}) }}
+                        className={`relative px-3 py-2 text-left border-r border-b border-slate-200 dark:border-slate-700 last:border-r-0 ${isFrozen ? 'bg-slate-100 dark:bg-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]' : 'bg-slate-50 dark:bg-slate-800'} ${dragOverCol === col ? 'ring-2 ring-inset ring-blue-400' : ''}`}
+                      >
                         <div className="flex items-center gap-0.5 mb-1.5">
                           <button
-                            onClick={() => handleSort(col)}
+                            onClick={e => handleSort(col, e.shiftKey)}
                             className="flex items-center gap-1 group flex-1 min-w-0 text-left cursor-pointer"
                           >
-                            <span title={col} className={`font-black text-[11px] uppercase tracking-wide truncate ${sortCol === col ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
-                            <span className={`shrink-0 ${sortCol === col ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
-                              {sortCol === col
-                                ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                            <span title={col} className={`font-black text-[11px] uppercase tracking-wide truncate ${sortKey ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-slate-100'}`}>{col}</span>
+                            <span className={`shrink-0 flex items-center gap-0.5 ${sortKey ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
+                              {sortKey
+                                ? <>
+                                    {sortKey.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+                                    {sortKeys.length > 1 && <span className="text-[9px] font-black">{sortIdx + 1}</span>}
+                                  </>
                                 : <ArrowUpDown size={11} />}
                             </span>
                           </button>
@@ -928,7 +1200,6 @@ const TableLens: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {/* top padding */}
                 {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={columns.length + 2} /></tr>}
 
                 {filteredRows.length === 0 ? (
@@ -972,11 +1243,16 @@ const TableLens: React.FC = () => {
                           : undefined;
                         const isFrozen = frozenCols.has(col);
                         const frozenBg = isFrozen ? (isSelected ? 'bg-blue-50 dark:bg-slate-800' : isModified ? 'bg-amber-50 dark:bg-slate-800' : displayIdx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800' : 'bg-slate-100 dark:bg-slate-800') : '';
+                        const isFindMatch = findMatchSet.has(`${idx}:${col}`);
                         return (
                           <td
                             key={col}
                             onClick={() => { setEditCell({ row: idx, col }); setEditVal(row[col] ?? ''); }}
-                            style={{ width: colWidths[col] ?? 140, minWidth: colWidths[col] ?? 140, maxWidth: colWidths[col] ?? 140, backgroundColor: cfColor, ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col] } : {}) }}
+                            style={{
+                              width: colWidths[col] ?? 140, minWidth: colWidths[col] ?? 140, maxWidth: colWidths[col] ?? 140,
+                              backgroundColor: isFindMatch ? 'rgba(251,191,36,0.25)' : cfColor,
+                              ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col] } : {}),
+                            }}
                             className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer ${wrapText ? '' : 'overflow-hidden'} ${isFrozen ? `z-10 ${frozenBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]` : ''} ${
                               cellModified ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
                             }`}
@@ -1001,9 +1277,37 @@ const TableLens: React.FC = () => {
                   );
                 })}
 
-                {/* bottom padding */}
                 {padBot > 0 && <tr style={{ height: padBot }}><td colSpan={columns.length + 2} /></tr>}
               </tbody>
+              {/* Summary footer — inside same table so it scrolls horizontally together */}
+              {showSummary && Object.keys(summaryData).length > 0 && (
+                <tfoot className="sticky bottom-0 z-10">
+                  <tr className="bg-emerald-50 dark:bg-emerald-500/10 border-t-2 border-emerald-300 dark:border-emerald-500/30 text-[10px]">
+                    <td className="w-9 px-3 py-1.5 border-r border-emerald-200/50 dark:border-emerald-500/20 sticky left-0 z-10 bg-emerald-50 dark:bg-emerald-500/10" />
+                    <td className="w-10 px-3 py-1.5 text-right border-r border-emerald-200/50 dark:border-emerald-500/20 font-black text-emerald-500 dark:text-emerald-400 sticky left-9 z-10 bg-emerald-50 dark:bg-emerald-500/10">
+                      <Sigma size={10} />
+                    </td>
+                    {visibleColumns.map((col: string) => {
+                      const s = summaryData[col];
+                      const w = colWidths[col] ?? 140;
+                      if (!s) return <td key={col} className="px-3 py-1.5 border-r border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10" style={{ width: w, minWidth: w, maxWidth: w }} />;
+                      return (
+                        <td key={col} className="px-3 py-1.5 border-r border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10" style={{ width: w, minWidth: w, maxWidth: w }}>
+                          {s.isNumeric ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              <span title="Count" className="font-bold text-slate-500 dark:text-slate-400">{s.count}</span>
+                              {s.sum !== null && <span title="Sum" className="ml-1">Σ{s.sum.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>}
+                              {s.avg !== null && <span title="Average" className="ml-1">μ{s.avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>}
+                            </span>
+                          ) : (
+                            <span className="font-bold text-slate-400 dark:text-slate-500">{s.count}</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
 
