@@ -1,4 +1,10 @@
-# 08 — Utility Functions
+---
+paths:
+  - 'utils/**/*.ts'
+  - 'lib/**/*.ts'
+---
+
+# Utility & Library Functions
 
 ## Overview
 
@@ -29,14 +35,21 @@ lib/
 └── SQLPlanAnalyzer.ts     # SQL execution plan parsing
 ```
 
+## `utils/` vs `lib/`
+
+| | `utils/` | `lib/` |
+|---|---|---|
+| Size | Small (< 200 lines) | Large (200+ lines) |
+| Scope | Single-purpose functions | Complex analysis modules |
+| State | Stateless, pure functions | May have internal state or classes |
+| Example | `hexToRgb()`, `parseItems()` | `SQLPlanAnalyzer`, `harAnalyzer` |
+
 ## Writing Utility Functions
 
 ### Pattern: Pure Functions
 
 ```typescript
 // utils/colorMath.ts
-
-// Named exports for each function
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const match = hex.replace('#', '').match(/.{2}/g);
   if (!match) throw new Error('Invalid hex color');
@@ -46,17 +59,12 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
     b: parseInt(match[2], 16),
   };
 }
-
-export function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  // Pure computation, no side effects
-}
 ```
 
 ### Pattern: Enums + Interfaces
 
 ```typescript
 // utils/formatter.ts
-
 export enum SqlFormat {
   IN_CLAUSE = 'in',
   VALUES = 'values',
@@ -82,7 +90,6 @@ export function formatItems(items: string[], format: SqlFormat, options: Formatt
 
 ```typescript
 // utils/smartDetect.ts
-
 export interface DetectResult {
   tool: AppMode;
   confidence: number;  // 0-100
@@ -96,14 +103,14 @@ export function detectContent(input: string): DetectResult[] {
 }
 ```
 
-## `utils/` vs `lib/`
+## Naming
 
-| | `utils/` | `lib/` |
-|---|---|---|
-| Size | Small (< 200 lines) | Large (200+ lines) |
-| Scope | Single-purpose functions | Complex analysis modules |
-| State | Stateless, pure functions | May have internal state or classes |
-| Example | `hexToRgb()`, `parseItems()` | `SQLPlanAnalyzer`, `harAnalyzer` |
+- Utility files: camelCase `.ts` (e.g., `formatter.ts`, `colorMath.ts`)
+- Library files: PascalCase `.ts` (e.g., `SQLPlanAnalyzer.ts`)
+- Functions: camelCase, verb-first (e.g., `parseItems()`, `computeDiff()`)
+- Boolean checkers: `is/has/can` prefix (e.g., `isValid()`, `hasMetadata()`)
+- Converters: `to` prefix (e.g., `toDistinct()`, `toHex()`)
+- Constants: UPPER_SNAKE_CASE
 
 ## Rules
 
@@ -114,4 +121,4 @@ export function detectContent(input: string): DetectResult[] {
 5. **Guard clauses first** — validate inputs at the top, return early for edge cases
 6. **One concern per file** — `colorMath.ts` handles colors, `cronParser.ts` handles cron
 7. **Test utilities directly** — utility functions should have unit tests in `tests/`
-8. **No DOM access** — utilities must work without a browser DOM (enables `@jest-environment node`)
+8. **No DOM access** — utilities must work without a browser DOM (enables Node.js testing)

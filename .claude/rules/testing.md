@@ -1,21 +1,30 @@
-# 14 — Testing
+---
+paths:
+  - 'tests/**'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+---
+
+# Testing
 
 ## Stack
 
-| Tool | Purpose |
-|---|---|
-| Vitest 2.0 | Unit test runner (Jest-compatible API) |
-| @testing-library/react | Component rendering & querying |
-| @testing-library/jest-dom | Custom DOM matchers |
-| @testing-library/user-event | User interaction simulation |
-| @vitest/coverage-v8 | Code coverage |
-| Playwright 1.44 | E2E browser testing |
-| jsdom | Headless DOM environment |
+| Tool                        | Purpose                                |
+| --------------------------- | -------------------------------------- |
+| Vitest 2.0                  | Unit test runner (Jest-compatible API) |
+| @testing-library/react      | Component rendering & querying         |
+| @testing-library/jest-dom   | Custom DOM matchers                    |
+| @testing-library/user-event | User interaction simulation            |
+| @vitest/coverage-v8         | Code coverage                          |
+| Playwright 1.44             | E2E browser testing                    |
+| jsdom                       | Headless DOM environment               |
 
 ## Commands
 
 ```bash
-npm run test          # Vitest in watch mode
+npm run test          # Vitest run
+npm run test:watch    # Vitest in watch mode
+npm run test:coverage # Vitest with coverage
 npm run test:e2e      # Playwright E2E tests
 npm run test:e2e:ui   # Playwright with UI
 ```
@@ -31,23 +40,6 @@ test: {
 }
 ```
 
-**`tests/setup.ts`** — global mocks:
-
-```typescript
-import '@testing-library/jest-dom';
-import { vi } from 'vitest';
-
-// Mock html-query-plan
-vi.mock('html-query-plan', () => ({ showPlan: vi.fn(), drawQueryPlan: vi.fn() }));
-
-// Mock Gemini AI
-vi.mock('@google/genai', () => ({ GoogleGenAI: vi.fn() }));
-
-// Mock browser APIs
-Object.defineProperty(window, 'matchMedia', { value: vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn() })) });
-Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(), readText: vi.fn() } });
-```
-
 ## File Structure
 
 ```
@@ -60,18 +52,17 @@ tests/
 
 ### File Naming
 
-| Convention | Example |
-|---|---|
-| Unit tests | `tests/[module].test.ts` |
-| Integration tests | `tests/integration/[Component].test.tsx` |
-| Extension | `.test.ts` for pure logic, `.test.tsx` for components |
+| Convention        | Example                                               |
+| ----------------- | ----------------------------------------------------- |
+| Unit tests        | `tests/[module].test.ts`                              |
+| Integration tests | `tests/integration/[Component].test.tsx`              |
+| Extension         | `.test.ts` for pure logic, `.test.tsx` for components |
 
 ## Writing Tests
 
 ### Unit Tests (Utility Functions)
 
 ```typescript
-// tests/smartDetect.test.ts
 import { describe, it, expect } from 'vitest';
 import { detectContent } from '../utils/smartDetect';
 
@@ -97,7 +88,6 @@ describe('detectContent', () => {
 ### Integration Tests (Components)
 
 ```typescript
-// tests/integration/MarkdownPreview.test.tsx
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
@@ -131,39 +121,31 @@ it('formats SQL with selected dialect', async () => {
 
 ## Coverage Targets
 
-| Type | Target | Priority |
-|---|---|---|
-| Utility functions (`utils/`) | 80%+ | High |
-| Detection engine (`smartDetect.ts`) | 90%+ | High |
-| Complex analysis (`lib/`) | 70%+ | Medium |
-| Tool components | Key interactions only | Low |
-| Reusable UI components | Render + click | Medium |
+| Type                                | Target                | Priority |
+| ----------------------------------- | --------------------- | -------- |
+| Utility functions (`utils/`)        | 80%+                  | High     |
+| Detection engine (`smartDetect.ts`) | 90%+                  | High     |
+| Complex analysis (`lib/`)           | 70%+                  | Medium   |
+| Tool components                     | Key interactions only | Low      |
+| Reusable UI components              | Render + click        | Medium   |
 
 ## Mocking
 
-### Mock External Libraries
+### Mock External Libraries (in tests/setup.ts)
 
 ```typescript
-// Heavy libraries that don't work in jsdom
-vi.mock('html-query-plan', () => ({ showPlan: vi.fn() }));
-vi.mock('mermaid', () => ({ default: { initialize: vi.fn(), render: vi.fn() } }));
-```
+import '@testing-library/jest-dom';
+import { vi } from 'vitest';
 
-### Mock Browser APIs
+vi.mock('html-query-plan', () => ({ showPlan: vi.fn(), drawQueryPlan: vi.fn() }));
+vi.mock('@google/genai', () => ({ GoogleGenAI: vi.fn() }));
 
-```typescript
-// Clipboard
-Object.defineProperty(navigator, 'clipboard', {
-  value: { writeText: vi.fn().mockResolvedValue(undefined) },
+Object.defineProperty(window, 'matchMedia', {
+  value: vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn() })),
 });
-
-// matchMedia
-window.matchMedia = vi.fn().mockImplementation(query => ({
-  matches: false,
-  media: query,
-  addListener: vi.fn(),
-  removeListener: vi.fn(),
-}));
+Object.defineProperty(navigator, 'clipboard', {
+  value: { writeText: vi.fn(), readText: vi.fn() },
+});
 ```
 
 ### Do NOT Mock

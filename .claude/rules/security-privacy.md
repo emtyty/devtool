@@ -1,12 +1,14 @@
-# 13 — Security
+# Security & Privacy
 
 > Client-side security checks aligned with OWASP Top 10:2025, adapted for a browser-only application.
+
+Privacy-first: NO tracking, NO analytics, NO server calls, NO PII collection.
 
 ## A03 — Injection / XSS
 
 ### dangerouslySetInnerHTML
 
-The primary XSS risk in DevToolKit. Several tools generate HTML for syntax highlighting.
+The primary XSS risk. Several tools generate HTML for syntax highlighting.
 
 ```typescript
 // REQUIRED: Escape user content before embedding in HTML
@@ -31,28 +33,22 @@ const highlighted = `<span class="keyword">${escHtml(keyword)}</span>`;
 Always wrap in try-catch:
 
 ```typescript
-// Good
 try {
   const data = JSON.parse(input);
 } catch {
   setError('Invalid JSON');
 }
-
-// Bad
-const data = JSON.parse(input);  // Throws on invalid input
 ```
 
 ## A04 — Sensitive Data Exposure
 
 ### No Secrets in Client Code
 
-This is a browser app — everything is visible to the user.
-
 ```typescript
 // Bad: API key in source code
 const API_KEY = 'sk-abc123';
 
-// Good: User provides their own API key at runtime (e.g., Gemini in QueryPlanViewer)
+// Good: User provides their own API key at runtime
 const [apiKey, setApiKey] = useState('');
 // Key stored only in component state, never persisted
 ```
@@ -65,7 +61,7 @@ localStorage.setItem('devtoolkit:theme', 'dark');
 localStorage.setItem('devtoolkit:favorites', JSON.stringify(favorites));
 
 // Bad: Sensitive data in localStorage
-localStorage.setItem('apiKey', key);  // Accessible via DevTools
+localStorage.setItem('apiKey', key); // Accessible via DevTools
 ```
 
 ## A05 — Security Misconfiguration
@@ -83,28 +79,23 @@ setError(`Failed to process ${file.name}`);
 
 ### Content Security Policy
 
-DevToolKit loads external resources via CDN:
-- Google Fonts (Inter, Fira Code)
-- Font Awesome icons
-
-If deploying with CSP headers, ensure these origins are allowed.
+DevToolKit loads external resources via CDN (Google Fonts, Font Awesome). If deploying with CSP headers, ensure these origins are allowed.
 
 ## A06 — Vulnerable Dependencies
 
 Before adding a new dependency:
 
-| Check | How |
-|---|---|
-| Known CVEs | `npm audit` |
-| License | Must be MIT/Apache/BSD — NO GPL/LGPL |
-| Maintenance | Check last publish date and open issues |
-| Bundle size | bundlephobia.com |
+| Check          | How                                      |
+| -------------- | ---------------------------------------- |
+| Known CVEs     | `npm audit`                              |
+| License        | Must be MIT/Apache/BSD — NO GPL/LGPL     |
+| Maintenance    | Check last publish date and open issues  |
+| Bundle size    | bundlephobia.com — prefer < 50KB gzipped |
+| Tree-shakeable | ESM exports with `sideEffects: false`    |
 
 ## A08 — Data Integrity
 
 ### File Processing
-
-Binary file processing (EXIF, PSD, ZIP, HEIC) should validate before processing:
 
 ```typescript
 // Good: Validate file type before processing
@@ -113,7 +104,6 @@ const handleFile = async (file: File) => {
     setError(`Unsupported file type: ${file.type}`);
     return;
   }
-  // Process file...
 };
 ```
 
@@ -129,20 +119,15 @@ const isValidUrl = (url: string): boolean => {
     return false;
   }
 };
-
-// Bad: Open arbitrary URLs
-window.open(userInput);
 ```
 
 ## A09 — Privacy
-
-DevToolKit is **privacy-focused** — no tracking, no analytics, no server calls.
 
 - **NO tracking scripts** (Segment, GA, Mixpanel, etc.)
 - **NO telemetry or error reporting** to external services
 - **NO server-side processing** — all data stays in the browser
 - **NO cookies** — only localStorage for preferences
-- The only external network calls are CDN fonts/icons (loaded in `index.html`)
+- Only external network calls: CDN fonts/icons (loaded in `index.html`)
 - Exception: User-initiated AI analysis (Gemini) in QueryPlanViewer — user provides their own API key
 
 ## Rules

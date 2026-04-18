@@ -192,28 +192,32 @@ npm run mcp:inspect  # Inspect MCP server with MCP Inspector
 
 ## Coding Rules
 
-Detailed coding conventions are documented in `.coding-rules/` (18 files). Key references:
+Detailed coding conventions are documented in `.claude/rules/` (15 files). Claude Code auto-loads these; humans can read them directly for reference.
 
-| Priority | File | Topic |
-|----------|------|-------|
-| Foundation | `01-project-structure.md` | Directory layout, file placement |
-| Foundation | `02-component-patterns.md` | Component types, composition, splitting |
-| Foundation | `03-naming-conventions.md` | Files, types, functions, constants |
-| Core | `04-styling-tailwind.md` | Tailwind v4, utility classes, responsive |
-| Core | `05-state-management.md` | useState, localStorage, no Redux |
-| Core | `06-hooks-rules.md` | useMemo, useCallback, custom hooks |
-| Core | `07-dark-mode.md` | Theme toggle, CSS overrides, color palette |
-| Feature | `08-utility-functions.md` | Pure functions in `utils/` and `lib/` |
-| Feature | `09-routing-navigation.md` | Adding new tools, URL slug map |
-| Feature | `10-lazy-loading-performance.md` | Code splitting, memoization, bundle size |
-| Quality | `11-error-handling.md` | Try-catch, graceful degradation |
-| Quality | `12-formatting-linting.md` | Prettier + ESLint config |
-| Quality | `13-security.md` | XSS, privacy, no tracking |
-| Quality | `14-testing.md` | Vitest, Testing Library, Playwright |
-| Quality | `15-accessibility.md` | ARIA, keyboard nav, screen readers |
-| Reference | `16-environment-build.md` | Vite config, tsconfig, dependencies |
-| Reference | `17-anti-patterns.md` | 25 common mistakes to avoid |
-| Reference | `18-review-checklist.md` | PR review guide (~70 check items) |
+**Global** (always loaded):
+
+| File | Topic |
+|------|-------|
+| `project-structure.md` | Directory layout, naming conventions |
+| `component-patterns.md` | Component types, composition, splitting |
+| `anti-patterns.md` | 25 common mistakes and correct alternatives |
+| `error-handling.md` | Try-catch, graceful degradation |
+| `formatting-build.md` | Prettier, ESLint, TypeScript, Vite config |
+| `security-privacy.md` | XSS, privacy, no tracking |
+| `review-checklist.md` | PR review guide (~70 check items) |
+
+**Path-scoped** (load when editing matching files):
+
+| File | Scope |
+|------|-------|
+| `styling-dark-mode.md` | `components/**/*.tsx`, `index.css` |
+| `state-hooks.md` | `components/**/*.tsx`, `App.tsx` |
+| `accessibility.md` | `components/**/*.tsx` |
+| `performance.md` | `components/**/*.tsx`, `App.tsx`, `vite.config.ts` |
+| `routing-navigation.md` | `App.tsx`, `types.ts`, `components/**/*.tsx` |
+| `utility-functions.md` | `utils/**/*.ts`, `lib/**/*.ts` |
+| `testing.md` | `tests/**`, `**/*.test.*` |
+| `mcp-server.md` | `mcp/**` |
 
 ### Quick Conventions Summary
 
