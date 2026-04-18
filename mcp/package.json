@@ -54,15 +54,17 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@faker-js/faker": "^10.3.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "zod": "^3.24.4",
-    "sql-formatter": "^15.7.2",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "jsonrepair": "^3.13.2",
-    "@faker-js/faker": "^10.3.0"
+    "sql-formatter": "^15.7.2",
+    "zod": "^3.24.4"
   },
   "devDependencies": {
+    "@types/node": "^22.14.0",
     "tsup": "^8.4.0",
-    "typescript": "~5.8.2",
-    "@types/node": "^22.14.0"
+    "typescript": "~5.8.2"
   }
 }

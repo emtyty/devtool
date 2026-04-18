@@ -29,6 +29,9 @@ import { tool as ipSubnet } from "./tools/ip-subnet.js";
 import { tool as timestampCalc } from "./tools/timestamp-calc.js";
 import { tool as csvTransform } from "./tools/csv-transform.js";
 import { tool as generateDiagram } from "./tools/generate-diagram.js";
+import { tool as parseGitDiff } from "./tools/parse-git-diff.js";
+import { tool as parseDbSchema } from "./tools/parse-db-schema.js";
+import { tool as validateJsonSchema } from "./tools/validate-json-schema.js";
 
 const ALL_TOOLS: Tool[] = [
   repairJson,
@@ -57,13 +60,16 @@ const ALL_TOOLS: Tool[] = [
   timestampCalc,
   csvTransform,
   generateDiagram,
+  parseGitDiff,
+  parseDbSchema,
+  validateJsonSchema,
 ];
 
 const server = new McpServer({
   name: "devtoolkit-mcp",
   version: "0.1.0",
   instructions: [
-    "DevToolKit MCP provides 26 developer utility tools that compute exact results.",
+    "DevToolKit MCP provides 29 developer utility tools that compute exact results.",
     "",
     "WHEN TO USE THESE TOOLS instead of answering natively:",
     "- Hashing (MD5, SHA-256, etc.) — AI cannot compute hashes, use hash_text",
@@ -79,6 +85,9 @@ const server = new McpServer({
     "- Color conversion with WCAG contrast — needs exact math, use convert_color",
     "- JSON repair — needs parser, use repair_json",
     "- SQL formatting — needs formatter, use format_sql",
+    "- Git diff / patch analysis — AI mislabels renames/binary, use parse_git_diff",
+    "- DB schema → ER diagram (SQL DDL / Prisma / dbdiagram) — AI miscounts relations, use parse_db_schema",
+    "- JSON Schema or OpenAPI validation — AI misses required/format/enum errors, use validate_json_schema",
     "",
     "GENERAL RULE: If a task requires exact computation, cryptographic randomness,",
     "or precise parsing — use the appropriate devtoolkit tool rather than guessing.",
