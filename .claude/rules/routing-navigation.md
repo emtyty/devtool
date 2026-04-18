@@ -13,25 +13,33 @@ DevToolKit uses **custom URL routing without React Router**. Navigation is state
 
 ## Route Map
 
-Routes are defined as two lookup maps:
+`AppMode` type and slug map both live in `App.tsx`:
 
 ```typescript
+type AppMode = 'smartdetect' | 'sqlformatter' | 'jsontools' | 'jwtdecode' | ...;
+
 const MODE_TO_SLUG: Record<AppMode, string> = {
-  detect: '',
-  sql: 'sql-formatter',
-  json: 'json',
-  jwt: 'jwt-decoder',
+  smartdetect: '',
+  sqlformatter: 'sql-formatter',
+  jsontools: 'json',
+  jwtdecode: 'jwt-decoder',
   // ... all tools
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
-  Object.entries(MODE_TO_SLUG).map(([k, v]) => [v, k as AppMode])
+  Object.entries(MODE_TO_SLUG).map(([mode, slug]) => [slug, mode as AppMode])
 );
 ```
 
 ## Navigation Pattern
 
 ```typescript
+function getModeFromPath(): AppMode {
+  const slug = window.location.pathname.slice(1);
+  if (!slug) return 'smartdetect';
+  return SLUG_TO_MODE[slug] ?? 'smartdetect';
+}
+
 const navigateTo = (mode: AppMode) => {
   setMode(mode);
   const slug = MODE_TO_SLUG[mode];
@@ -40,39 +48,34 @@ const navigateTo = (mode: AppMode) => {
 
 // Handle browser back/forward
 useEffect(() => {
-  const handlePopState = () => {
-    const slug = window.location.pathname.slice(1);
-    setMode(SLUG_TO_MODE[slug] ?? 'detect');
-  };
+  const handlePopState = () => setMode(getModeFromPath());
   window.addEventListener('popstate', handlePopState);
   return () => window.removeEventListener('popstate', handlePopState);
 }, []);
 
 // Initialize from URL on mount
-useEffect(() => {
-  const slug = window.location.pathname.slice(1);
-  if (slug && SLUG_TO_MODE[slug]) {
-    setMode(SLUG_TO_MODE[slug]);
-  }
-}, []);
+const [mode, setMode] = useState<AppMode>(getModeFromPath);
 ```
 
 ## Adding a New Tool
 
 When adding a new tool, update these in `App.tsx`:
 
-1. **Add to `AppMode` type** in `types.ts`
+1. **Add to `AppMode` union type** (defined in `App.tsx`, not `types.ts`)
 2. **Add slug mapping** in `MODE_TO_SLUG`
 3. **Add lazy import**: `const NewTool = lazy(() => import('./components/NewTool'));`
-4. **Add render case** in the main switch/conditional rendering
-5. **Add sidebar entry** with icon and label
+4. **Add render case** in the main conditional rendering
+5. **Add sidebar entry** with icon and label in `NAV_ITEMS`
 
 ```typescript
-// types.ts
-export type AppMode = 'detect' | 'sql' | 'json' | ... | 'new-tool';
-
 // App.tsx
-const MODE_TO_SLUG = { ...existing, 'new-tool': 'new-tool' };
+type AppMode = '...existing' | 'newtool';
+
+const MODE_TO_SLUG: Record<AppMode, string> = {
+  ...existing,
+  newtool: 'new-tool',  // kebab-case URL slug
+};
+
 const NewTool = lazy(() => import('./components/NewTool'));
 ```
 
@@ -80,8 +83,8 @@ const NewTool = lazy(() => import('./components/NewTool'));
 
 1. **No React Router** — use the existing `pushState` + slug map pattern
 2. **Clean URL paths** — use kebab-case slugs (e.g., `/sql-formatter`, `/jwt-decoder`)
-3. **Default route is Smart Detect** — `/` maps to the detect mode
-4. **Unknown paths redirect to `/`** — fallback to Smart Detect for any unrecognized slug
+3. **Default route is Smart Detect** — `/` maps to `'smartdetect'`
+4. **Unknown paths redirect to `/`** — fallback to `'smartdetect'` for any unrecognized slug
 5. **Every tool must have a URL** — all tools are deep-linkable
 6. **Browser back/forward must work** — handled by the `popstate` listener
 7. **No nested routes** — all tools are top-level (single segment paths only)

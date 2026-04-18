@@ -40,14 +40,26 @@ useEffect(() => {
 }, [dark]);
 ```
 
-**Current localStorage keys:**
+**localStorage key convention:**
+
+All keys must use the `devtoolkit:` prefix. For tool-specific storage, use `devtoolkit:<tool-name>` or `devtoolkit:<tool-name>:<purpose>[:v<n>]` for versioned schemas.
+
+**Shared keys (App.tsx):**
 
 | Key | Type | Purpose |
 |---|---|---|
 | `devtoolkit:theme` | `'light' \| 'dark'` | Theme preference |
 | `devtoolkit:favorites` | `JSON string[]` | Favorite tools (max 5) |
 | `devtoolkit:hidden-tools` | `JSON string[]` | Hidden tools |
-| `devtoolkit:split:*` | `number` | ResizableSplit panel widths |
+
+**Tool-specific key examples:**
+
+- `devtoolkit:diagram-history` — DiagramGenerator history
+- `devtoolkit:waterfall-rules` — NetworkWaterfallAnalyzer rules
+- `devtoolkit:pdf-maker:settings:v1` — PdfMaker settings (versioned)
+- `devtoolkit:file-converter:settings:v1` — FileConverter settings (versioned)
+
+**Note**: A couple of legacy keys (e.g., `mockgen:*` in MockDataGenerator) predate this convention and should be migrated to `devtoolkit:mock-data:*` when touched.
 
 ### 3. Derived State (`useMemo`)
 
