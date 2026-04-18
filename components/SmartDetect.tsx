@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { detectAll, detectFile, getExtHint, DetectResult } from '../utils/smartDetect';
-import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare, Hash, Shield } from 'lucide-react';
+import { Wand2, Upload, ArrowRight, Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Clipboard, X, GitCompare, Hash, Shield, FileDiff } from 'lucide-react';
 
 interface SmartDetectProps {
   onDetect: (tool: string, data: string) => void;
@@ -15,6 +15,8 @@ const TOOL_GRID: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: 'jsontools',     label: 'JSON Tools',        icon: <Braces size={18} /> },
   { id: 'markdown',      label: 'Markdown',          icon: <FileText size={18} /> },
   { id: 'stacktrace',    label: 'Stack Trace',       icon: <AlertTriangle size={18} /> },
+  { id: 'dbschema',      label: 'DB Schema',         icon: <Database size={18} /> },
+  { id: 'gitdiff',       label: 'Git Diff Viewer',   icon: <FileDiff size={18} /> },
   { id: 'mockdata',      label: 'Mock Data',         icon: <Database size={18} /> },
   { id: 'uuidgen',       label: 'UUID / ULID',       icon: <Hash size={18} /> },
   { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={18} /> },
