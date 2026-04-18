@@ -16,6 +16,7 @@ const TOOL_CATEGORIES = [
       { name: 'yaml_json', desc: 'Convert between YAML and JSON' },
       { name: 'json_to_types', desc: 'JSON → TypeScript interfaces, Zod schemas, JSON Schema' },
       { name: 'generate_diagram', desc: 'Plain English → Mermaid flowchart & sequence diagram' },
+      { name: 'parse_db_schema', desc: 'SQL DDL / Prisma / dbdiagram → tables + relations + ER diagram' },
     ],
   },
   {
@@ -29,6 +30,7 @@ const TOOL_CATEGORIES = [
       { name: 'convert_color', desc: 'HEX/RGB/HSL/OKLCH with WCAG contrast grades' },
       { name: 'url_parse', desc: 'Parse URLs into components, manipulate queries' },
       { name: 'http_status', desc: 'HTTP status codes, headers, MIME types + RFC refs' },
+      { name: 'parse_git_diff', desc: 'Unified diff / patch → per-file status, hunks, line numbers' },
     ],
   },
   {
@@ -53,6 +55,7 @@ const TOOL_CATEGORIES = [
       { name: 'string_case', desc: 'camelCase, snake_case, kebab-case, PascalCase...' },
       { name: 'ip_subnet', desc: 'IPv4 subnet calc — CIDR, masks, host range' },
       { name: 'timestamp_calc', desc: 'Date math, duration diff, timezone conversion' },
+      { name: 'validate_json_schema', desc: 'Validate JSON vs JSON Schema / OpenAPI 3.x / Swagger 2.x (ajv)' },
     ],
   },
   {
@@ -145,6 +148,9 @@ const COMPARISON = [
   { capability: 'Date arithmetic', ai: 'Often wrong', mcp: 'Millisecond exact' },
   { capability: 'CSV parsing (quoted fields)', ai: 'Approximates', mcp: 'RFC-compliant' },
   { capability: 'Line-by-line diff', ai: 'Misses changes', mcp: 'LCS algorithm' },
+  { capability: 'Git diff parsing', ai: 'Mislabels renames/binary', mcp: 'Unified-diff grammar' },
+  { capability: 'DB schema → ER diagram', ai: 'Miscounts relations', mcp: 'Exact SQL/Prisma parsing' },
+  { capability: 'JSON Schema validation', ai: 'Misses required/enum', mcp: 'ajv strict validation' },
 ];
 
 type ExampleGroup = { category: string; items: { prompt: string; tool: string }[] };
@@ -162,6 +168,7 @@ const EXAMPLE_GROUPS: ExampleGroup[] = [
       { prompt: 'Convert this YAML to JSON: name: John\\nage: 30',            tool: 'yaml_json' },
       { prompt: 'Convert {"id":1,"name":"John"} to TypeScript interface',      tool: 'json_to_types' },
       { prompt: 'Draw: User sends request to API Gateway, forwards to Auth Service, queries Postgres', tool: 'generate_diagram' },
+      { prompt: 'Visualize this Prisma schema as an ER diagram',              tool: 'parse_db_schema' },
     ],
   },
   {
@@ -173,6 +180,7 @@ const EXAMPLE_GROUPS: ExampleGroup[] = [
       { prompt: 'Convert #3B82F6 to RGB and check contrast with white',       tool: 'convert_color' },
       { prompt: 'Parse URL: https://example.com/api/users?page=2&limit=10',   tool: 'url_parse' },
       { prompt: 'What is HTTP status 429?',                                    tool: 'http_status' },
+      { prompt: 'Parse this git diff and list files that were renamed',        tool: 'parse_git_diff' },
     ],
   },
   {
@@ -193,6 +201,7 @@ const EXAMPLE_GROUPS: ExampleGroup[] = [
       { prompt: 'Convert getUserHTTPResponse to snake_case',                   tool: 'string_case' },
       { prompt: 'Calculate subnet for 192.168.1.0/24',                         tool: 'ip_subnet' },
       { prompt: 'What is 2024-01-15 + 90 days?',                              tool: 'timestamp_calc' },
+      { prompt: 'Validate this payload against the User schema in my OpenAPI spec', tool: 'validate_json_schema' },
     ],
   },
 ];
@@ -260,7 +269,7 @@ const McpPage: React.FC = () => {
             devtoolkit-mcp
           </h2>
           <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            26 developer utilities as an MCP server for AI-assisted workflows.
+            29 developer utilities as an MCP server for AI-assisted workflows.
             Give your AI assistant <strong className="text-slate-700 dark:text-slate-200">real tools</strong> instead of guessing.
           </p>
         </div>
@@ -316,7 +325,7 @@ const McpPage: React.FC = () => {
       <section className="space-y-6">
         <div className="text-center">
           <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-2">Available Tools</div>
-          <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">26 Tools. 5 Categories.</h3>
+          <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">29 Tools. 5 Categories.</h3>
         </div>
         <div className="space-y-4">
           {TOOL_CATEGORIES.map(cat => {
@@ -448,7 +457,7 @@ const McpPage: React.FC = () => {
               onClick={() => setShowAllExamples(true)}
               className="text-xs font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors cursor-pointer"
             >
-              Show all 25 examples by category →
+              Show all 28 examples by category →
             </button>
           </div>
         ) : (
@@ -488,7 +497,7 @@ const McpPage: React.FC = () => {
         <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Get Started</div>
         <p className="text-white font-bold text-lg leading-snug">
           Give your AI real developer tools.<br />
-          <span className="text-slate-400 font-normal text-sm">One command. 26 tools. Zero config.</span>
+          <span className="text-slate-400 font-normal text-sm">One command. 29 tools. Zero config.</span>
         </p>
         <div className="inline-flex items-center gap-3 bg-slate-800 rounded-xl px-5 py-3">
           <code className="text-sm text-emerald-400 font-mono font-bold">npx -y devtoolkit-mcp</code>

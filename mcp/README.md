@@ -1,6 +1,6 @@
 # devtoolkit-mcp
 
-26 developer utilities as an MCP server for AI-assisted workflows. JSON repair, SQL formatting, hashing, encoding, UUID generation, regex testing, CSV transforms, subnet calculation, diagram generation, and more.
+29 developer utilities as an MCP server for AI-assisted workflows. JSON repair, SQL formatting, hashing, encoding, UUID generation, regex testing, CSV transforms, subnet calculation, diagram generation, git diff parsing, DB schema visualization, JSON schema validation, and more.
 
 **No API keys. No network requests. Everything runs locally.**
 
@@ -91,7 +91,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-## Available Tools (26)
+## Available Tools (29)
 
 ### Data Transform
 | Tool | Description |
@@ -105,6 +105,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 | `yaml_json` | Convert between YAML and JSON |
 | `json_to_types` | Convert JSON to TypeScript interfaces, Zod schemas, or JSON Schema |
 | `generate_diagram` | Generate Mermaid flowcharts and sequence diagrams from plain English descriptions |
+| `parse_db_schema` | Parse SQL DDL / Prisma / dbdiagram.io schema into tables + relationships and generate Mermaid ER diagram |
 
 ### Decode & Parse
 | Tool | Description |
@@ -115,6 +116,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 | `convert_color` | Convert colors (HEX/RGB/HSL/OKLCH) with WCAG contrast grades |
 | `url_parse` | Parse URLs into components, manipulate query parameters |
 | `http_status` | Look up HTTP status codes, headers, and MIME types with RFC references |
+| `parse_git_diff` | Parse `git diff` / `git show` / unified-patch output into structured JSON (per-file status, hunks, line numbers) |
 
 ### Crypto & Random
 | Tool | Description |
@@ -133,6 +135,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 | `string_case` | Convert between camelCase, snake_case, kebab-case, PascalCase, CONSTANT_CASE, and more |
 | `ip_subnet` | IPv4 subnet calculator — CIDR, masks, host range, membership check |
 | `timestamp_calc` | Date math — add/subtract durations, diff between dates, timezone conversion |
+| `validate_json_schema` | Validate JSON against JSON Schema / OpenAPI 3.x / Swagger 2.x — precise per-field errors via ajv |
 
 ### Smart Detection
 | Tool | Description |
@@ -187,6 +190,18 @@ Generate 20 mock users with id, name, email, salary as CSV, then filter salary >
 Draw diagram: User sends request to API Gateway, forwards to Auth Service, queries Postgres
 ```
 
+```
+Parse this git diff and tell me which files were renamed: <paste diff>
+```
+
+```
+Visualize this Prisma schema as an ER diagram: <paste schema>
+```
+
+```
+Validate this payload against the User schema in my OpenAPI spec
+```
+
 ## Why MCP Tools vs Native AI?
 
 These tools provide capabilities that AI models **cannot do natively**:
@@ -202,6 +217,9 @@ These tools provide capabilities that AI models **cannot do natively**:
 | CSV parsing (quoted fields) | Approximates | RFC-compliant |
 | Line-by-line diff | Misses changes | LCS algorithm |
 | Diagram generation | Approximates syntax | Valid Mermaid output |
+| Git diff parsing | Mislabels renames/binary | Canonical unified-diff grammar |
+| DB schema → ER diagram | Miscounts relations | Exact SQL/Prisma/dbdiagram parsing |
+| JSON Schema validation | Misses required/enum/format | Strict ajv validation |
 
 ## Requirements
 
