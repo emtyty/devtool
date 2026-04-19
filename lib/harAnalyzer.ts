@@ -190,7 +190,8 @@ export function parseHar(text: string, rules: Rule[]): { entries: HarEntry[]; t0
 
     const url = e.request?.url ?? '';
     let pathname = url, host = '';
-    try { const u = new URL(url); pathname = u.pathname + u.search; host = u.host; } catch {}
+    // Invalid/relative URLs keep the raw string as pathname — they still render, just without host split
+    try { const u = new URL(url); pathname = u.pathname + u.search; host = u.host; } catch { /* keep pathname = url */ }
 
     const responseSize = Math.max(0, e.response?.content?.size ?? e.response?.bodySize ?? 0);
     const mimeType: string = e.response?.content?.mimeType ?? '';

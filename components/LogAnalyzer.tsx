@@ -542,6 +542,7 @@ export default function LogAnalyzer({ initialData }: { initialData?: string | nu
             {rawInput && (
               <button
                 onClick={clearInput}
+                aria-label="Clear input"
                 className="text-[10px] font-black text-slate-400 uppercase px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
               >
                 <X size={11} className="inline -mt-0.5" />
@@ -636,7 +637,7 @@ export default function LogAnalyzer({ initialData }: { initialData?: string | nu
               className="w-full pl-9 pr-3 py-2 text-sm font-mono rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white text-slate-700 placeholder:text-slate-300"
             />
             {searchText && (
-              <button onClick={() => setSearchText('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <button onClick={() => setSearchText('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 <X size={14} />
               </button>
             )}

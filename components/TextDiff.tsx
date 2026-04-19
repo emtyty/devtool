@@ -473,7 +473,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
                 className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
                 <Upload size={12} /> Import file
               </button>
-              <button type="button" title="Clear original text" onClick={() => setLeft('')}
+              <button type="button" title="Clear original text" aria-label="Clear original text" onClick={() => setLeft('')}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                 <Eraser size={12} />
               </button>
@@ -498,7 +498,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
         </div>
 
         {/* Swap button */}
-        <button type="button" onClick={() => { setLeft(right); setRight(left); }} title="Swap A ↔ B"
+        <button type="button" onClick={() => { setLeft(right); setRight(left); }} title="Swap A ↔ B" aria-label="Swap A and B"
           className="hidden lg:flex absolute left-1/2 top-[calc(50%+0.75rem)] -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8 items-center justify-center bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:shadow-md transition-all">
           <ArrowLeftRight size={14} />
         </button>
@@ -512,7 +512,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
                 className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
                 <Upload size={12} /> Import file
               </button>
-              <button type="button" title="Clear modified text" onClick={() => setRight('')}
+              <button type="button" title="Clear modified text" aria-label="Clear modified text" onClick={() => setRight('')}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                 <Eraser size={12} />
               </button>
@@ -566,6 +566,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
                 <button type="button" onClick={() => setActiveHunk(h => Math.max(0, h - 1))}
                   disabled={activeHunk === 0}
                   title="Previous change"
+                  aria-label="Previous change"
                   className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
                   <ChevronUp size={14} />
                 </button>
@@ -575,6 +576,7 @@ export default function TextDiff({ initialData }: { initialData?: string | null 
                 <button type="button" onClick={() => setActiveHunk(h => Math.min(hunkCount - 1, h + 1))}
                   disabled={activeHunk === hunkCount - 1}
                   title="Next change"
+                  aria-label="Next change"
                   className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
                   <ChevronDown size={14} />
                 </button>

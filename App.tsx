@@ -345,7 +345,8 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetch(zeroperlWasmUrl).catch(console.error);
+    // Best-effort preload; if it fails, the metadata tool will fetch on demand
+    fetch(zeroperlWasmUrl).catch(() => {});
   }, []);
 
   const processFile = async (file: File) => {
@@ -415,6 +416,7 @@ const App: React.FC = () => {
             onClick={toggleTheme}
             className="theme-toggle"
             aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={dark}
             title={dark ? 'Light mode' : 'Dark mode'}
           >
             <span className="theme-toggle-knob">
@@ -483,6 +485,7 @@ const App: React.FC = () => {
                     <button
                       onClick={() => toggleFavorite(favId)}
                       title="Remove from favorites"
+                      aria-label="Remove from favorites"
                       className="pr-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-300 transition-all cursor-pointer shrink-0"
                     >
                       <Star size={13} className="fill-amber-400" />
@@ -526,6 +529,7 @@ const App: React.FC = () => {
                       <button
                         onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
                         title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                        aria-label={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
                         className={`transition-all ${starClass}`}
                       >
                         <Star size={13} className={isFav ? 'fill-amber-400' : ''} />

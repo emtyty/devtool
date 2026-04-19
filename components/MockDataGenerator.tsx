@@ -328,7 +328,7 @@ const TreeNodeRow: React.FC<{
       <div className="flex flex-wrap lg:flex-nowrap items-center py-2 border-b border-slate-100 hover:bg-slate-50 gap-y-1">
         <div className="flex-1 flex items-center" style={{ paddingLeft: `${Math.max(0, node.depth - 1) * 1.5}rem` }}>
           {isComplex ? (
-            <button onClick={() => setExpanded(!expanded)} className="p-1 mr-1 text-slate-400 hover:text-slate-600">
+            <button onClick={() => setExpanded(!expanded)} aria-label={expanded ? 'Collapse' : 'Expand'} className="p-1 mr-1 text-slate-400 hover:text-slate-600">
               {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
           ) : <div className="w-6" />}
@@ -433,22 +433,44 @@ const PRESETS = {
 const DEFAULT_FIELDS: MockField[] = PRESETS.ecommerce.map((f, i) => ({ ...f, id: String(i + 1) }));
 const newId = () => Math.random().toString(36).substring(2, 9);
 
+const PRESETS_KEY = 'devtoolkit:mock-data:saved-presets';
+const LAST_PRESET_KEY = 'devtoolkit:mock-data:last-preset';
+const LEGACY_PRESETS_KEY = 'mockgen:savedPresets';
+const LEGACY_LAST_PRESET_KEY = 'mockgen:lastPreset';
+
+// One-time read from legacy `mockgen:*` keys so saved user presets survive the
+// rename to the `devtoolkit:` prefix convention.
+function readPresetsWithMigration(): { presets: string | null; lastPreset: string | null } {
+  const presets = localStorage.getItem(PRESETS_KEY) ?? localStorage.getItem(LEGACY_PRESETS_KEY);
+  const lastPreset = localStorage.getItem(LAST_PRESET_KEY) ?? localStorage.getItem(LEGACY_LAST_PRESET_KEY);
+  if (presets && !localStorage.getItem(PRESETS_KEY)) {
+    localStorage.setItem(PRESETS_KEY, presets);
+    localStorage.removeItem(LEGACY_PRESETS_KEY);
+  }
+  if (lastPreset && !localStorage.getItem(LAST_PRESET_KEY)) {
+    localStorage.setItem(LAST_PRESET_KEY, lastPreset);
+    localStorage.removeItem(LEGACY_LAST_PRESET_KEY);
+  }
+  return { presets, lastPreset };
+}
+
 // ---- Main Component ----
 
 export default function MockDataGenerator() {
   const [fields, setFields] = useState<MockField[]>(() => {
     try {
-      const saved = localStorage.getItem('mockgen:savedPresets');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const { presets, lastPreset } = readPresetsWithMigration();
+      if (presets) {
+        const parsed = JSON.parse(presets);
         const keys = Object.keys(parsed);
         if (keys.length > 0) {
-          const lastActive = localStorage.getItem('mockgen:lastPreset');
-          const keyToLoad = lastActive && parsed[lastActive] ? lastActive : keys[keys.length - 1];
+          const keyToLoad = lastPreset && parsed[lastPreset] ? lastPreset : keys[keys.length - 1];
           return parsed[keyToLoad].map((f: MockField) => ({ ...f, id: newId() }));
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      // Corrupted preset JSON — fall back to defaults rather than crashing the tool
+    }
     return DEFAULT_FIELDS;
   });
 
@@ -467,7 +489,7 @@ export default function MockDataGenerator() {
 
   const [savedPresets, setSavedPresets] = useState<Record<string, MockField[]>>(() => {
     try {
-      const saved = localStorage.getItem('mockgen:savedPresets');
+      const saved = localStorage.getItem(PRESETS_KEY) ?? localStorage.getItem(LEGACY_PRESETS_KEY);
       return saved ? JSON.parse(saved) : {};
     } catch { return {}; }
   });
@@ -477,19 +499,19 @@ export default function MockDataGenerator() {
     if (!name) return;
     const newPresets = { ...savedPresets, [name]: fields };
     setSavedPresets(newPresets);
-    localStorage.setItem('mockgen:savedPresets', JSON.stringify(newPresets));
-    localStorage.setItem('mockgen:lastPreset', name);
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(newPresets));
+    localStorage.setItem(LAST_PRESET_KEY, name);
   };
 
   const loadSavedPreset = (key: string) => {
     if (!savedPresets[key]) return;
     setFields(savedPresets[key].map(f => ({ ...f, id: newId() })));
-    localStorage.setItem('mockgen:lastPreset', key);
+    localStorage.setItem(LAST_PRESET_KEY, key);
   };
 
   const loadBuiltinPreset = (key: keyof typeof PRESETS) => {
     setFields(PRESETS[key].map(f => ({ ...f, id: newId() })));
-    localStorage.removeItem('mockgen:lastPreset');
+    localStorage.removeItem(LAST_PRESET_KEY);
   };
 
   const exportSchema = () => {
@@ -706,13 +728,13 @@ export default function MockDataGenerator() {
                 className="flex items-center gap-1.5 px-2.5 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 text-[10px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors uppercase tracking-widest">
                 <Plus size={12} /> Add
               </button>
-              <button onClick={savePreset} title="Save preset" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+              <button onClick={savePreset} title="Save preset" aria-label="Save preset" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                 <Save size={14} />
               </button>
-              <button onClick={exportSchema} title="Export schema" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+              <button onClick={exportSchema} title="Export schema" aria-label="Export schema" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                 <Download size={14} />
               </button>
-              <label title="Import schema" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer">
+              <label title="Import schema" aria-label="Import schema" className="p-2 lg:p-1.5 min-h-[44px] lg:min-h-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer">
                 <Upload size={14} />
                 <input type="file" accept=".json" className="hidden" onChange={importSchema} />
               </label>
@@ -837,7 +859,8 @@ export default function MockDataGenerator() {
                     <div className="col-span-1 flex justify-center">
                       <button onClick={() => removeField(field.id)}
                         className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                        title="Remove field">
+                        title="Remove field"
+                        aria-label="Remove field">
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -866,7 +889,8 @@ export default function MockDataGenerator() {
                       </select>
                       <button onClick={() => removeField(field.id)}
                         className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                        title="Remove field">
+                        title="Remove field"
+                        aria-label="Remove field">
                         <Trash2 size={14} />
                       </button>
                     </div>

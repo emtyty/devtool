@@ -96,6 +96,7 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
         {value ? (
           <button
             onMouseDown={e => { e.preventDefault(); onChange(''); setOpen(false); }}
+            aria-label="Clear"
             className="absolute right-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
           >
             <X size={10} />
@@ -781,7 +782,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
               className="pl-7 pr-7 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-40 focus:outline-none focus:border-blue-400 focus:w-56 transition-all"
             />
             {globalSearch && (
-              <button onClick={() => setGlobalSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+              <button onClick={() => setGlobalSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
                 <X size={10} />
               </button>
             )}
@@ -791,6 +792,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
             onClick={handleUndo}
             disabled={!history.canUndo}
             title={history.canUndo ? `Undo: ${history.undoLabel}` : 'Nothing to undo'}
+            aria-label={history.canUndo ? `Undo: ${history.undoLabel}` : 'Nothing to undo'}
             className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
               history.canUndo
                 ? 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -803,6 +805,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
             onClick={handleRedo}
             disabled={!history.canRedo}
             title={history.canRedo ? `Redo: ${history.redoLabel}` : 'Nothing to redo'}
+            aria-label={history.canRedo ? `Redo: ${history.redoLabel}` : 'Nothing to redo'}
             className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
               history.canRedo
                 ? 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -950,7 +953,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
             >
               Replace All
             </button>
-            <button onClick={() => setShowFindReplace(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+            <button onClick={() => setShowFindReplace(false)} aria-label="Close find and replace" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
               <X size={14} />
             </button>
           </div>
@@ -1027,12 +1030,12 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
                   )}
                   <div className="flex items-center gap-1">
                     {CF_COLORS.map(c => (
-                      <button key={c.label} title={c.label} onClick={() => updateCFRule(i, 'color', c.cell)}
+                      <button key={c.label} title={c.label} aria-label={c.label} onClick={() => updateCFRule(i, 'color', c.cell)}
                         style={{ backgroundColor: c.swatch, outline: rule.color === c.cell ? `2px solid ${c.swatch}` : undefined, outlineOffset: '2px' }}
                         className="w-4 h-4 rounded-full cursor-pointer transition-transform hover:scale-110" />
                     ))}
                   </div>
-                  <button onClick={() => removeCFRule(i)} className="text-slate-300 dark:text-slate-600 hover:text-red-400 cursor-pointer transition-colors ml-1">
+                  <button onClick={() => removeCFRule(i)} aria-label="Remove rule" className="text-slate-300 dark:text-slate-600 hover:text-red-400 cursor-pointer transition-colors ml-1">
                     <X size={12} />
                   </button>
                 </div>
@@ -1179,6 +1182,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
                           </button>
                           <button
                             onClick={(e: React.MouseEvent) => { e.stopPropagation(); setColMenuCol(col); setColMenuRect(e.currentTarget.getBoundingClientRect()); }}
+                            aria-label="Column options"
                             className="shrink-0 p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                           >
                             <MoreHorizontal size={11} />

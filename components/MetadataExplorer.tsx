@@ -87,10 +87,11 @@ const MetadataExplorer: React.FC<MetadataExplorerProps> = ({ data }) => {
           >
             {groups.map(g => <option key={g} value={g}>{g === 'All' ? 'All Channels' : `${g} Channel`}</option>)}
           </select>
-          <button 
+          <button
             onClick={exportJson}
             className="p-2.5 bg-white hover:bg-slate-50 rounded-xl transition-colors border border-slate-200 text-slate-600 shadow-sm"
             title="Export JSON to file"
+            aria-label="Export JSON to file"
           >
             <i className="fa-solid fa-download"></i>
           </button>
@@ -128,8 +129,9 @@ const MetadataExplorer: React.FC<MetadataExplorerProps> = ({ data }) => {
                           {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                         </td>
                         <td className="px-8 py-4 text-right">
-                          <button 
+                          <button
                             onClick={() => copy(String(value))}
+                            aria-label="Copy value"
                             className="text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all transform group-hover:scale-110"
                           >
                             <i className="fa-solid fa-copy text-xs"></i>

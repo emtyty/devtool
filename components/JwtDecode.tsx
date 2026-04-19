@@ -17,12 +17,12 @@ function highlightJson(json: string): string {
   return safe.replace(
     /("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|(true|false|null)|(-?\d+\.?\d*(?:[eE][+-]?\d+)?)|([{}[\]])/g,
     (_m, key, colon, strVal, bool, num, brace) => {
-      if (key)    return `<span style="color:#93c5fd">${key}</span>${colon}`;
-      if (strVal) return `<span style="color:#86efac">${strVal}</span>`;
-      if (bool === 'true' || bool === 'false') return `<span style="color:#c4b5fd">${bool}</span>`;
-      if (bool === 'null') return `<span style="color:#94a3b8">${bool}</span>`;
-      if (num)    return `<span style="color:#fdba74">${num}</span>`;
-      if (brace)  return `<span style="color:#cbd5e1">${brace}</span>`;
+      if (key)    return `<span class="text-blue-300">${key}</span>${colon}`;
+      if (strVal) return `<span class="text-green-300">${strVal}</span>`;
+      if (bool === 'true' || bool === 'false') return `<span class="text-violet-300">${bool}</span>`;
+      if (bool === 'null') return `<span class="text-slate-400">${bool}</span>`;
+      if (num)    return `<span class="text-orange-300">${num}</span>`;
+      if (brace)  return `<span class="text-slate-300">${brace}</span>`;
       return _m;
     }
   );
@@ -45,7 +45,7 @@ function PayloadBlock({ payload }: { payload: Record<string, unknown> }) {
   // Highlight JSON parts, then colorize // comments separately
   const highlighted = highlightJson(annotated).replace(
     /(\/\/ [^<\n]+)/g,
-    '<span style="color:#cbd5e1;font-style:italic">$1</span>'
+    '<span class="text-slate-300 italic">$1</span>'
   );
 
   return (

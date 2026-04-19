@@ -76,7 +76,7 @@ const PdfMaker: React.FC = () => {
       try {
         const hidden: string[] = JSON.parse(localStorage.getItem('devtoolkit:hidden-tools') ?? '[]');
         setPdfEditorHidden(hidden.includes('pdfeditor'));
-      } catch {}
+      } catch { /* corrupted hidden-tools list — leave current visibility state untouched */ }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);

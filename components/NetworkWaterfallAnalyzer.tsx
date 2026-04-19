@@ -48,7 +48,7 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
           {t.type === 'error'   && <AlertTriangle size={15} className="shrink-0" />}
           {t.type === 'info'    && <Info size={15} className="shrink-0" />}
           <span>{t.message}</span>
-          <button onClick={() => onDismiss(t.id)} className="ml-1 opacity-70 hover:opacity-100 cursor-pointer">
+          <button onClick={() => onDismiss(t.id)} aria-label="Dismiss" className="ml-1 opacity-70 hover:opacity-100 cursor-pointer">
             <X size={13} />
           </button>
         </div>
@@ -239,6 +239,7 @@ function LogWaterfallRow({
         <button
           onClick={handleCopy}
           title="Copy message"
+          aria-label="Copy message"
           className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
         >
           {copied
@@ -320,6 +321,7 @@ function WaterfallRow({
         {isGroupRow && onToggleExpand && (
           <button
             onClick={e => { e.stopPropagation(); onToggleExpand(); }}
+            aria-label={isExpanded ? 'Collapse group' : 'Expand group'}
             className="ml-auto shrink-0 text-slate-400 hover:text-slate-600 cursor-pointer"
           >
             {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
@@ -397,6 +399,7 @@ function LogMarkers({
             key={log.id}
             onClick={() => onSelect(log)}
             title={`[${formatMs(log.relMs)}] ${log.level.toUpperCase()}: ${log.message.slice(0, 120)}`}
+            aria-label={`[${formatMs(log.relMs)}] ${log.level.toUpperCase()}: ${log.message.slice(0, 120)}`}
             className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform hover:scale-150 z-10"
             style={{ left: `${pct}%` }}
           >
@@ -1393,7 +1396,7 @@ function CompareModal({
             <GitCompare size={16} className="text-blue-500" />
             HAR Comparison
           </span>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -1510,7 +1513,7 @@ function DetailPanel({
           >
             cURL
           </button>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
             <X size={14} />
           </button>
         </div>
@@ -1793,7 +1796,7 @@ function RuleManager({ rules, onSave, onClose, onToast }: RuleManagerProps) {
               <input type="file" accept=".json" className="hidden" onChange={importRules} />
             </label>
             <button onClick={exportRules} className="text-xs font-bold text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">Export</button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
+            <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
           </div>
         </div>
 
@@ -1825,10 +1828,10 @@ function RuleManager({ rules, onSave, onClose, onToast }: RuleManagerProps) {
                 <span className="text-[10px] text-slate-400 ml-2">[{rule.target}] {rule.condition.field} {rule.condition.operator} {rule.condition.value}</span>
               </div>
               <TagBadge tag={rule.action.tag} color={rule.action.color} />
-              <button onClick={() => editingId === rule.id ? (setShowForm(false), setEditingId(null)) : openEdit(rule)} className={`cursor-pointer shrink-0 transition-colors ${editingId === rule.id ? 'text-blue-500' : 'text-slate-300 hover:text-blue-400'}`} title="Edit rule">
+              <button onClick={() => editingId === rule.id ? (setShowForm(false), setEditingId(null)) : openEdit(rule)} className={`cursor-pointer shrink-0 transition-colors ${editingId === rule.id ? 'text-blue-500' : 'text-slate-300 hover:text-blue-400'}`} title="Edit rule" aria-label="Edit rule">
                 <Pencil size={12} />
               </button>
-              <button onClick={() => remove(rule.id)} className="text-slate-300 hover:text-red-400 cursor-pointer shrink-0" title="Delete rule"><X size={12} /></button>
+              <button onClick={() => remove(rule.id)} className="text-slate-300 hover:text-red-400 cursor-pointer shrink-0" title="Delete rule" aria-label="Delete rule"><X size={12} /></button>
             </div>
           ))}
         </div>
@@ -1995,7 +1998,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             <h2 className="text-base font-black text-slate-800 dark:text-slate-100">How to use Network Waterfall Analyzer</h2>
             <p className="text-xs text-slate-400 mt-0.5">Quick reference for all features</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors">
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -2238,7 +2241,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
   const [data, setData]         = useState<ParseResult | null>(null);
   const { toasts, push: toast, dismiss } = useToast();
   const [rules, setRules] = useState<Rule[]>(() => {
-    try { const s = localStorage.getItem('devtoolkit:waterfall-rules'); if (s) return JSON.parse(s) as Rule[]; } catch {}
+    try { const s = localStorage.getItem('devtoolkit:waterfall-rules'); if (s) return JSON.parse(s) as Rule[]; } catch { /* corrupted rules JSON — fall through to defaults */ }
     return DEFAULT_RULES;
   });
   const [isProcessing, setIsProcessing] = useState(false);
@@ -2576,7 +2579,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
           <div className="max-w-2xl mx-auto mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 flex items-center gap-3">
             <AlertTriangle size={16} className="text-red-500 shrink-0" />
             <span className="text-sm text-red-600 dark:text-red-400">{error}</span>
-            <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600 cursor-pointer"><X size={14} /></button>
+            <button onClick={() => setError(null)} aria-label="Dismiss error" className="ml-auto text-red-400 hover:text-red-600 cursor-pointer"><X size={14} /></button>
           </div>
         )}
         <UploadPanel
@@ -2617,7 +2620,7 @@ const NetworkWaterfallAnalyzer: React.FC = () => {
         <div className="flex items-center gap-2 mr-2">
           <Activity size={14} className="text-blue-500 shrink-0" />
           <span className="text-xs font-bold text-slate-600 dark:text-slate-300 truncate max-w-[160px]" title={harName ?? ''}>{harName}</span>
-          <button onClick={reset} className="text-slate-400 hover:text-red-400 cursor-pointer"><X size={12} /></button>
+          <button onClick={reset} aria-label="Reset" className="text-slate-400 hover:text-red-400 cursor-pointer"><X size={12} /></button>
         </div>
 
         <div className="flex-1" />

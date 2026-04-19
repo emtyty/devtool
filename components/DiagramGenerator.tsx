@@ -570,6 +570,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                   </button>
                   <button
                     onClick={() => handleDeleteSaved(item.id)}
+                    aria-label="Delete saved item"
                     className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 size={12} />
@@ -739,7 +740,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                       onChange={e => updateSubgroup(sg.id, e.target.value)}
                       className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-300"
                     />
-                    <button onClick={() => removeSubgroup(sg.id)} className="text-slate-300 hover:text-red-500">
+                    <button onClick={() => removeSubgroup(sg.id)} aria-label="Remove subgroup" className="text-slate-300 hover:text-red-500">
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -781,7 +782,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                         {editorSubgroups.map(sg => <option key={sg.id} value={sg.id}>{sg.name}</option>)}
                       </select>
                     )}
-                    <button onClick={() => removeNode(node.id)} className="text-slate-300 hover:text-red-500 shrink-0">
+                    <button onClick={() => removeNode(node.id)} aria-label="Remove node" className="text-slate-300 hover:text-red-500 shrink-0">
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -821,7 +822,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                       placeholder="label"
                       className="text-[10px] border border-slate-200 rounded px-1.5 py-1 bg-white focus:outline-none w-16"
                     />
-                    <button onClick={() => removeEdge(edge.id)} className="text-slate-300 hover:text-red-500 shrink-0">
+                    <button onClick={() => removeEdge(edge.id)} aria-label="Remove edge" className="text-slate-300 hover:text-red-500 shrink-0">
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -893,11 +894,12 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                     <button
                       onClick={handleSave}
                       disabled={!saveName.trim()}
+                      aria-label="Save"
                       className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
                     >
                       <Check size={13} />
                     </button>
-                    <button onClick={() => setShowSaveInput(false)} className="text-slate-500 hover:text-slate-300">
+                    <button onClick={() => setShowSaveInput(false)} aria-label="Cancel" className="text-slate-500 hover:text-slate-300">
                       <X size={13} />
                     </button>
                   </div>

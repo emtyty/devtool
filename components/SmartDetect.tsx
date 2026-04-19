@@ -180,6 +180,7 @@ export default function SmartDetect({ onDetect, onDetectFile, onNavigate }: Smar
               onClick={() => { setInput(''); setResults([]); }}
               className="absolute top-3 right-3 p-1.5 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-500 transition-all z-20 cursor-pointer"
               title="Clear"
+              aria-label="Clear"
             >
               <X size={14} />
             </button>

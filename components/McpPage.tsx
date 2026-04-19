@@ -239,6 +239,7 @@ function CopyBlock({ text, language }: { text: string; language: string }) {
         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-500 uppercase">{language}</span>
         <button
           onClick={handleCopy}
+          aria-label="Copy to clipboard"
           className="p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}

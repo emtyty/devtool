@@ -1803,7 +1803,7 @@ const FileConverter: React.FC = () => {
                       </div>
                     )}
                     {item.status === 'pending' && (
-                      <button onClick={() => removeFromQueue(item.id)} className="text-slate-400 hover:text-red-500 transition-colors">
+                      <button onClick={() => removeFromQueue(item.id)} aria-label="Remove from queue" className="text-slate-400 hover:text-red-500 transition-colors">
                         <X size={14} />
                       </button>
                     )}

@@ -11,7 +11,6 @@ const errorText = document.getElementById('error-text');
 const loadingIcon = document.getElementById('loading-icon');
 
 function showError(msg: string) {
-  console.error("Critical Failure:", msg);
   if (statusText) statusText.innerText = "CRITICAL BOOT FAILURE";
   if (errorDisplay) errorDisplay.style.display = 'block';
   if (errorText) errorText.innerText = msg;
@@ -28,7 +27,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 if (!rootElement) {
-  console.error("Target root element '#root' not found.");
+  showError("Target root element '#root' not found.");
 } else {
   try {
     const root = createRoot(rootElement);
