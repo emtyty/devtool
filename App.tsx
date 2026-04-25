@@ -36,8 +36,9 @@ const PdfMaker                 = lazy(() => import('./components/PdfMaker'));
 const SettingsPage             = lazy(() => import('./components/SettingsPage'));
 const DbSchemaVisualizer       = lazy(() => import('./components/DbSchemaVisualizer'));
 const GitDiffViewer            = lazy(() => import('./components/GitDiffViewer'));
+const LoremGenerator           = lazy(() => import('./components/LoremGenerator'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema' | 'gitdiff';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema' | 'gitdiff' | 'loremgen';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -72,6 +73,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   settings:         'settings',
   dbschema:         'db-schema',
   gitdiff:          'git-diff',
+  loremgen:         'lorem-generator',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -116,6 +118,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Generate & Convert',
     items: [
       { id: 'mockdata',      label: 'Mock Data',         icon: <Database size={16} /> },
+      { id: 'loremgen',      label: 'Lorem Generator',   icon: <FileText size={16} /> },
       { id: 'uuidgen',       label: 'UUID / ULID',       icon: <Hash size={16} /> },
       { id: 'epoch',         label: 'Epoch Converter',   icon: <Clock size={16} /> },
       { id: 'color',         label: 'Color Converter',   icon: <Palette size={16} /> },
@@ -719,6 +722,7 @@ const App: React.FC = () => {
            mode === 'pdfmaker'         ? <PdfMaker /> :
            mode === 'dbschema'         ? <DbSchemaVisualizer initialData={pendingData} /> :
            mode === 'gitdiff'          ? <GitDiffViewer initialData={pendingData} /> :
+           mode === 'loremgen'         ? <LoremGenerator /> :
            mode === 'settings'         ? <SettingsPage
              sections={NAV_SECTIONS.slice(1)}
              hiddenTools={hiddenTools}
@@ -861,6 +865,7 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'markdown',      name: 'Markdown',          icon: <FileText size={11} />,      desc: 'Live preview with react-markdown + remark-gfm (GFM tables, tasks)' },
   { id: 'stacktrace',    name: 'Stack Trace',       icon: <AlertTriangle size={11} />, desc: 'Parse & highlight stack traces for JS, Java, Python, .NET, Go, Ruby' },
   { id: 'mockdata',      name: 'Mock Data',         icon: <Database size={11} />,      desc: 'Generate fake data (JSON/CSV/SQL) via @faker-js/faker with 63+ field types' },
+  { id: 'loremgen',      name: 'Lorem Generator',   icon: <FileText size={11} />,      desc: 'Generate random placeholder text in English or Vietnamese' },
   { id: 'uuidgen',       name: 'UUID / ULID',       icon: <Hash size={11} />,          desc: 'Bulk-generate UUID v1/v4/v7 and ULIDs with multiple output formats' },
   { id: 'jwtdecode',     name: 'JWT Decode',        icon: <Key size={11} />,           desc: 'Decode JWT tokens — header, payload, signature & expiration status' },
   { id: 'texttools',     name: 'Text Tools',        icon: <Replace size={11} />,       desc: 'CloudWatch Log Insights pattern builder & Jira release note formatter' },
