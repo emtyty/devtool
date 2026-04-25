@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, ExternalLink, FilePlus2, FileDiff } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, FilePlus2, FileDiff, Search } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -239,11 +239,14 @@ const App: React.FC = () => {
   // ── Auto-hide header on scroll (mobile) ──
   const [barsHidden, setBarsHidden] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const switchMode = useCallback((next: AppMode) => {
     setPendingData(null);
     setMode(next);
     setSidebarOpen(false);
+    setSearchQuery('');
     scrollRef.current?.scrollTo(0, 0);
     setBarsHidden(false);
     const slug = MODE_TO_SLUG[next];
@@ -257,14 +260,25 @@ const App: React.FC = () => {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  // Close sidebar on Escape key
+  // Keyboard shortcuts: Escape closes search/sidebar, Cmd+K or / focuses search
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && sidebarOpen) setSidebarOpen(false);
+      if (e.key === 'Escape') {
+        if (searchQuery) { setSearchQuery(''); searchRef.current?.blur(); return; }
+        if (sidebarOpen) setSidebarOpen(false);
+        return;
+      }
+      const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !inInput)) {
+        e.preventDefault();
+        if (!sidebarOpen) setSidebarOpen(true);
+        // Defer focus so sidebar is visible first
+        requestAnimationFrame(() => searchRef.current?.focus());
+      }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [sidebarOpen]);
+  }, [sidebarOpen, searchQuery]);
 
   // Smart Detect → detected tool with data
   const handleSmartDetect = useCallback((tool: string, data: string) => {
@@ -315,6 +329,15 @@ const App: React.FC = () => {
     }, 500);
     return () => clearTimeout(timer);
   }, [hiddenTools]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Search ────────────────────────────────────────────────────────
+  const ALL_NAV_TOOLS = useMemo(() => NAV_SECTIONS.flatMap(s => s.items), []);
+
+  const filteredTools = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return ALL_NAV_TOOLS.filter(item => !hiddenTools.includes(item.id) && item.label.toLowerCase().includes(q));
+  }, [searchQuery, ALL_NAV_TOOLS, hiddenTools]);
 
   const lastScrollY = useRef(0);
   const scrollDelta = useRef(0);
@@ -441,116 +464,188 @@ const App: React.FC = () => {
           {/* Scrollable nav area */}
           <div className="flex-1 overflow-y-auto p-3 pb-0 gap-0.5 flex flex-col">
 
-          {/* ── Favorites section ── */}
-          {favorites.length > 0 && (
-            <>
-              <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
-                Favorites
-              </div>
-              {favorites.map((favId, index) => {
-                const item = NAV_ITEM_MAP[favId];
-                if (!item) return null;
+          {/* ── Search box ── */}
+          <div className="pb-2">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="Search tools… (⌘K)"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                aria-label="Search tools"
+                className="w-full pl-7 pr-6 py-1.5 text-[13px] bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {searchQuery.trim() ? (
+            /* ── Search results ── */
+            filteredTools.length === 0 ? (
+              <div className="px-3 py-6 text-[12px] text-slate-400 dark:text-slate-600 text-center">No tools found</div>
+            ) : (
+              filteredTools.map(tab => {
+                const isFav = favorites.includes(tab.id);
+                const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
+                const starClass = isFav
+                  ? 'pl-2 py-2 text-amber-400 cursor-pointer shrink-0'
+                  : isMaxed
+                  ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 cursor-not-allowed shrink-0'
+                  : 'pl-2 py-2 text-slate-300 dark:text-slate-600 hover:text-amber-400 cursor-pointer shrink-0';
                 return (
                   <div
-                    key={favId}
-                    draggable
-                    onDragStart={() => { dragIndex.current = index; }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => {
-                      if (dragIndex.current !== null && dragIndex.current !== index) {
-                        reorder(dragIndex.current, index);
-                      }
-                      dragIndex.current = null;
-                    }}
+                    key={tab.id}
                     className={`group flex items-center rounded-lg transition-all ${
-                      mode === favId
-                        ? 'bg-blue-50 dark:bg-blue-500/15'
-                        : 'hover:bg-slate-50 dark:hover:bg-white/5'
+                      mode === tab.id ? 'bg-blue-50 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/5'
                     }`}
                   >
-                    <span className="pl-1.5 py-2 text-slate-300 dark:text-slate-700 cursor-grab active:cursor-grabbing shrink-0">
-                      <GripVertical size={12} />
-                    </span>
                     <button
-                      onClick={() => switchMode(favId)}
+                      onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
+                      title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                      aria-label={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                      className={`transition-all ${starClass}`}
+                    >
+                      <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
+                    </button>
+                    <button
+                      onClick={() => switchMode(tab.id)}
                       className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
-                        mode === favId
+                        mode === tab.id
                           ? 'text-blue-600 dark:text-blue-400'
                           : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                       }`}
                     >
-                      {item.icon}
-                      {item.label}
-                    </button>
-                    <button
-                      onClick={() => toggleFavorite(favId)}
-                      title="Remove from favorites"
-                      aria-label="Remove from favorites"
-                      className="pr-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-300 transition-all cursor-pointer shrink-0"
-                    >
-                      <Star size={13} className="fill-amber-400" />
+                      {tab.icon}
+                      {tab.label}
                     </button>
                   </div>
                 );
-              })}
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-            </>
-          )}
-
-          {/* ── Regular nav sections ── */}
-          {NAV_SECTIONS.map((section, si) => {
-            const visibleItems = section.items.filter(tab => !hiddenTools.includes(tab.id));
-            if (visibleItems.length === 0) return null;
-            return (
-              <React.Fragment key={si}>
-                {si > 0 && <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />}
-                {section.title && (
+              })
+            )
+          ) : (
+            <>
+              {/* ── Favorites section ── */}
+              {favorites.length > 0 && (
+                <>
                   <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
-                    {section.title}
+                    Favorites
                   </div>
-                )}
-                {visibleItems.map(tab => {
-                  const isFav = favorites.includes(tab.id);
-                  const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
-                  const starClass = isFav
-                    ? 'pl-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 cursor-pointer shrink-0'
-                    : isMaxed
-                    ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100 cursor-not-allowed shrink-0'
-                    : 'pl-2 py-2 text-slate-300 dark:text-slate-600 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
-                  return (
-                    <div
-                      key={tab.id}
-                      className={`group flex items-center rounded-lg transition-all ${
-                        mode === tab.id
-                          ? 'bg-blue-50 dark:bg-blue-500/15'
-                          : 'hover:bg-slate-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <button
-                        onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
-                        title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
-                        aria-label={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
-                        className={`transition-all ${starClass}`}
-                      >
-                        <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
-                      </button>
-                      <button
-                        onClick={() => switchMode(tab.id)}
-                        className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
-                          mode === tab.id
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  {favorites.map((favId, index) => {
+                    const item = NAV_ITEM_MAP[favId];
+                    if (!item) return null;
+                    return (
+                      <div
+                        key={favId}
+                        draggable
+                        onDragStart={() => { dragIndex.current = index; }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => {
+                          if (dragIndex.current !== null && dragIndex.current !== index) {
+                            reorder(dragIndex.current, index);
+                          }
+                          dragIndex.current = null;
+                        }}
+                        className={`group flex items-center rounded-lg transition-all ${
+                          mode === favId
+                            ? 'bg-blue-50 dark:bg-blue-500/15'
+                            : 'hover:bg-slate-50 dark:hover:bg-white/5'
                         }`}
                       >
-                        {tab.icon}
-                        {tab.label}
-                      </button>
-                    </div>
-                  );
-                })}
-              </React.Fragment>
-            );
-          })}
+                        <span className="pl-1.5 py-2 text-slate-300 dark:text-slate-700 cursor-grab active:cursor-grabbing shrink-0">
+                          <GripVertical size={12} />
+                        </span>
+                        <button
+                          onClick={() => switchMode(favId)}
+                          className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                            mode === favId
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          {item.icon}
+                          {item.label}
+                        </button>
+                        <button
+                          onClick={() => toggleFavorite(favId)}
+                          title="Remove from favorites"
+                          aria-label="Remove from favorites"
+                          className="pr-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-300 transition-all cursor-pointer shrink-0"
+                        >
+                          <Star size={13} className="fill-amber-400" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
+                </>
+              )}
+
+              {/* ── Regular nav sections ── */}
+              {NAV_SECTIONS.map((section, si) => {
+                const visibleItems = section.items.filter(tab => !hiddenTools.includes(tab.id));
+                if (visibleItems.length === 0) return null;
+                return (
+                  <React.Fragment key={si}>
+                    {si > 0 && <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />}
+                    {section.title && (
+                      <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
+                        {section.title}
+                      </div>
+                    )}
+                    {visibleItems.map(tab => {
+                      const isFav = favorites.includes(tab.id);
+                      const isMaxed = favorites.length >= MAX_FAVORITES && !isFav;
+                      const starClass = isFav
+                        ? 'pl-2 py-2 text-amber-400 lg:opacity-0 lg:group-hover:opacity-100 cursor-pointer shrink-0'
+                        : isMaxed
+                        ? 'pl-2 py-2 text-slate-200 dark:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100 cursor-not-allowed shrink-0'
+                        : 'pl-2 py-2 text-slate-300 dark:text-slate-600 lg:opacity-0 lg:group-hover:opacity-100 hover:text-amber-400 cursor-pointer shrink-0';
+                      return (
+                        <div
+                          key={tab.id}
+                          className={`group flex items-center rounded-lg transition-all ${
+                            mode === tab.id
+                              ? 'bg-blue-50 dark:bg-blue-500/15'
+                              : 'hover:bg-slate-50 dark:hover:bg-white/5'
+                          }`}
+                        >
+                          <button
+                            onClick={() => { if (!isMaxed) toggleFavorite(tab.id); }}
+                            title={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                            aria-label={isMaxed ? 'Max 5 favorites reached' : isFav ? 'Remove from favorites' : 'Add to favorites'}
+                            className={`transition-all ${starClass}`}
+                          >
+                            <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
+                          </button>
+                          <button
+                            onClick={() => switchMode(tab.id)}
+                            className={`flex items-center gap-2.5 flex-1 px-1.5 py-2.5 lg:py-2 text-sm lg:text-[13px] font-bold text-left whitespace-nowrap cursor-pointer transition-colors ${
+                              mode === tab.id
+                                ? 'text-blue-600 dark:text-blue-400'
+                                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {tab.icon}
+                            {tab.label}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+            </>
+          )}
 
           </div>
 
@@ -664,17 +759,24 @@ const App: React.FC = () => {
               <div className="hidden lg:block">
                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] mb-4">All Tools</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2">
-                  {FOOTER_TOOLS.filter(t => !hiddenTools.includes(t.id)).map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => switchMode(t.id)}
-                      title={t.desc}
-                      className="flex items-center gap-2 text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors group cursor-pointer"
-                    >
-                      <span className="text-blue-500 dark:text-blue-400 text-[11px] shrink-0 w-4 text-center">{t.icon}</span>
-                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors truncate">{t.name}</span>
-                    </button>
-                  ))}
+                  {[
+                    ...FOOTER_TOOLS.filter(t => favorites.includes(t.id) && !hiddenTools.includes(t.id)),
+                    ...FOOTER_TOOLS.filter(t => !favorites.includes(t.id) && !hiddenTools.includes(t.id)),
+                  ].map(t => {
+                    const isFav = favorites.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => switchMode(t.id)}
+                        title={t.desc}
+                        className="flex items-center gap-2 text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors group cursor-pointer"
+                      >
+                        <span className="text-blue-500 dark:text-blue-400 text-[11px] shrink-0 w-4 text-center">{t.icon}</span>
+                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors truncate">{t.name}</span>
+                        {isFav && <Star size={9} className="shrink-0 fill-amber-400 text-amber-400 ml-auto" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
