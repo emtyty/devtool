@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, FilePlus2, FileDiff, Search } from 'lucide-react';
+import { Filter, ListFilter, Code2, Braces, FileText, AlertTriangle, Database, Key, Replace, Workflow, Clock, Palette, Timer, ScrollText, Wand2, Sun, Moon, GitCompare, Hash, Cpu, FileOutput, Sheet, Waves, Shield, Star, GripVertical, Menu, X, ListTree, Scissors, Settings, BookOpen, FilePlus2, FileDiff, Search, Link } from 'lucide-react';
 import { ImageFile } from './types';
 import { extractMetadata, zeroperlWasmUrl } from './utils/exifParser';
 import MetadataExplorer from './components/MetadataExplorer';
@@ -37,8 +37,9 @@ const SettingsPage             = lazy(() => import('./components/SettingsPage'))
 const DbSchemaVisualizer       = lazy(() => import('./components/DbSchemaVisualizer'));
 const GitDiffViewer            = lazy(() => import('./components/GitDiffViewer'));
 const LoremGenerator           = lazy(() => import('./components/LoremGenerator'));
+const UrlEncoder               = lazy(() => import('./components/UrlEncoder'));
 
-type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema' | 'gitdiff' | 'loremgen';
+type AppMode = 'smartdetect' | 'privacy' | 'mcp' | 'metadata' | 'queryplan' | 'dataformatter' | 'listcleaner' | 'sqlformatter' | 'jsontools' | 'markdown' | 'stacktrace' | 'mockdata' | 'jwtdecode' | 'texttools' | 'diagram' | 'epoch' | 'color' | 'cron' | 'logs' | 'textdiff' | 'uuidgen' | 'fileconverter' | 'tablelens' | 'networkwaterfall' | 'csptools' | 'jsonextractor' | 'pdfeditor' | 'pdfmaker' | 'settings' | 'dbschema' | 'gitdiff' | 'loremgen' | 'urlencoder';
 
 // ── URL routing ──────────────────────────────────────────────────
 const MODE_TO_SLUG: Record<AppMode, string> = {
@@ -74,6 +75,7 @@ const MODE_TO_SLUG: Record<AppMode, string> = {
   dbschema:         'db-schema',
   gitdiff:          'git-diff',
   loremgen:         'lorem-generator',
+  urlencoder:       'url-encoder',
 };
 
 const SLUG_TO_MODE: Record<string, AppMode> = Object.fromEntries(
@@ -134,6 +136,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Decode & Analyze',
     items: [
       { id: 'jwtdecode',     label: 'JWT Decode',        icon: <Key size={16} /> },
+      { id: 'urlencoder',    label: 'URL Encoder',       icon: <Link size={16} /> },
       { id: 'texttools',     label: 'Text Tools',        icon: <Replace size={16} /> },
       { id: 'textdiff',      label: 'Text Compare',      icon: <GitCompare size={16} /> },
       { id: 'gitdiff',       label: 'Git Diff Viewer',   icon: <FileDiff size={16} /> },
@@ -723,6 +726,7 @@ const App: React.FC = () => {
            mode === 'dbschema'         ? <DbSchemaVisualizer initialData={pendingData} /> :
            mode === 'gitdiff'          ? <GitDiffViewer initialData={pendingData} /> :
            mode === 'loremgen'         ? <LoremGenerator /> :
+           mode === 'urlencoder'       ? <UrlEncoder initialData={pendingData} /> :
            mode === 'settings'         ? <SettingsPage
              sections={NAV_SECTIONS.slice(1)}
              hiddenTools={hiddenTools}
