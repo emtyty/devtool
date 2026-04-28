@@ -150,13 +150,30 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
     } catch (err) {
       if (previewRef.current) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
-        // Extract useful info from mermaid error
         const cleanMsg = msg.replace(/ParseError:?\s*/i, '').slice(0, 200);
-        previewRef.current.innerHTML = `<div class="p-4 space-y-2">
-          <p class="text-red-400 text-sm font-bold">Render Error</p>
-          <p class="text-red-300 text-xs font-mono bg-red-950/30 rounded-lg p-3 whitespace-pre-wrap">${cleanMsg}</p>
-          <p class="text-slate-500 text-xs">Switch to <strong>Code Editor</strong> tab to fix the syntax.</p>
-        </div>`;
+
+        // Build error UI via DOM so cleanMsg goes through textContent — no innerHTML injection risk
+        const wrap = document.createElement('div');
+        wrap.className = 'p-4 space-y-2';
+
+        const title = document.createElement('p');
+        title.className = 'text-red-400 text-sm font-bold';
+        title.textContent = 'Render Error';
+
+        const detail = document.createElement('p');
+        detail.className = 'text-red-300 text-xs font-mono bg-red-950/30 rounded-lg p-3 whitespace-pre-wrap';
+        detail.textContent = cleanMsg;
+
+        const hint = document.createElement('p');
+        hint.className = 'text-slate-500 text-xs';
+        hint.innerHTML = 'Switch to <strong>Code Editor</strong> tab to fix the syntax.';
+
+        wrap.appendChild(title);
+        wrap.appendChild(detail);
+        wrap.appendChild(hint);
+
+        previewRef.current.innerHTML = '';
+        previewRef.current.appendChild(wrap);
       }
     }
   }, []);
