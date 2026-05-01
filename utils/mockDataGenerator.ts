@@ -9,6 +9,7 @@ import {
   type Faker,
 } from '@faker-js/faker';
 import { MockField, FieldType } from '../types';
+import { getLocaleOverride } from './mockDataLocaleOverrides';
 
 export type MockLocale = 'en' | 'ja' | 'vi' | 'da' | 'de' | 'fr';
 
@@ -129,7 +130,15 @@ const getWeightedValue = (factors: { value: string; weight: number }[], fallback
   return fallbackGenerator();
 };
 
-export const generateValue = (field: MockField, fk: Faker = faker): any => {
+export const generateValue = (field: MockField, fk: Faker = faker, locale: MockLocale = 'en'): any => {
+  // Locale overrides for fields where faker silently falls back to English
+  // (e.g. Department, ProductMaterial in vi/ja). Skip overrides for CustomList
+  // — user-provided values should always win.
+  if (field.type !== 'CustomList') {
+    const override = getLocaleOverride(locale, field.type, fk);
+    if (override !== null) return override;
+  }
+
   switch (field.type) {
     case 'UUID': return fk.string.uuid();
     case 'FirstName': return fk.person.firstName();
@@ -279,9 +288,9 @@ export const generateData = (
       if (fieldNullIndices[field.id]?.has(i)) {
         row[field.name] = '';
       } else if (field.options?.arrayCount) {
-        row[field.name] = Array.from({ length: field.options.arrayCount }, () => generateValue(field, fk));
+        row[field.name] = Array.from({ length: field.options.arrayCount }, () => generateValue(field, fk, locale));
       } else {
-        row[field.name] = generateValue(field, fk);
+        row[field.name] = generateValue(field, fk, locale);
       }
     });
     data.push(row);
