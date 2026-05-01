@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Download, Copy, Check, Play,
   FileJson, FileText, Database, LayoutTemplate, Save,
   Upload, UploadCloud, ChevronRight, ChevronDown,
-  AlertTriangle, Settings2, Layers,
+  AlertTriangle, Settings2, Layers, Globe,
 } from 'lucide-react';
 import { MockField, FieldType, OutputFormat } from '../types';
 import { FIELD_TYPES, generateData, LOCALE_OPTIONS, MockLocale } from '../utils/mockDataGenerator';
@@ -638,6 +638,23 @@ export default function MockDataGenerator() {
         <Settings2 size={14} /> Settings
       </span>
 
+      <div className="flex flex-col gap-1.5 p-3 -m-1 rounded-xl bg-blue-50/60 border border-blue-100">
+        <label htmlFor="mock-locale-select" className="text-[10px] font-black text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+          <Globe size={12} /> Locale
+        </label>
+        <select
+          id="mock-locale-select"
+          value={locale}
+          onChange={e => handleLocaleChange(e.target.value as MockLocale)}
+          className="bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+        >
+          {LOCALE_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <span className="text-[10px] text-slate-500">Affects names, addresses, companies, phones</span>
+      </div>
+
       <div className="flex flex-wrap lg:flex-nowrap gap-3 items-start">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Rows</label>
@@ -679,21 +696,6 @@ export default function MockDataGenerator() {
             </>
           )}
         </div>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label htmlFor="mock-locale-select" className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Locale</label>
-        <select
-          id="mock-locale-select"
-          value={locale}
-          onChange={e => handleLocaleChange(e.target.value as MockLocale)}
-          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
-        >
-          {LOCALE_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <span className="text-[10px] text-slate-400">Affects names, addresses, companies, phones</span>
       </div>
 
       {effectiveFormat === 'SQL' && (
