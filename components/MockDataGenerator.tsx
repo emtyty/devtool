@@ -6,7 +6,7 @@ import {
   AlertTriangle, Settings2, Layers,
 } from 'lucide-react';
 import { MockField, FieldType, OutputFormat } from '../types';
-import { FIELD_TYPES, generateData } from '../utils/mockDataGenerator';
+import { FIELD_TYPES, generateData, LOCALE_OPTIONS, MockLocale } from '../utils/mockDataGenerator';
 import ResizableSplit from './ResizableSplit';
 
 // ---- Syntax Highlighting ----
@@ -435,8 +435,11 @@ const newId = () => Math.random().toString(36).substring(2, 9);
 
 const PRESETS_KEY = 'devtoolkit:mock-data:saved-presets';
 const LAST_PRESET_KEY = 'devtoolkit:mock-data:last-preset';
+const LOCALE_KEY = 'devtoolkit:mock-data:locale';
 const LEGACY_PRESETS_KEY = 'mockgen:savedPresets';
 const LEGACY_LAST_PRESET_KEY = 'mockgen:lastPreset';
+
+const VALID_LOCALES: MockLocale[] = ['en', 'ja', 'vi', 'da', 'de', 'fr'];
 
 // One-time read from legacy `mockgen:*` keys so saved user presets survive the
 // rename to the `devtoolkit:` prefix convention.
@@ -477,6 +480,10 @@ export default function MockDataGenerator() {
   const [rows, setRows] = useState(100);
   const [format, setFormat] = useState<OutputFormat>('JSON');
   const [tableName, setTableName] = useState('users');
+  const [locale, setLocale] = useState<MockLocale>(() => {
+    const stored = localStorage.getItem(LOCALE_KEY) as MockLocale | null;
+    return stored && VALID_LOCALES.includes(stored) ? stored : 'en';
+  });
   const [output, setOutput] = useState('');
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -594,10 +601,15 @@ export default function MockDataGenerator() {
     setIsGenerating(true);
     setTimeout(() => {
       const dataFields = activeTab === 'import' && importedTree ? getFlatFieldsFromTree(importedTree) : fields;
-      setOutput(generateData(dataFields, rows, effectiveFormat, tableName));
+      setOutput(generateData(dataFields, rows, effectiveFormat, tableName, locale));
       setViewMode('tree');
       setIsGenerating(false);
     }, 50);
+  };
+
+  const handleLocaleChange = (next: MockLocale) => {
+    setLocale(next);
+    localStorage.setItem(LOCALE_KEY, next);
   };
 
   const handleCopy = () => {
@@ -667,6 +679,21 @@ export default function MockDataGenerator() {
             </>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="mock-locale-select" className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Locale</label>
+        <select
+          id="mock-locale-select"
+          value={locale}
+          onChange={e => handleLocaleChange(e.target.value as MockLocale)}
+          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+        >
+          {LOCALE_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <span className="text-[10px] text-slate-400">Affects names, addresses, companies, phones</span>
       </div>
 
       {effectiveFormat === 'SQL' && (

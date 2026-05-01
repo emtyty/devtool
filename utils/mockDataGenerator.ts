@@ -1,5 +1,38 @@
-import { faker } from '@faker-js/faker';
+import {
+  faker,
+  fakerEN,
+  fakerJA,
+  fakerVI,
+  fakerDA,
+  fakerDE,
+  fakerFR,
+  type Faker,
+} from '@faker-js/faker';
 import { MockField, FieldType } from '../types';
+
+export type MockLocale = 'en' | 'ja' | 'vi' | 'da' | 'de' | 'fr';
+
+export const LOCALE_OPTIONS: { value: MockLocale; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語 (Japanese)' },
+  { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
+  { value: 'da', label: 'Dansk (Danish)' },
+  { value: 'de', label: 'Deutsch (German)' },
+  { value: 'fr', label: 'Français (French)' },
+];
+
+const FAKER_BY_LOCALE: Record<MockLocale, Faker> = {
+  en: fakerEN,
+  ja: fakerJA,
+  vi: fakerVI,
+  da: fakerDA,
+  de: fakerDE,
+  fr: fakerFR,
+};
+
+export function getFakerForLocale(locale: MockLocale): Faker {
+  return FAKER_BY_LOCALE[locale] ?? fakerEN;
+}
 
 export const FIELD_TYPES: { label: string; value: FieldType; category: string }[] = [
   { label: 'UUID', value: 'UUID', category: 'Basic' },
@@ -96,25 +129,25 @@ const getWeightedValue = (factors: { value: string; weight: number }[], fallback
   return fallbackGenerator();
 };
 
-export const generateValue = (field: MockField): any => {
+export const generateValue = (field: MockField, fk: Faker = faker): any => {
   switch (field.type) {
-    case 'UUID': return faker.string.uuid();
-    case 'FirstName': return faker.person.firstName();
-    case 'LastName': return faker.person.lastName();
-    case 'FullName': return faker.person.fullName();
-    case 'Email': return faker.internet.email();
-    case 'Phone': return faker.phone.number();
-    case 'Address': return faker.location.streetAddress();
-    case 'City': return faker.location.city();
-    case 'Country': return faker.location.country();
-    case 'ZipCode': return faker.location.zipCode();
+    case 'UUID': return fk.string.uuid();
+    case 'FirstName': return fk.person.firstName();
+    case 'LastName': return fk.person.lastName();
+    case 'FullName': return fk.person.fullName();
+    case 'Email': return fk.internet.email();
+    case 'Phone': return fk.phone.number();
+    case 'Address': return fk.location.streetAddress();
+    case 'City': return fk.location.city();
+    case 'Country': return fk.location.country();
+    case 'ZipCode': return fk.location.zipCode();
     case 'Date': {
-      const from = field.options?.from ? new Date(field.options.from) : faker.date.past({ years: 10 });
-      const to = field.options?.to ? new Date(field.options.to) : faker.date.future({ years: 10 });
+      const from = field.options?.from ? new Date(field.options.from) : fk.date.past({ years: 10 });
+      const to = field.options?.to ? new Date(field.options.to) : fk.date.future({ years: 10 });
       if (from.getTime() > to.getTime()) {
-        return faker.date.between({ from: to, to: from }).toISOString();
+        return fk.date.between({ from: to, to: from }).toISOString();
       }
-      return faker.date.between({ from, to }).toISOString();
+      return fk.date.between({ from, to }).toISOString();
     }
     case 'Number': {
       const min = field.options?.min ?? 1;
@@ -122,59 +155,59 @@ export const generateValue = (field: MockField): any => {
       const actualMin = Math.min(min, max);
       const actualMax = Math.max(min, max);
       const factors = parseFactors(field.options?.factor);
-      return getWeightedValue(factors, () => faker.number.int({ min: actualMin, max: actualMax }));
+      return getWeightedValue(factors, () => fk.number.int({ min: actualMin, max: actualMax }));
     }
-    case 'Boolean': return faker.datatype.boolean();
-    case 'Company': return faker.company.name();
-    case 'JobTitle': return faker.person.jobTitle();
-    case 'Paragraph': return faker.lorem.paragraph();
-    case 'Sentence': return faker.lorem.sentence();
-    case 'Word': return faker.lorem.word();
-    case 'URL': return faker.internet.url();
-    case 'IPAddress': return faker.internet.ipv4();
-    case 'Avatar': return faker.image.avatar();
-    case 'Color': return faker.color.human();
-    case 'Product': return faker.commerce.product();
-    case 'ProductName': return faker.commerce.productName();
-    case 'ProductDescription': return faker.commerce.productDescription();
-    case 'ProductAdjective': return faker.commerce.productAdjective();
-    case 'SKU': return faker.string.alphanumeric({ length: 8, casing: 'upper' }) + '-' + faker.string.alphanumeric({ length: 4, casing: 'upper' });
-    case 'Price': return faker.commerce.price();
-    case 'Department': return faker.commerce.department();
-    case 'ProductMaterial': return faker.commerce.productMaterial();
-    case 'CreditCardNumber': return faker.finance.creditCardNumber();
-    case 'CreditCardCVV': return faker.finance.creditCardCVV();
-    case 'AccountNumber': return faker.finance.accountNumber();
-    case 'BitcoinAddress': return faker.finance.bitcoinAddress();
-    case 'CurrencyCode': return faker.finance.currencyCode();
-    case 'Username': return faker.internet.username();
-    case 'Password': return faker.internet.password();
-    case 'IPv6': return faker.internet.ipv6();
-    case 'MACAddress': return faker.internet.mac();
-    case 'DomainName': return faker.internet.domainName();
-    case 'UserAgent': return faker.internet.userAgent();
-    case 'State': return faker.location.state();
-    case 'CountryCode': return faker.location.countryCode();
-    case 'Latitude': return faker.location.latitude().toString();
-    case 'Longitude': return faker.location.longitude().toString();
-    case 'Gender': return faker.person.gender();
-    case 'Prefix': return faker.person.prefix();
-    case 'Suffix': return faker.person.suffix();
-    case 'FileName': return faker.system.fileName();
-    case 'MimeType': return faker.system.mimeType();
-    case 'Semver': return faker.system.semver();
-    case 'Vehicle': return faker.vehicle.vehicle();
-    case 'Manufacturer': return faker.vehicle.manufacturer();
-    case 'Model': return faker.vehicle.model();
-    case 'VIN': return faker.vehicle.vin();
-    case 'AnimalType': return faker.animal.type();
-    case 'Cat': return faker.animal.cat();
-    case 'Dog': return faker.animal.dog();
+    case 'Boolean': return fk.datatype.boolean();
+    case 'Company': return fk.company.name();
+    case 'JobTitle': return fk.person.jobTitle();
+    case 'Paragraph': return fk.lorem.paragraph();
+    case 'Sentence': return fk.lorem.sentence();
+    case 'Word': return fk.lorem.word();
+    case 'URL': return fk.internet.url();
+    case 'IPAddress': return fk.internet.ipv4();
+    case 'Avatar': return fk.image.avatar();
+    case 'Color': return fk.color.human();
+    case 'Product': return fk.commerce.product();
+    case 'ProductName': return fk.commerce.productName();
+    case 'ProductDescription': return fk.commerce.productDescription();
+    case 'ProductAdjective': return fk.commerce.productAdjective();
+    case 'SKU': return fk.string.alphanumeric({ length: 8, casing: 'upper' }) + '-' + fk.string.alphanumeric({ length: 4, casing: 'upper' });
+    case 'Price': return fk.commerce.price();
+    case 'Department': return fk.commerce.department();
+    case 'ProductMaterial': return fk.commerce.productMaterial();
+    case 'CreditCardNumber': return fk.finance.creditCardNumber();
+    case 'CreditCardCVV': return fk.finance.creditCardCVV();
+    case 'AccountNumber': return fk.finance.accountNumber();
+    case 'BitcoinAddress': return fk.finance.bitcoinAddress();
+    case 'CurrencyCode': return fk.finance.currencyCode();
+    case 'Username': return fk.internet.username();
+    case 'Password': return fk.internet.password();
+    case 'IPv6': return fk.internet.ipv6();
+    case 'MACAddress': return fk.internet.mac();
+    case 'DomainName': return fk.internet.domainName();
+    case 'UserAgent': return fk.internet.userAgent();
+    case 'State': return fk.location.state();
+    case 'CountryCode': return fk.location.countryCode();
+    case 'Latitude': return fk.location.latitude().toString();
+    case 'Longitude': return fk.location.longitude().toString();
+    case 'Gender': return fk.person.gender();
+    case 'Prefix': return fk.person.prefix();
+    case 'Suffix': return fk.person.suffix();
+    case 'FileName': return fk.system.fileName();
+    case 'MimeType': return fk.system.mimeType();
+    case 'Semver': return fk.system.semver();
+    case 'Vehicle': return fk.vehicle.vehicle();
+    case 'Manufacturer': return fk.vehicle.manufacturer();
+    case 'Model': return fk.vehicle.model();
+    case 'VIN': return fk.vehicle.vin();
+    case 'AnimalType': return fk.animal.type();
+    case 'Cat': return fk.animal.cat();
+    case 'Dog': return fk.animal.dog();
     case 'CustomList': {
       const vals = field.options?.customValues?.split(',').map(v => v.trim()).filter(v => v);
       if (!vals || vals.length === 0) return 'Sample';
       const factors = parseFactors(field.options?.factor);
-      return getWeightedValue(factors, () => faker.helpers.arrayElement(vals));
+      return getWeightedValue(factors, () => fk.helpers.arrayElement(vals));
     }
     default: return '';
   }
@@ -221,8 +254,10 @@ export const generateData = (
   fields: MockField[],
   rows: number,
   format: 'JSON' | 'CSV' | 'SQL',
-  tableName: string = 'mock_data'
+  tableName: string = 'mock_data',
+  locale: MockLocale = 'en'
 ): string => {
+  const fk = getFakerForLocale(locale);
   const data: Record<string, any>[] = [];
 
   // Pre-calculate exact null indices for each field
@@ -232,7 +267,7 @@ export const generateData = (
       const numNulls = Math.round((field.options.nullPercentage / 100) * rows);
       const indices = new Set<number>();
       const allIndices = Array.from({ length: rows }, (_, i) => i);
-      const shuffled = faker.helpers.shuffle(allIndices);
+      const shuffled = fk.helpers.shuffle(allIndices);
       for (let i = 0; i < numNulls; i++) indices.add(shuffled[i]);
       fieldNullIndices[field.id] = indices;
     }
@@ -244,9 +279,9 @@ export const generateData = (
       if (fieldNullIndices[field.id]?.has(i)) {
         row[field.name] = '';
       } else if (field.options?.arrayCount) {
-        row[field.name] = Array.from({ length: field.options.arrayCount }, () => generateValue(field));
+        row[field.name] = Array.from({ length: field.options.arrayCount }, () => generateValue(field, fk));
       } else {
-        row[field.name] = generateValue(field);
+        row[field.name] = generateValue(field, fk);
       }
     });
     data.push(row);
