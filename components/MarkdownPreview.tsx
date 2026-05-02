@@ -455,6 +455,14 @@ Supports **CommonMark** + **GFM** + **Mermaid** + **highlight.js** for 190+ synt
 
 const EXPORT_STYLES = `
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.7; font-size: 15px; }
+    body.has-toc { max-width: 1200px; padding: 0 32px; display: grid; grid-template-columns: 220px 1fr; column-gap: 3em; align-items: start; }
+    body.has-toc .md-content { min-width: 0; }
+    body.has-toc h1:first-child, body.has-toc h2:first-child { margin-top: 0; }
+    @media (max-width: 820px) { body.has-toc { grid-template-columns: 1fr; column-gap: 0; } }
+    @media print {
+      body.has-toc { display: grid; grid-template-columns: 200px 1fr; column-gap: 2em; max-width: 100%; margin: 0; padding: 1cm; }
+      body.has-toc .md-toc { position: static; max-height: none; overflow: visible; font-size: 0.85em; }
+    }
     h1,h2,h3,h4,h5,h6 { font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; color: #0f172a; }
     h1 { font-size: 2em; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }
     h2 { font-size: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.2em; }
@@ -483,6 +491,17 @@ const EXPORT_STYLES = `
     .hljs-comment,.hljs-quote { color: #a0a1a7; font-style: italic; }
     .hljs-function,.hljs-title,.hljs-name { color: #4078f2; }
     .hljs-variable,.hljs-property,.hljs-attribute,.hljs-attr { color: #e45649; }
+    .md-toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5em 1.5em; margin: 0 0 2em 0; position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow-y: auto; page-break-inside: avoid; }
+    .md-toc-title { font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; font-weight: 700; margin: 0 0 0.85em 0; border: none; padding: 0; }
+    .md-toc-list { list-style: none; padding: 0; margin: 0; }
+    .md-toc-list li { margin: 0.35em 0; line-height: 1.4; }
+    .md-toc-list a { color: #334155; text-decoration: none; font-size: 0.92em; border-bottom: 1px dotted transparent; }
+    .md-toc-list a:hover { color: #2563eb; border-bottom-color: #93c5fd; }
+    .md-toc-l1 { font-weight: 600; }
+    .md-toc-l2 { padding-left: 1em; }
+    .md-toc-l3 { padding-left: 2em; font-size: 0.95em; color: #475569; }
+    .md-toc-l4 { padding-left: 3em; font-size: 0.9em; color: #64748b; }
+    .md-toc-l5, .md-toc-l6 { padding-left: 4em; font-size: 0.88em; color: #64748b; }
   `;
 
 interface ToolbarButton {
@@ -591,7 +610,28 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
     const clone = node.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('button').forEach((el) => el.remove());
     const content = clone.innerHTML;
-    return `<!DOCTYPE html>\n<html lang="en">\n<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Markdown Export</title><style>${EXPORT_STYLES}</style></head>\n<body>${content}</body>\n</html>`;
+
+    const includeToc = showToc && headings.length > 1;
+    let tocHtml = '';
+    if (includeToc) {
+      const escape = (s: string) =>
+        s
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      const items = headings
+        .map(
+          (h) =>
+            `<li class="md-toc-l${h.level}"><a href="#${escape(h.id)}">${escape(h.text)}</a></li>`
+        )
+        .join('');
+      tocHtml = `<nav class="md-toc"><div class="md-toc-title">On this page</div><ul class="md-toc-list">${items}</ul></nav>`;
+    }
+
+    const bodyClass = includeToc ? ' class="has-toc"' : '';
+    const wrappedContent = includeToc ? `<main class="md-content">${content}</main>` : content;
+    return `<!DOCTYPE html>\n<html lang="en">\n<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Markdown Export</title><style>${EXPORT_STYLES}</style></head>\n<body${bodyClass}>${tocHtml}${wrappedContent}</body>\n</html>`;
   };
 
   const exportHtml = () => {
