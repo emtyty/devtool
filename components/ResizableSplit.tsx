@@ -8,6 +8,7 @@ interface ResizableSplitProps {
   maxLeftPercent?: number;
   gap?: number; // px
   storageKey?: string;
+  className?: string;
 }
 
 export default function ResizableSplit({
@@ -18,6 +19,7 @@ export default function ResizableSplit({
   maxLeftPercent = 82,
   gap = 8,
   storageKey,
+  className = '',
 }: ResizableSplitProps) {
   const [leftPercent, setLeftPercent] = useState(() => {
     if (storageKey) {
@@ -69,7 +71,7 @@ export default function ResizableSplit({
   return (
     <div
       ref={containerRef}
-      className={`flex ${isLg ? 'flex-row' : 'flex-col gap-6'}`}
+      className={`flex ${isLg ? 'flex-row' : 'flex-col gap-6'} ${className}`.trim()}
     >
       {/* Left panel */}
       <div
