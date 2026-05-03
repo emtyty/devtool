@@ -466,7 +466,7 @@ export default function DbSchemaFlow({ schema, isDark }: DbSchemaFlowProps) {
   }, [schema]);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full touch-none">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -478,6 +478,10 @@ export default function DbSchemaFlow({ schema, isDark }: DbSchemaFlowProps) {
         nodesDraggable
         nodesConnectable={false}
         elementsSelectable
+        panOnDrag
+        zoomOnPinch
+        panOnScroll={false}
+        zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
       >

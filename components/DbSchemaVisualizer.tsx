@@ -107,7 +107,7 @@ export default function DbSchemaVisualizer({ initialData }: { initialData?: stri
   };
 
   const leftPanel = (
-    <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[80vh]">
+    <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[60vh] lg:min-h-[80vh]">
       {/* Header */}
       <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -195,7 +195,7 @@ export default function DbSchemaVisualizer({ initialData }: { initialData?: stri
   );
 
   const rightPanel = (
-    <section className="bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 flex flex-col min-h-[80vh] overflow-hidden">
+    <section className="bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 flex flex-col min-h-[70vh] lg:min-h-[80vh] overflow-hidden">
       {/* Header */}
       <div className="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex items-center justify-between gap-4 flex-wrap">
         <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
