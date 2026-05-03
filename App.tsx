@@ -888,7 +888,7 @@ const FOOTER_TOOLS: { id: AppMode; name: string; icon: React.ReactNode; desc: st
   { id: 'jsonextractor', name: 'JSON Extractor',    icon: <ListTree size={11} />,      desc: 'Extract a list of values from JSON by dot-notation path — auto-traverses nested arrays' },
   { id: 'pdfeditor',    name: 'PDF Editor',        icon: <Scissors size={11} />,      desc: 'Sort or delete PDF pages and export a new PDF — runs entirely in your browser' },
   { id: 'pdfmaker',      name: 'PDF Maker',         icon: <FilePlus2 size={11} />,     desc: 'Combine images / PDFs / DOCX / XLSX / MD / HTML / TXT / CSV into a single PDF via pdf-lib' },
-  { id: 'dbschema',      name: 'DB Schema',         icon: <Database size={11} />,      desc: 'Visualize SQL DDL / Prisma / dbdiagram.io as an ER diagram (Mermaid) with PK / FK / UK annotations' },
+  { id: 'dbschema',      name: 'DB Schema',         icon: <Database size={11} />,      desc: 'Visualize SQL DDL / Prisma / dbdiagram.io as an interactive ER diagram with PK / FK / UK annotations' },
   { id: 'gitdiff',       name: 'Git Diff Viewer',   icon: <FileDiff size={11} />,      desc: 'Parse git diff / patch files — side-by-side + unified view, word-level inline diff, syntax highlighting' },
   { id: 'smartdetect',   name: 'Smart Detector',    icon: <Wand2 size={11} />,         desc: 'Auto-detect content type (JSON, SQL, JWT, cron, etc.) and route to the right tool' },
 ];

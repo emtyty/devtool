@@ -37,6 +37,7 @@
     "@types/pdfmake": "^0.3.2",
     "@uiw/react-codemirror": "^4.25.9",
     "@uswriting/exiftool": "^1.0.9",
+    "@xyflow/react": "^12.10.2",
     "ag-psd": "^20.2.3",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
