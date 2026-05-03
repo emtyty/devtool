@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -344,6 +344,45 @@ async function svgToPngBlob(svg: string, scale = 2): Promise<Blob> {
   }
 }
 
+function FitOnResize({
+  containerRef,
+  schema,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  schema: ParsedSchema;
+}) {
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let raf = 0;
+    const refit = () => {
+      if (el.clientWidth === 0 || el.clientHeight === 0) return;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        fitView({ padding: 0.18, duration: 0 });
+      });
+    };
+    const ro = new ResizeObserver(refit);
+    ro.observe(el);
+    refit();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [containerRef, fitView]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      fitView({ padding: 0.18, duration: 0 });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [schema, fitView]);
+
+  return null;
+}
+
 function FlowToolbar({ schema }: { schema: ParsedSchema }) {
   const { getNodes } = useReactFlow();
   const [copied, setCopied] = useState(false);
@@ -418,6 +457,7 @@ interface DbSchemaFlowProps {
 }
 
 export default function DbSchemaFlow({ schema, isDark }: DbSchemaFlowProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const { nodes, edges } = useMemo(() => {
     const positions = computeLayout(schema);
     const flowNodes: Node<TableNodeData>[] = schema.tables.map((table) => ({
@@ -466,7 +506,7 @@ export default function DbSchemaFlow({ schema, isDark }: DbSchemaFlowProps) {
   }, [schema]);
 
   return (
-    <div className="w-full h-full touch-none">
+    <div ref={containerRef} className="absolute inset-0 touch-none">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -487,6 +527,7 @@ export default function DbSchemaFlow({ schema, isDark }: DbSchemaFlowProps) {
       >
         <Controls showInteractive={false} />
         <FlowToolbar schema={schema} />
+        <FitOnResize containerRef={containerRef} schema={schema} />
       </ReactFlow>
     </div>
   );
