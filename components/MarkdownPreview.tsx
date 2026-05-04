@@ -18,6 +18,8 @@ import {
   ImageDown,
   Copy,
   Check,
+  Maximize2,
+  Minimize2,
   Bold,
   Italic,
   Strikethrough,
@@ -531,6 +533,7 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [previewCopied, setPreviewCopied] = useState(false);
   const [showToc, setShowToc] = useState(true);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
   const [activeHeading, setActiveHeading] = useState<string>('');
   const [isDark, setIsDark] = useState(
     () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
@@ -552,6 +555,20 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!previewFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewFullscreen(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [previewFullscreen]);
 
   const headings = useMemo(() => parseHeadings(markdown), [markdown]);
   const wordCount = markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
@@ -783,6 +800,20 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
           <ListTree size={11} /> Outline
         </button>
         <button
+          onClick={() => setPreviewFullscreen((v) => !v)}
+          title={previewFullscreen ? 'Exit fullscreen (Esc)' : 'Open preview in fullscreen'}
+          aria-label={previewFullscreen ? 'Exit preview fullscreen' : 'Open preview in fullscreen'}
+          aria-pressed={previewFullscreen}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold shadow-sm transition-colors ${
+            previewFullscreen
+              ? 'bg-blue-50 border-blue-200 text-blue-600'
+              : 'bg-white border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300'
+          }`}
+        >
+          {previewFullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+          {previewFullscreen ? 'Exit' : 'Fullscreen'}
+        </button>
+        <button
           onClick={async () => {
             const node = previewRef.current;
             if (!node) return;
@@ -961,7 +992,7 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
 
       {/* Panes — viewport-based height so internal scroll works for both editor and preview */}
       <div style={{ height: 'calc(100vh - 240px)', minHeight: '500px' }}>
-        {viewMode === 'split' && (
+        {viewMode === 'split' && !previewFullscreen && (
           <ResizableSplit
             left={editorPanel}
             right={previewPanel}
@@ -969,9 +1000,28 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
             className="h-full"
           />
         )}
+        {viewMode === 'split' && previewFullscreen && <div className="h-full">{editorPanel}</div>}
         {viewMode === 'editor' && <div className="h-full">{editorPanel}</div>}
-        {viewMode === 'preview' && <div className="h-full">{previewPanel}</div>}
+        {viewMode === 'preview' && !previewFullscreen && (
+          <div className="h-full">{previewPanel}</div>
+        )}
+        {viewMode === 'preview' && previewFullscreen && (
+          <div className="h-full flex items-center justify-center text-xs text-slate-400">
+            Preview is open in fullscreen — press Esc or click Exit to return.
+          </div>
+        )}
       </div>
+
+      {previewFullscreen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Markdown preview fullscreen"
+          className="fixed inset-0 z-[60] bg-white dark:bg-slate-950 p-3 sm:p-5 overflow-hidden"
+        >
+          <div className="h-full max-w-6xl mx-auto">{previewPanel}</div>
+        </div>
+      )}
     </div>
   );
 }
