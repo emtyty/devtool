@@ -783,15 +783,39 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
           <ListTree size={11} /> Outline
         </button>
         <button
-          onClick={() => {
+          onClick={async () => {
             const node = previewRef.current;
             if (!node) return;
-            navigator.clipboard.writeText(node.innerText).then(() => {
-              setPreviewCopied(true);
-              setTimeout(() => setPreviewCopied(false), 2000);
-            });
+            const html = node.innerHTML;
+            const source = markdown;
+            let ok = false;
+            try {
+              if (typeof ClipboardItem !== 'undefined') {
+                await navigator.clipboard.write([
+                  new ClipboardItem({
+                    'text/html': new Blob([html], { type: 'text/html' }),
+                    'text/plain': new Blob([source], { type: 'text/plain' }),
+                  }),
+                ]);
+                ok = true;
+              } else {
+                await navigator.clipboard.writeText(source);
+                ok = true;
+              }
+            } catch {
+              try {
+                await navigator.clipboard.writeText(source);
+                ok = true;
+              } catch {
+                /* clipboard unavailable */
+              }
+            }
+            if (!ok) return;
+            setPreviewCopied(true);
+            setTimeout(() => setPreviewCopied(false), 2000);
           }}
-          title="Copy preview text"
+          title="Copy as rich HTML (paste-friendly) and Markdown source"
+          aria-label="Copy preview as rich HTML and Markdown source"
           className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
         >
           {previewCopied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
