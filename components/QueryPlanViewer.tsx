@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { FileCode2, Play, AlertTriangle, Sparkles, Key, Eye, EyeOff, X, Check, ChevronDown, ChevronRight, Upload, FlaskConical } from 'lucide-react';
+import { FileCode2, Play, AlertTriangle, Sparkles, Key, Eye, EyeOff, X, Check, ChevronDown, ChevronRight, Upload, FlaskConical, Download } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import Markdown from 'react-markdown';
 import * as qp from 'html-query-plan';
@@ -10,6 +10,7 @@ import type { SupportedDialect } from '../lib/plan/IExecutionPlanAnalyzer';
 import type { PlanSummary, PlanNode } from '../types';
 import CopyButton from './CopyButton';
 import { PlanTreeRenderer } from './PlanTreeRenderer';
+import { downloadPlanSvg } from '../utils/queryPlanSvg';
 
 const AI_MODEL = 'gemini-2.5-pro-preview-06-05';
 
@@ -889,6 +890,17 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
                         Modern
                       </button>
                     </div>
+                  )}
+                  {viewMode === 'modern' && summary?.planTree && (
+                    <button
+                      onClick={() => downloadPlanSvg(summary)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+                      aria-label="Download plan as SVG"
+                      title="Download SVG (hover overlay tooltips work in browsers)"
+                    >
+                      <Download size={13} />
+                      SVG
+                    </button>
                   )}
                 </div>
               )}
