@@ -42,8 +42,13 @@ export default defineConfig(({mode: _mode}) => {
       plugins: [react()],
       assetsInclude: ['**/*.wasm'],
       optimizeDeps: {
-        include: ['@uswriting/exiftool', '@6over3/zeroperl-ts'],
-        exclude: []
+        include: [
+          '@uswriting/exiftool',
+          '@6over3/zeroperl-ts',
+          'vis-timeline/standalone',
+          'vis-data/standalone',
+        ],
+        exclude: [],
       },
       resolve: {
         alias: {

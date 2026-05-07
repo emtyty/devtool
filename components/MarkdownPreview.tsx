@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import mermaid from 'mermaid';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { markdown as cmMarkdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -15,7 +14,6 @@ import {
   FileText,
   Eye,
   Columns2,
-  ImageDown,
   Copy,
   Check,
   Maximize2,
@@ -36,116 +34,51 @@ import {
 } from 'lucide-react';
 
 import ResizableSplit from './ResizableSplit';
+import DiagramExportToolbar from './diagrams/DiagramExportToolbar';
+import DiagramRenderer from './diagrams/DiagramRenderer';
+import type { RendererHandle } from '../utils/diagrams/registry';
+import { toSvgString } from '../utils/diagrams/export';
+import {
+  initMermaid,
+  isDarkMode,
+  watchDarkMode,
+  onMermaidThemeChange,
+} from './diagrams/mermaidTheme';
+import { registerMermaidIcons } from './diagrams/mermaidIcons';
+import { bootstrapDiagramRenderers } from './diagrams/bootstrap';
 import { parseHeadings, type Heading } from '../utils/markdownToc';
 
 // ── Mermaid diagram renderer ─────────────────────────────────────────────────
-
-let mermaidCounter = 0;
+// Thin wrapper around <DiagramRenderer/>: parses the source and dispatches
+// to the registry (native ReactFlow renderer for graph types) or falls
+// through to mermaid.render() for chart types. The SVG element is exposed
+// via a RendererHandle ref so the export toolbar + zoom modal can consume it.
 
 const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }) {
-  const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
-  const [zoomed, setZoomed] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
+  const [themeNonce, setThemeNonce] = useState(0);
+  const handleRef = useRef<RendererHandle | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const id = `mermaid-${++mermaidCounter}`;
-    mermaid
-      .render(id, code)
-      .then(({ svg: rendered }) => {
-        if (cancelled) return;
-        const clean = rendered
-          .replace(/<rect[^>]*class="[^"]*background[^"]*"[^>]*\/?>/g, '')
-          .replace(/(<svg[^>]*>)\s*<rect[^>]*fill="[^"]*"[^>]*\/?>/g, '$1');
-        setSvg(clean);
-        setError('');
-        document.getElementById(id)?.remove();
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-        document.getElementById(id)?.remove();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [code]);
+  // Force <DiagramRenderer/> to remount when the central theme changes,
+  // so mermaid-fallback diagrams pick up new colors.
+  useEffect(() => onMermaidThemeChange(() => setThemeNonce((n) => n + 1)), []);
 
-  const downloadSvg = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'diagram.svg';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const sourceForExport = () => handleRef.current?.getSvgElement() ?? null;
 
-  const downloadPng = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const canvas = await svgToCanvas();
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = 'diagram.png';
-    a.click();
-  };
-
-  const svgToCanvas = (scale = 2): Promise<HTMLCanvasElement> => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svg, 'image/svg+xml');
-    const svgEl = doc.querySelector('svg')!;
-    const vb = svgEl.viewBox.baseVal;
-    const w = vb.width || parseFloat(svgEl.getAttribute('width') || '0') || 800;
-    const h = vb.height || parseFloat(svgEl.getAttribute('height') || '0') || 600;
-    svgEl.setAttribute('width', String(w));
-    svgEl.setAttribute('height', String(h));
-    const serialized = new XMLSerializer().serializeToString(svgEl);
-    const blob = new Blob([serialized], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = w * scale;
-        canvas.height = h * scale;
-        const ctx = canvas.getContext('2d')!;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.scale(scale, scale);
-        ctx.drawImage(img, 0, 0, w, h);
-        URL.revokeObjectURL(url);
-        resolve(canvas);
-      };
-      img.onerror = reject;
-      img.src = url;
-    });
-  };
-
-  const copyPng = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const canvas = await svgToCanvas();
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }, 'image/png');
-    } catch {
-      /* clipboard API not available */
-    }
+  const handleZoom = () => {
+    const svgEl = handleRef.current?.getSvgElement();
+    if (!svgEl) return;
+    setZoomedSvg(toSvgString(svgEl));
   };
 
   if (error) {
     return (
       <div className="my-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs font-mono">
-        Mermaid error: {error}
+        Diagram error: {error}
       </div>
     );
   }
-  if (!svg) return <div className="my-4 text-slate-400 text-xs italic">Rendering diagram…</div>;
   return (
     <>
       <div className="my-4 group relative">
@@ -153,45 +86,32 @@ const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }
           className="flex justify-center overflow-x-auto rounded-lg p-2 transition-opacity hover:opacity-90"
           style={{ cursor: 'zoom-in', background: 'transparent' }}
           title="Click to zoom"
-          onClick={() => setZoomed(true)}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={copyPng}
-            title="Copy as PNG"
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
-          >
-            {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
-          <button
-            onClick={downloadSvg}
-            title="Download SVG"
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
-          >
-            <Download size={11} /> SVG
-          </button>
-          <button
-            onClick={downloadPng}
-            title="Download PNG"
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
-          >
-            <ImageDown size={11} /> PNG
-          </button>
+          onClick={handleZoom}
+        >
+          <React.Fragment key={themeNonce}>
+            <DiagramRenderer
+              source={code}
+              handleRef={handleRef}
+              onError={(msg) => setError(msg)}
+            />
+          </React.Fragment>
         </div>
+        <DiagramExportToolbar
+          source={sourceForExport}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        />
       </div>
-      {zoomed && (
+      {zoomedSvg && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setZoomed(false)}
+          onClick={() => setZoomedSvg(null)}
         >
           <div
             className="relative w-[60vw] h-[60vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setZoomed(false)}
+              onClick={() => setZoomedSvg(null)}
               className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl font-bold leading-none z-10"
               aria-label="Close"
             >
@@ -199,28 +119,10 @@ const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }
             </button>
             <div
               className="flex-1 flex justify-center items-center p-8 overflow-auto"
-              dangerouslySetInnerHTML={{ __html: svg }}
+              dangerouslySetInnerHTML={{ __html: zoomedSvg }}
             />
             <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-100 bg-slate-50">
-              <button
-                onClick={copyPng}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
-              >
-                {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              <button
-                onClick={downloadSvg}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
-              >
-                <Download size={11} /> SVG
-              </button>
-              <button
-                onClick={downloadPng}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
-              >
-                <ImageDown size={11} /> PNG
-              </button>
+              <DiagramExportToolbar source={zoomedSvg} />
               <span className="text-[10px] text-slate-400 uppercase tracking-widest">
                 · Click outside to close
               </span>
@@ -310,7 +212,9 @@ const editorKeymap = keymap.of([
 
 type ViewMode = 'split' | 'editor' | 'preview';
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+// Initial mermaid setup happens inside the component effect below so the
+// chunk graph stays clean (no module-level side effects pulling mermaid into
+// the main entry chunk).
 
 const DEFAULT_MARKDOWN = `# Welcome to Markdown Studio
 
@@ -554,6 +458,16 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
+  }, []);
+
+  // Initialize mermaid + register icon packs + register native renderers on
+  // mount. Re-initializes mermaid when dark mode toggles; MermaidBlock
+  // instances re-render via the theme listener inside their own effect.
+  useEffect(() => {
+    initMermaid({ dark: isDarkMode() });
+    registerMermaidIcons();
+    bootstrapDiagramRenderers();
+    return watchDarkMode((dark) => initMermaid({ dark }));
   }, []);
 
   useEffect(() => {

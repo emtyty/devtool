@@ -1,32 +1,33 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Play, Copy, Check, Download, RotateCcw, GitBranch, Workflow, Code2, Eye,
+  Play, Copy, Check, RotateCcw, GitBranch, Workflow, Code2, Eye,
   Loader2, LayoutTemplate, PenTool, Plus, Trash2, Save, FolderOpen, X,
-  Image, FileDown, Layers, ChevronDown,
+  Image, ImageDown, FileDown, Layers,
 } from 'lucide-react';
-import mermaid from 'mermaid';
 import { generateDiagramJSON, type DiagramOutput, type NodeType, type FlowchartNode, type FlowchartEdge, type FlowchartSubgroup } from '../utils/diagramParser';
 import { buildSequenceMermaid, buildFlowchartMermaid } from '../utils/mermaidBuilder';
 import { TEMPLATES, CATEGORY_LABELS, DIAGRAM_TYPE_LABELS, STARTER_TEMPLATES, type DiagramTemplate, type DiagramType, type TemplateCategory } from '../utils/diagramTemplates';
+import {
+  copySvgToClipboard,
+  copyPngToClipboard,
+  downloadSvg,
+  downloadPng,
+} from '../utils/diagrams/export';
+import {
+  initMermaid,
+  isDarkMode,
+  watchDarkMode,
+  onMermaidThemeChange,
+} from './diagrams/mermaidTheme';
+import { registerMermaidIcons } from './diagrams/mermaidIcons';
+import { bootstrapDiagramRenderers } from './diagrams/bootstrap';
+import DiagramRenderer from './diagrams/DiagramRenderer';
+import type { RendererHandle } from '../utils/diagrams/registry';
 import ResizableSplit from './ResizableSplit';
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-  sequence: { mirrorActors: false, messageAlign: 'center' },
-  flowchart: { curve: 'basis', padding: 20 },
-  c4: { diagramMarginY: 20 },
-  quadrantChart: {
-    titleFontSize: 16,
-    quadrantLabelFontSize: 14,
-    pointLabelFontSize: 11,
-    xAxisLabelFontSize: 12,
-    yAxisLabelFontSize: 12,
-    quadrantTextTopPadding: 6,
-    pointRadius: 4,
-  },
-});
+// Initial mermaid setup happens inside the component effect below so the
+// chunk graph stays clean (no module-level side effects pulling mermaid into
+// the main entry chunk).
 
 // ── Types ──
 
@@ -88,7 +89,10 @@ const EXAMPLE_INPUT = `User sends request from Browser to API Gateway. API Gatew
 const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialData }) => {
   // Core state
   const [inputMode, setInputMode] = useState<InputMode>('text');
-  const [textInput, setTextInput] = useState('');
+  // Pre-fill the "Describe your system" textarea with the flowchart example
+  // on first load so the user always has something to Generate. If Smart
+  // Detect handed off content via `initialData`, that wins (see effect below).
+  const [textInput, setTextInput] = useState(() => initialData ?? EXAMPLE_INPUT);
   const [mermaidCode, setMermaidCode] = useState('');
   const [editableCode, setEditableCode] = useState('');
 
@@ -120,7 +124,6 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
   const [showSaveInput, setShowSaveInput] = useState(false);
 
   // Export state
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Undo/redo stack for visual editor
@@ -128,65 +131,44 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
   const [redoStack, setRedoStack] = useState<{ nodes: EditorNode[]; edges: EditorEdge[]; subgroups: EditorSubgroup[] }[]>([]);
 
   // Refs
-  const previewRef = useRef<HTMLDivElement>(null);
-  const renderIdRef = useRef(0);
+  const handleRef = useRef<RendererHandle | null>(null);
   const codeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // ── Mermaid rendering ──
+  // Track dark mode for the native ReactFlow path (mermaid fallback uses
+  // its own initMermaid({dark}) wiring).
+  const [isDark, setIsDark] = useState(() => isDarkMode());
+  // Bumped on mermaid theme change to force <DiagramRenderer/> remount so
+  // mermaid-fallback diagrams pick up the new colors.
+  const [themeNonce, setThemeNonce] = useState(0);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
-  const renderDiagram = useCallback(async (code: string) => {
-    if (!previewRef.current || !code) return;
-    const id = `diagram-${++renderIdRef.current}`;
-    try {
-      const { svg } = await mermaid.render(id, code);
-      if (previewRef.current) {
-        previewRef.current.innerHTML = svg;
-        const svgEl = previewRef.current.querySelector('svg');
-        if (svgEl) {
-          svgEl.style.maxWidth = '100%';
-          svgEl.style.height = 'auto';
-        }
-      }
-    } catch (err) {
-      if (previewRef.current) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        const cleanMsg = msg.replace(/ParseError:?\s*/i, '').slice(0, 200);
-
-        // Build error UI via DOM so cleanMsg goes through textContent — no innerHTML injection risk
-        const wrap = document.createElement('div');
-        wrap.className = 'p-4 space-y-2';
-
-        const title = document.createElement('p');
-        title.className = 'text-red-400 text-sm font-bold';
-        title.textContent = 'Render Error';
-
-        const detail = document.createElement('p');
-        detail.className = 'text-red-300 text-xs font-mono bg-red-950/30 rounded-lg p-3 whitespace-pre-wrap';
-        detail.textContent = cleanMsg;
-
-        const hint = document.createElement('p');
-        hint.className = 'text-slate-500 text-xs';
-        hint.innerHTML = 'Switch to <strong>Code Editor</strong> tab to fix the syntax.';
-
-        wrap.appendChild(title);
-        wrap.appendChild(detail);
-        wrap.appendChild(hint);
-
-        previewRef.current.innerHTML = '';
-        previewRef.current.appendChild(wrap);
-      }
-    }
+  // Initialize mermaid + register icon packs + register native renderers
+  // once on mount. <DiagramRenderer/> reacts to theme changes via the
+  // remount triggered by themeNonce.
+  useEffect(() => {
+    initMermaid({ dark: isDarkMode() });
+    registerMermaidIcons();
+    bootstrapDiagramRenderers();
+    return watchDarkMode((dark) => {
+      setIsDark(dark);
+      initMermaid({ dark });
+    });
   }, []);
 
-  useEffect(() => {
-    if (viewTab === 'preview' && mermaidCode) {
-      renderDiagram(mermaidCode);
-    }
-  }, [mermaidCode, viewTab, renderDiagram]);
+  useEffect(
+    () =>
+      onMermaidThemeChange(() => {
+        setThemeNonce((n) => n + 1);
+        setRenderError(null);
+      }),
+    []
+  );
 
   // Sync editable code when mermaid code changes (not from code editing)
   useEffect(() => {
     setEditableCode(mermaidCode);
+    // Clear stale render error when source changes
+    setRenderError(null);
   }, [mermaidCode]);
 
   // ── Keyboard shortcuts ──
@@ -196,7 +178,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
       // Ctrl+Enter → Generate / Build
       if (mod && e.key === 'Enter') {
         e.preventDefault();
-        if (inputMode === 'text' && textInput.trim() && !loading) handleGenerateFromText();
+        if (inputMode === 'text' && !loading) handleGenerateFromText();
         else if (inputMode === 'editor') handleBuildFromEditor();
       }
       // Ctrl+S → Open save input
@@ -220,29 +202,31 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
 
   // ── Generate from NLP text ──
 
+  // NLP-supported diagram types — only these need natural-language input;
+  // every other type loads its STARTER_TEMPLATES sample directly into the
+  // Code Editor when Generate is clicked.
+  const NLP_TYPES: DiagramType[] = ['flowchart', 'sequence'];
+
   const handleGenerateFromText = async () => {
-    if (!textInput.trim()) return;
+    const isNlp = NLP_TYPES.includes(diagramType);
+    if (isNlp && !textInput.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      // NLP parser only supports flowchart & sequence — others use starter template
-      const nlpTypes: DiagramType[] = ['flowchart', 'sequence'];
-      if (nlpTypes.includes(diagramType)) {
+      if (isNlp) {
         const result: DiagramOutput = await generateDiagramJSON(textInput);
         const code = diagramType === 'sequence'
           ? buildSequenceMermaid(result.sequence)
           : buildFlowchartMermaid(result.flowchart);
         setMermaidCode(code);
       } else {
-        // Load starter template for this type — user can edit in code editor
+        // Load starter template for this type — user can tweak it in the
+        // Code Editor afterwards.
         const starter = STARTER_TEMPLATES[diagramType];
-        if (starter) {
-          setMermaidCode(starter);
-          setViewTab('code');
-        }
+        if (starter) setMermaidCode(starter);
       }
       setHasGenerated(true);
-      if (nlpTypes.includes(diagramType)) setViewTab('preview');
+      setViewTab('preview');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate diagram.');
     } finally {
@@ -308,100 +292,29 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── Download SVG ──
+  // ── Export — delegates to the centralized pipeline (utils/diagrams/export) ──
 
-  const handleDownloadSVG = () => {
-    if (!previewRef.current) return;
-    const svgEl = previewRef.current.querySelector('svg');
-    if (!svgEl) return;
-    const blob = new Blob([svgEl.outerHTML], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `diagram.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  type ExportAction = 'copy-svg' | 'copy-png' | 'download-svg' | 'download-png';
 
-  // ── Download PNG ──
-
-  const toBase64 = (str: string): string => {
-    const bytes = new TextEncoder().encode(str);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+  const handleExport = useCallback(async (action: ExportAction) => {
+    const handle = handleRef.current;
+    const svgEl = handle?.getSvgElement() ?? null;
+    if (!svgEl) {
+      setExportError('No diagram to export. Render a diagram first.');
+      setTimeout(() => setExportError(null), 4000);
+      return;
     }
-    return btoa(binary);
-  };
-
-  const handleDownloadPNG = () => {
-    const svgEl = previewRef.current?.querySelector('svg');
-    if (!svgEl) return;
-
     try {
-      const bbox = svgEl.getBoundingClientRect();
-      const width = Math.ceil(bbox.width) || 800;
-      const height = Math.ceil(bbox.height) || 600;
-      const scale = 2;
-
-      // Clone and prepare SVG
-      const cloned = svgEl.cloneNode(true) as SVGSVGElement;
-      cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      cloned.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-      cloned.setAttribute('width', String(width));
-      cloned.setAttribute('height', String(height));
-      // Remove foreignObject (breaks canvas rendering)
-      cloned.querySelectorAll('foreignObject').forEach(fo => fo.remove());
-
-      const svgData = new XMLSerializer().serializeToString(cloned);
-      const base64 = toBase64(svgData);
-
-      const img = new window.Image();
-      img.crossOrigin = 'anonymous';
-
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = width * scale;
-          canvas.height = height * scale;
-          const ctx = canvas.getContext('2d')!;
-          ctx.scale(scale, scale);
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob((blob) => {
-            if (!blob) {
-              setExportError('PNG export failed — empty blob. Try SVG instead.');
-              setTimeout(() => setExportError(null), 4000);
-              return;
-            }
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'diagram.png';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }, 'image/png');
-        } catch {
-          setExportError('PNG canvas render failed. Try SVG instead.');
-          setTimeout(() => setExportError(null), 4000);
-        }
-      };
-
-      img.onerror = () => {
-        setExportError('PNG export failed. Try downloading as SVG instead.');
-        setTimeout(() => setExportError(null), 4000);
-      };
-
-      img.src = `data:image/svg+xml;base64,${base64}`;
-    } catch {
-      setExportError('PNG export error. Try downloading as SVG instead.');
+      if (action === 'copy-svg') await copySvgToClipboard(svgEl);
+      else if (action === 'copy-png') await copyPngToClipboard(svgEl);
+      else if (action === 'download-svg') await downloadSvg(svgEl, 'diagram.svg');
+      else await downloadPng(svgEl, 'diagram.png');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setExportError(`Export failed: ${message}`);
       setTimeout(() => setExportError(null), 4000);
     }
-  };
+  }, []);
 
   // ── Save / Load History ──
 
@@ -645,7 +558,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
               </select>
               <button
                 onClick={handleGenerateFromText}
-                disabled={loading || !textInput.trim()}
+                disabled={loading || (NLP_TYPES.includes(diagramType) && !textInput.trim())}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 {loading ? <><Loader2 size={13} className="animate-spin" /> Generating...</> : <><Play size={13} /> Generate</>}
@@ -930,36 +843,44 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                 )}
               </div>
 
-              {/* Export dropdown */}
+              {/* Export actions — inline buttons (no dropdown). Dropdown was
+               *  overlapping the ReactFlow canvas, which intercepted hover/
+               *  click events with its pan-cursor handler. */}
               {viewTab === 'preview' && (
-                <div className="relative">
+                <>
                   <button
-                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    type="button"
+                    onClick={() => handleExport('copy-svg')}
+                    title="Copy SVG"
                     className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-slate-400 hover:text-white border border-slate-700/50 rounded-lg transition-all duration-200 hover:border-slate-600 hover:bg-white/5"
                   >
-                    <Download size={11} /> Export <ChevronDown size={9} />
+                    <Copy size={11} /> SVG
                   </button>
-                  {showExportMenu && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
-                      <div className="absolute right-0 top-full mt-1.5 bg-gradient-to-b from-slate-800 to-slate-850 border border-slate-700/50 rounded-xl shadow-2xl shadow-black/40 z-20 overflow-hidden min-w-[130px] backdrop-blur-sm">
-                        <button
-                          onClick={() => { handleDownloadSVG(); setShowExportMenu(false); }}
-                          className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-[11px] font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-all duration-150"
-                        >
-                          <FileDown size={13} /> SVG Vector
-                        </button>
-                        <div className="mx-3 border-t border-slate-700/50" />
-                        <button
-                          onClick={() => { handleDownloadPNG(); setShowExportMenu(false); }}
-                          className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-[11px] font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-all duration-150"
-                        >
-                          <Image size={13} /> PNG Image
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                  <button
+                    type="button"
+                    onClick={() => handleExport('copy-png')}
+                    title="Copy PNG"
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-slate-400 hover:text-white border border-slate-700/50 rounded-lg transition-all duration-200 hover:border-slate-600 hover:bg-white/5"
+                  >
+                    <Image size={11} /> PNG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport('download-svg')}
+                    title="Download SVG"
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-slate-400 hover:text-white border border-slate-700/50 rounded-lg transition-all duration-200 hover:border-slate-600 hover:bg-white/5"
+                  >
+                    <FileDown size={11} /> SVG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport('download-png')}
+                    title="Download PNG"
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-slate-400 hover:text-white border border-slate-700/50 rounded-lg transition-all duration-200 hover:border-slate-600 hover:bg-white/5"
+                  >
+                    <ImageDown size={11} /> PNG
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -999,7 +920,28 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
         )}
 
         {!loading && hasGenerated && viewTab === 'preview' && (
-          <div ref={previewRef} className="flex items-center justify-center bg-white rounded-xl m-4 p-4 min-h-[250px] shadow-inner" />
+          <div className="bg-white rounded-xl m-4 p-4 min-h-[250px] shadow-inner">
+            {renderError ? (
+              <div className="p-2 space-y-2">
+                <p className="text-red-400 text-sm font-bold">Render Error</p>
+                <p className="text-red-300 text-xs font-mono bg-red-950/30 rounded-lg p-3 whitespace-pre-wrap">
+                  {renderError.replace(/ParseError:?\s*/i, '').slice(0, 200)}
+                </p>
+                <p className="text-slate-500 text-xs">
+                  Switch to <strong>Code Editor</strong> tab to fix the syntax.
+                </p>
+              </div>
+            ) : (
+              <div key={themeNonce}>
+                <DiagramRenderer
+                  source={mermaidCode}
+                  dark={isDark}
+                  handleRef={handleRef}
+                  onError={(msg) => setRenderError(msg)}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         {!loading && hasGenerated && viewTab === 'code' && (

@@ -42,6 +42,13 @@ Object.assign(navigator, {
   },
 });
 
+// ── Mock URL.createObjectURL / revokeObjectURL ──────────────────────────────
+// jsdom provides stubs that throw "Not implemented" when called; replace with
+// no-throw mocks so tests exercising blob-download flows don't crash.
+let __objectUrlCounter = 0;
+URL.createObjectURL = vi.fn(() => `blob:mock-${++__objectUrlCounter}`);
+URL.revokeObjectURL = vi.fn();
+
 // ── Suppress noisy React act() warnings in tests ────────────────────────────
 const originalError = console.error;
 beforeAll(() => {
