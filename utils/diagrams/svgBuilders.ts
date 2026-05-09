@@ -21,10 +21,13 @@ import type {
   EdgeIR,
   FlowchartIR,
   GanttDiagramIR,
+  JourneyIR,
   MindmapIR,
   MindmapNode,
   NodeIR,
   NodeKind,
+  PieChartIR,
+  QuadrantChartIR,
   StateDiagramIR,
   StateNode,
   TimelineIR,
@@ -883,6 +886,214 @@ export function buildTimelineSvg(ir: TimelineIR, options: BuildOptions = {}): st
       cy += eventH;
     }
   }
+
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+// ── Pie chart ────────────────────────────────────────────────────────────
+
+const PIE_PALETTE = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
+  '#ec4899', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#d946ef',
+];
+
+export function buildPieSvg(ir: PieChartIR, options: BuildOptions = {}): string {
+  const { common } = palette(options.dark ?? false);
+  const padding = options.padding ?? 20;
+  const titleH = ir.title ? 32 : 0;
+  const legendW = 200;
+  const radius = 160;
+  const cx = padding + radius + 16;
+  const cy = padding + titleH + radius + 16;
+  const width = padding * 2 + radius * 2 + 32 + legendW;
+  const height = padding * 2 + titleH + radius * 2 + 32;
+
+  const total = ir.slices.reduce((s, sl) => s + sl.value, 0);
+  const parts: string[] = [];
+  parts.push(svgOpen(0, 0, width, height, common.canvasBg));
+  if (ir.title) {
+    parts.push(`<text x="${width / 2}" y="22" text-anchor="middle" font-size="16" font-weight="600" fill="${common.text}">${escXml(ir.title)}</text>`);
+  }
+
+  if (total === 0 || ir.slices.length === 0) {
+    parts.push(`<circle cx="${cx}" cy="${cy}" r="${radius}" fill="${common.border}"/>`);
+    parts.push('</svg>');
+    return parts.join('');
+  }
+
+  // Slices
+  let startAngle = -Math.PI / 2;
+  ir.slices.forEach((slice, i) => {
+    const fraction = slice.value / total;
+    const endAngle = startAngle + fraction * Math.PI * 2;
+    const fill = PIE_PALETTE[i % PIE_PALETTE.length];
+    if (fraction >= 0.999) {
+      parts.push(`<circle cx="${cx}" cy="${cy}" r="${radius}" fill="${fill}" stroke="${common.canvasBg}" stroke-width="2"/>`);
+    } else {
+      const x1 = cx + Math.cos(startAngle) * radius;
+      const y1 = cy + Math.sin(startAngle) * radius;
+      const x2 = cx + Math.cos(endAngle) * radius;
+      const y2 = cy + Math.sin(endAngle) * radius;
+      const largeArc = fraction > 0.5 ? 1 : 0;
+      parts.push(
+        `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z" fill="${fill}" stroke="${common.canvasBg}" stroke-width="2"/>`
+      );
+    }
+    // In-slice percentage label (only if slice is big enough to fit text)
+    if (ir.showData && fraction >= 0.04) {
+      const mid = (startAngle + endAngle) / 2;
+      const lx = cx + Math.cos(mid) * radius * 0.65;
+      const ly = cy + Math.sin(mid) * radius * 0.65;
+      parts.push(
+        `<text x="${lx}" y="${ly + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="#ffffff">${(fraction * 100).toFixed(1)}%</text>`
+      );
+    }
+    startAngle = endAngle;
+  });
+
+  // Legend
+  const legendX = cx + radius + 24;
+  let legendY = padding + titleH + 16;
+  ir.slices.forEach((slice, i) => {
+    const fill = PIE_PALETTE[i % PIE_PALETTE.length];
+    const pct = ((slice.value / total) * 100).toFixed(1);
+    parts.push(`<rect x="${legendX}" y="${legendY - 10}" width="14" height="14" rx="2" fill="${fill}"/>`);
+    parts.push(`<text x="${legendX + 22}" y="${legendY + 1}" font-size="12" fill="${common.text}">${escXml(slice.label)}</text>`);
+    parts.push(`<text x="${legendX + 22}" y="${legendY + 16}" font-size="10" fill="${common.subtle}">${slice.value} · ${pct}%</text>`);
+    legendY += 32;
+  });
+
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+// ── Quadrant chart ───────────────────────────────────────────────────────
+
+export function buildQuadrantSvg(ir: QuadrantChartIR, options: BuildOptions = {}): string {
+  const { common } = palette(options.dark ?? false);
+  const dark = options.dark ?? false;
+  const padding = options.padding ?? 60;
+  const titleH = ir.title ? 32 : 0;
+  const chartW = 700;
+  const chartH = 500;
+  const width = padding * 2 + chartW;
+  const height = padding * 2 + titleH + chartH;
+  const x0 = padding;
+  const y0 = padding + titleH;
+
+  const tints = dark
+    ? { q1: 'rgba(16,185,129,0.18)', q2: 'rgba(245,158,11,0.18)', q3: 'rgba(244,63,94,0.18)', q4: 'rgba(59,130,246,0.18)' }
+    : { q1: '#10b98120', q2: '#f59e0b20', q3: '#ef444420', q4: '#3b82f620' };
+
+  const parts: string[] = [];
+  parts.push(svgOpen(0, 0, width, height, common.canvasBg));
+  if (ir.title) {
+    parts.push(`<text x="${width / 2}" y="22" text-anchor="middle" font-size="16" font-weight="600" fill="${common.text}">${escXml(ir.title)}</text>`);
+  }
+
+  const halfW = chartW / 2;
+  const halfH = chartH / 2;
+  // Quadrant fills (Q3 bottom-left, Q4 bottom-right, Q2 top-left, Q1 top-right)
+  parts.push(`<rect x="${x0}" y="${y0 + halfH}" width="${halfW}" height="${halfH}" fill="${tints.q3}"/>`);
+  parts.push(`<rect x="${x0 + halfW}" y="${y0 + halfH}" width="${halfW}" height="${halfH}" fill="${tints.q4}"/>`);
+  parts.push(`<rect x="${x0}" y="${y0}" width="${halfW}" height="${halfH}" fill="${tints.q2}"/>`);
+  parts.push(`<rect x="${x0 + halfW}" y="${y0}" width="${halfW}" height="${halfH}" fill="${tints.q1}"/>`);
+
+  // Cross axes
+  parts.push(`<line x1="${x0}" y1="${y0 + halfH}" x2="${x0 + chartW}" y2="${y0 + halfH}" stroke="${common.border}" stroke-width="1"/>`);
+  parts.push(`<line x1="${x0 + halfW}" y1="${y0}" x2="${x0 + halfW}" y2="${y0 + chartH}" stroke="${common.border}" stroke-width="1"/>`);
+
+  // Quadrant labels
+  const labels = ir.quadrantLabels ?? {};
+  if (labels.q1) parts.push(`<text x="${x0 + halfW + halfW / 2}" y="${y0 + halfH / 2}" text-anchor="middle" font-size="13" font-weight="500" fill="${common.text}">${escXml(labels.q1)}</text>`);
+  if (labels.q2) parts.push(`<text x="${x0 + halfW / 2}" y="${y0 + halfH / 2}" text-anchor="middle" font-size="13" font-weight="500" fill="${common.text}">${escXml(labels.q2)}</text>`);
+  if (labels.q3) parts.push(`<text x="${x0 + halfW / 2}" y="${y0 + halfH + halfH / 2}" text-anchor="middle" font-size="13" font-weight="500" fill="${common.text}">${escXml(labels.q3)}</text>`);
+  if (labels.q4) parts.push(`<text x="${x0 + halfW + halfW / 2}" y="${y0 + halfH + halfH / 2}" text-anchor="middle" font-size="13" font-weight="500" fill="${common.text}">${escXml(labels.q4)}</text>`);
+
+  // Axis endpoint labels (outside the chart)
+  const xAxis = ir.xAxisLabel ?? { low: 'Low', high: 'High' };
+  const yAxis = ir.yAxisLabel ?? { low: 'Low', high: 'High' };
+  parts.push(`<text x="${x0}" y="${y0 + chartH + 24}" text-anchor="start" font-size="12" fill="${common.text}">${escXml(xAxis.low)}</text>`);
+  parts.push(`<text x="${x0 + chartW}" y="${y0 + chartH + 24}" text-anchor="end" font-size="12" fill="${common.text}">${escXml(xAxis.high)}</text>`);
+  parts.push(`<text x="${x0 - 12}" y="${y0 + chartH}" text-anchor="end" font-size="12" fill="${common.text}">${escXml(yAxis.low)}</text>`);
+  parts.push(`<text x="${x0 - 12}" y="${y0 + 12}" text-anchor="end" font-size="12" fill="${common.text}">${escXml(yAxis.high)}</text>`);
+
+  // Points
+  for (const p of ir.points) {
+    const px = x0 + p.x * chartW;
+    const py = y0 + (1 - p.y) * chartH; // y is inverted (1 = top)
+    parts.push(`<circle cx="${px}" cy="${py}" r="6" fill="#3b82f6" stroke="${common.canvasBg}" stroke-width="2"/>`);
+    parts.push(`<text x="${px}" y="${py - 12}" text-anchor="middle" font-size="11" font-weight="500" fill="${common.text}">${escXml(p.label)}</text>`);
+  }
+
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+// ── Journey ──────────────────────────────────────────────────────────────
+
+export function buildJourneySvg(ir: JourneyIR, options: BuildOptions = {}): string {
+  const { common } = palette(options.dark ?? false);
+  const padding = options.padding ?? 40;
+  const titleH = ir.title ? 32 : 0;
+  const SECTION_HEADER_H = 32;
+  const TASK_H = 36;
+  const labelW = 200;
+  const chartW = 600;
+  const SCORE_MAX = 7;
+
+  const allTasks: { sectionTitle: string; sectionIdx: number; label: string; score: number; actors: string[] }[] = [];
+  ir.sections.forEach((s, idx) => {
+    s.tasks.forEach((t) => allTasks.push({ sectionTitle: s.title, sectionIdx: idx, label: t.label, score: t.score, actors: t.actors }));
+  });
+
+  const totalH = padding * 2 + titleH + ir.sections.length * SECTION_HEADER_H + allTasks.length * TASK_H + 40;
+  const width = padding * 2 + labelW + chartW;
+  const height = totalH;
+
+  const sectionColors = ['#3b82f6', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#06b6d4'];
+
+  const parts: string[] = [];
+  parts.push(svgOpen(0, 0, width, height, common.canvasBg));
+  if (ir.title) {
+    parts.push(`<text x="${width / 2}" y="22" text-anchor="middle" font-size="16" font-weight="600" fill="${common.text}">${escXml(ir.title)}</text>`);
+  }
+
+  // Score axis labels at top of chart area
+  const chartX = padding + labelW;
+  const axisY = padding + titleH + 14;
+  for (let s = 1; s <= SCORE_MAX; s++) {
+    const x = chartX + ((s - 1) / (SCORE_MAX - 1)) * chartW;
+    parts.push(`<text x="${x}" y="${axisY}" text-anchor="middle" font-size="10" fill="${common.subtle}">${s}</text>`);
+  }
+
+  let cy = padding + titleH + SECTION_HEADER_H;
+  ir.sections.forEach((section, idx) => {
+    const color = sectionColors[idx % sectionColors.length];
+    parts.push(`<rect x="${padding}" y="${cy - SECTION_HEADER_H + 4}" width="${labelW + chartW}" height="${SECTION_HEADER_H - 4}" fill="${color}20" rx="6"/>`);
+    parts.push(`<text x="${padding + 10}" y="${cy - 12}" font-size="12" font-weight="600" fill="${common.text}">${escXml(section.title)}</text>`);
+
+    section.tasks.forEach((task) => {
+      // Task label on left
+      parts.push(`<text x="${padding + 10}" y="${cy + TASK_H / 2 + 4}" font-size="12" fill="${common.text}">${escXml(task.label)}</text>`);
+      // Score dot on the score axis
+      const scoreClamped = Math.max(1, Math.min(SCORE_MAX, task.score));
+      const dotX = chartX + ((scoreClamped - 1) / (SCORE_MAX - 1)) * chartW;
+      const dotY = cy + TASK_H / 2;
+      // Connecting line (gray) under the dot
+      parts.push(`<line x1="${chartX}" y1="${dotY}" x2="${chartX + chartW}" y2="${dotY}" stroke="${common.border}" stroke-dasharray="2 3"/>`);
+      parts.push(`<circle cx="${dotX}" cy="${dotY}" r="8" fill="${color}" stroke="${common.canvasBg}" stroke-width="2"/>`);
+      parts.push(`<text x="${dotX}" y="${dotY + 3}" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">${task.score}</text>`);
+      // Actors
+      if (task.actors.length > 0) {
+        const actorsText = task.actors.join(', ');
+        parts.push(`<text x="${dotX + 14}" y="${dotY + 4}" font-size="10" fill="${common.subtle}">${escXml(actorsText)}</text>`);
+      }
+      cy += TASK_H;
+    });
+    cy += SECTION_HEADER_H;
+  });
 
   parts.push('</svg>');
   return parts.join('');

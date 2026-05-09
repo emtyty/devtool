@@ -69,8 +69,6 @@
     "sql-formatter": "^15.7.2",
     "stacktrace-parser": "^0.1.11",
     "utif": "^3.1.0",
-    "vis-data": "^8.0.3",
-    "vis-timeline": "^8.5.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

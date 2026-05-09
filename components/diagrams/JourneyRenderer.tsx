@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import { getDiagramTheme } from './shared/theme';
+import { buildJourneySvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 type JourneyRendererProps = RendererProps<'journey'>;
 
@@ -51,14 +52,13 @@ export default function JourneyRenderer({ ir, dark = false, handleRef }: Journey
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () =>
-        containerRef.current?.querySelector('svg.recharts-surface') ?? null,
+      getSvgElement: () => svgStringToElement(buildJourneySvg(ir, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, rows]);
+  }, [handleRef, ir, dark]);
 
   return (
     <div

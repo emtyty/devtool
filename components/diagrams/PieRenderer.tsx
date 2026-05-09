@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import { getDiagramTheme } from './shared/theme';
+import { buildPieSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 // Slice palette — 12 hues that read well in both light + dark themes.
 const PALETTE = [
@@ -23,14 +24,15 @@ export default function PieRenderer({ ir, dark = false, handleRef }: PieRenderer
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () =>
-        containerRef.current?.querySelector('svg.recharts-surface') ?? null,
+      // Build a clean standalone SVG from the IR (Recharts' live SVG uses
+      // gradients/clipPaths that don't always survive serialization).
+      getSvgElement: () => svgStringToElement(buildPieSvg(ir, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, data]);
+  }, [handleRef, ir, dark]);
 
   return (
     <div

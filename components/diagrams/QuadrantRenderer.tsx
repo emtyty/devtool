@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import { getDiagramTheme } from './shared/theme';
+import { buildQuadrantSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 type QuadrantRendererProps = RendererProps<'quadrant'>;
 
@@ -31,14 +32,13 @@ export default function QuadrantRenderer({ ir, dark = false, handleRef }: Quadra
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () =>
-        containerRef.current?.querySelector('svg.recharts-surface') ?? null,
+      getSvgElement: () => svgStringToElement(buildQuadrantSvg(ir, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, data]);
+  }, [handleRef, ir, dark]);
 
   const labels = ir.quadrantLabels ?? {};
   const xAxis = ir.xAxisLabel ?? { low: 'Low', high: 'High' };
