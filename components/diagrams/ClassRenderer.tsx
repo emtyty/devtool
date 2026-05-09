@@ -14,7 +14,7 @@ import dagre from 'dagre';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import type { ClassRelationKind } from '../../utils/diagrams/types';
 import { getDiagramTheme } from './shared/theme';
-import { containerToSvg } from './shared/containerToSvg';
+import { buildClassSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 import ClassNodeComponent, { type ClassNodeData } from './shared/nodes/ClassNode';
 
 const NODE_TYPES = { class: ClassNodeComponent };
@@ -54,7 +54,7 @@ export default function ClassRenderer({ ir, dark = false, handleRef }: ClassRend
   const theme = getDiagramTheme(dark);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { nodes, edges, canvasHeight } = useMemo(() => {
+  const { nodes, edges, canvasHeight, svgPositions } = useMemo(() => {
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 80, marginx: 24, marginy: 24 });
     g.setDefaultEdgeLabel(() => ({}));
@@ -67,13 +67,17 @@ export default function ClassRenderer({ ir, dark = false, handleRef }: ClassRend
     }
     dagre.layout(g);
 
+    const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
     const rfNodes: Node<ClassNodeData>[] = ir.classes.map((cls) => {
       const { x, y } = g.node(cls.id) as { x: number; y: number };
       const size = classBoxSize(cls.members.length);
+      const px = x - size.width / 2;
+      const py = y - size.height / 2;
+      positions.set(cls.id, { x: px, y: py, width: size.width, height: size.height });
       return {
         id: cls.id,
         type: 'class',
-        position: { x: x - size.width / 2, y: y - size.height / 2 },
+        position: { x: px, y: py },
         data: { cls, dark },
         style: { background: 'transparent', border: 'none', padding: 0 },
         draggable: true,
@@ -100,20 +104,19 @@ export default function ClassRenderer({ ir, dark = false, handleRef }: ClassRend
       const cls = ir.classes.find((c) => c.id === n.id);
       maxBottom = Math.max(maxBottom, n.position.y + classBoxSize(cls?.members.length ?? 0).height);
     }
-    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(360, maxBottom + 60) };
+    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(360, maxBottom + 60), svgPositions: positions };
   }, [ir, dark, theme]);
 
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => containerToSvg(containerRef.current, { backgroundColor: theme.canvasBg }),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildClassSvg(ir, svgPositions, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, nodes, edges, theme.canvasBg]);
+  }, [handleRef, ir, svgPositions, dark]);
 
   return (
     <div

@@ -4,6 +4,7 @@ import type { Timeline as TimelineCls, TimelineOptions } from 'vis-timeline/stan
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import type { TimelineEvent } from '../../utils/diagrams/types';
 import { getDiagramTheme } from './shared/theme';
+import { buildTimelineSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 type TimelineRendererProps = RendererProps<'timeline'>;
 
@@ -157,14 +158,13 @@ export default function TimelineRenderer({ ir, dark = false, handleRef }: Timeli
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => buildExportSvg(containerRef.current, dark),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildTimelineSvg(ir, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, items, dark]);
+  }, [handleRef, ir, dark]);
 
   return (
     <div

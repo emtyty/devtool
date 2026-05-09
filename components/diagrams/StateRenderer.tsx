@@ -15,7 +15,7 @@ import dagre from 'dagre';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import type { StateDiagramIR, StateNode } from '../../utils/diagrams/types';
 import { getDiagramTheme } from './shared/theme';
-import { containerToSvg } from './shared/containerToSvg';
+import { buildStateSvg, svgStringToElement, type StateBuildPositions } from '../../utils/diagrams/svgBuilders';
 
 interface StateNodeData extends Record<string, unknown> {
   state: StateNode;
@@ -206,11 +206,13 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
   const theme = getDiagramTheme(dark);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { nodes, edges, canvasHeight } = useMemo(() => {
+  const { nodes, edges, canvasHeight, svgPositions } = useMemo(() => {
     // Pre-compute inner layout for each composite so we know its size.
     const compositeIds = ir.states.filter((s) => s.kind === 'composite').map((s) => s.id);
     const innerLayouts = new Map<string, InnerLayout>();
     for (const id of compositeIds) innerLayouts.set(id, layoutComposite(id, ir));
+
+    const buildPositions: StateBuildPositions = { topLevel: new Map(), children: new Map() };
 
     // Outer dagre: top-level nodes (composites + non-composite parents=undefined).
     const topLevel = ir.states.filter((s) => !s.parent);
@@ -238,20 +240,26 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
       const { x, y } = g.node(s.id) as { x: number; y: number };
       if (s.kind === 'composite') {
         const inner = innerLayouts.get(s.id)!;
+        const px = x - inner.width / 2;
+        const py = y - inner.height / 2;
+        buildPositions.topLevel.set(s.id, { x: px, y: py, width: inner.width, height: inner.height });
         rfNodes.push({
           id: s.id,
           type: 'composite',
-          position: { x: x - inner.width / 2, y: y - inner.height / 2 },
+          position: { x: px, y: py },
           data: { state: s, dark, width: inner.width, height: inner.height } as CompositeNodeData,
           style: { width: inner.width, height: inner.height, background: 'transparent', border: 'none', padding: 0 },
           draggable: true,
         });
       } else {
         const size = stateNodeSize(s);
+        const px = x - size.width / 2;
+        const py = y - size.height / 2;
+        buildPositions.topLevel.set(s.id, { x: px, y: py, width: size.width, height: size.height });
         rfNodes.push({
           id: s.id,
           type: 'state',
-          position: { x: x - size.width / 2, y: y - size.height / 2 },
+          position: { x: px, y: py },
           data: { state: s, dark } as StateNodeData,
           style: { background: 'transparent', border: 'none', padding: 0 },
           draggable: true,
@@ -265,6 +273,8 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
       for (const c of children) {
         const pos = inner.positions.get(c.id);
         if (!pos) continue;
+        const size = stateNodeSize(c);
+        buildPositions.children.set(c.id, { x: pos.x, y: pos.y, width: size.width, height: size.height, parent: compId });
         rfNodes.push({
           id: c.id,
           type: 'state',
@@ -299,20 +309,19 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
           : 80;
       maxBottom = Math.max(maxBottom, n.position.y + h);
     }
-    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(360, maxBottom + 60) };
+    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(360, maxBottom + 60), svgPositions: buildPositions };
   }, [ir, dark, theme]);
 
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => containerToSvg(containerRef.current, { backgroundColor: theme.canvasBg }),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildStateSvg(ir, svgPositions, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, nodes, edges, theme.canvasBg]);
+  }, [handleRef, ir, svgPositions, dark]);
 
   return (
     <div

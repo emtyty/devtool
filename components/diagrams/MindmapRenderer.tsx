@@ -15,7 +15,7 @@ import { Icon } from '@iconify/react';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import type { MindmapNode, MindmapShape } from '../../utils/diagrams/types';
 import { getDiagramTheme } from './shared/theme';
-import { containerToSvg } from './shared/containerToSvg';
+import { buildMindmapSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 type MindmapRendererProps = RendererProps<'mindmap'>;
 
@@ -169,7 +169,7 @@ export default function MindmapRenderer({ ir, dark = false, handleRef }: Mindmap
   const theme = getDiagramTheme(dark);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { nodes, edges, canvasHeight } = useMemo(() => {
+  const { nodes, edges, canvasHeight, svgPositions } = useMemo(() => {
     const { positioned, bounds } = radialLayout(ir.root);
     const rfNodes: Node<MindmapNodeData>[] = positioned.map((p) => ({
       id: p.id,
@@ -190,20 +190,30 @@ export default function MindmapRenderer({ ir, dark = false, handleRef }: Mindmap
       style: { stroke: theme.edgeColor, strokeWidth: 1.5 },
     }));
 
-    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(420, bounds.h + 80) };
+    // Approximate node sizes for the standalone SVG export. Mirrors the
+    // per-depth font-weight scaling in <MindmapNodeComponent/>.
+    const positions = new Map<string, { x: number; y: number; width: number; height: number; depth: number }>();
+    for (const p of positioned) {
+      const isRoot = p.depth === 0;
+      const labelLen = p.node.label.length;
+      const w = Math.max(isRoot ? 100 : 70, labelLen * (isRoot ? 9 : 7) + 40);
+      const h = isRoot ? 44 : 32;
+      positions.set(p.id, { x: p.x, y: p.y, width: w, height: h, depth: p.depth });
+    }
+
+    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(420, bounds.h + 80), svgPositions: positions };
   }, [ir, dark, theme]);
 
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => containerToSvg(containerRef.current, { backgroundColor: theme.canvasBg }),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildMindmapSvg(ir, svgPositions, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, nodes, edges, theme.canvasBg]);
+  }, [handleRef, ir, svgPositions, dark]);
 
   return (
     <div

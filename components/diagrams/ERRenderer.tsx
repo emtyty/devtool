@@ -18,7 +18,7 @@ import TableNode, {
   type TableNodeData,
 } from './shared/nodes/TableNode';
 import { getDiagramTheme } from './shared/theme';
-import { containerToSvg } from './shared/containerToSvg';
+import { buildErSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 const NODE_TYPES = { table: TableNode };
 
@@ -26,7 +26,7 @@ type ERRendererProps = RendererProps<'er'>;
 
 export default function ERRenderer({ ir, dark = false, handleRef }: ERRendererProps) {
   const theme = getDiagramTheme(dark);
-  const { nodes, edges, canvasHeight } = useMemo(() => {
+  const { nodes, edges, canvasHeight, svgPositions } = useMemo(() => {
     return buildLayout(ir.schema, dark, theme.edgeColor);
   }, [ir, dark, theme.edgeColor]);
 
@@ -35,14 +35,13 @@ export default function ERRenderer({ ir, dark = false, handleRef }: ERRendererPr
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => containerToSvg(containerRef.current, { backgroundColor: theme.canvasBg }),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildErSvg(ir, svgPositions, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, nodes, edges, theme.canvasBg]);
+  }, [handleRef, ir, svgPositions, dark]);
 
   return (
     <div
@@ -157,8 +156,14 @@ function buildLayout(
     edges.push(edge);
   }
 
-  // Bounding box height
+  // Bounding box height + position map for the SVG builder
   let maxBottom = 0;
-  for (const n of nodes) maxBottom = Math.max(maxBottom, n.position.y + tableHeight(schema.tables.find((t) => t.name === n.id)!.columns.length));
-  return { nodes, edges, canvasHeight: Math.max(360, maxBottom + 60) };
+  const svgPositions = new Map<string, { x: number; y: number; width: number; height: number }>();
+  for (const n of nodes) {
+    const cols = schema.tables.find((t) => t.name === n.id)!.columns.length;
+    const h = tableHeight(cols);
+    maxBottom = Math.max(maxBottom, n.position.y + h);
+    svgPositions.set(n.id, { x: n.position.x, y: n.position.y, width: TABLE_NODE_WIDTH, height: h });
+  }
+  return { nodes, edges, canvasHeight: Math.max(360, maxBottom + 60), svgPositions };
 }

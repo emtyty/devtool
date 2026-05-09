@@ -13,7 +13,7 @@ import '@xyflow/react/dist/style.css';
 import { layoutFlowchart } from '../../utils/diagrams/layout/dagreLayout';
 import type { RendererProps, RendererHandle } from '../../utils/diagrams/registry';
 import { getDiagramTheme } from './shared/theme';
-import { containerToSvg } from './shared/containerToSvg';
+import { buildFlowchartSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 import FlowNode, { type FlowNodeData } from './shared/nodes/FlowNode';
 
 const NODE_TYPES = { flow: FlowNode };
@@ -45,7 +45,7 @@ type FlowchartRendererProps = RendererProps<'flowchart'>;
 export default function FlowchartRenderer({ ir, dark = false, handleRef }: FlowchartRendererProps) {
   const theme = getDiagramTheme(dark);
 
-  const { nodes, edges, canvasHeight } = useMemo(() => {
+  const { nodes, edges, canvasHeight, layoutPositions } = useMemo(() => {
     // Compute per-node dimensions based on kind (so dagre doesn't overlap shapes)
     const sizes = new Map<string, { width: number; height: number }>();
     for (const n of ir.nodes) {
@@ -106,25 +106,25 @@ export default function FlowchartRenderer({ ir, dark = false, handleRef }: Flowc
       nodes: rfNodes,
       edges: rfEdges,
       canvasHeight: Math.max(360, layout.height + 40),
+      layoutPositions: layout.nodePositions,
     };
   }, [ir, dark, theme]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Expose the underlying <svg> element to the centralized export pipeline.
-  // ReactFlow renders its edges into an SVG inside the container; we surface
-  // that element so DiagramExportToolbar can serialize it.
+  // Expose a hand-built standalone SVG to the export pipeline. Mirrors
+  // db-schema's approach (components/DbSchemaFlow.tsx#buildSvg) — pure SVG
+  // primitives so PNG conversion via canvas works reliably.
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => containerToSvg(containerRef.current, { backgroundColor: theme.canvasBg }),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildFlowchartSvg(ir, layoutPositions, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, nodes, edges, theme.canvasBg]);
+  }, [handleRef, ir, layoutPositions, dark]);
 
   return (
     <div

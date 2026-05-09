@@ -4,6 +4,7 @@ import type { Timeline as TimelineCls, TimelineOptions } from 'vis-timeline/stan
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import type { GanttItemStatus, GanttTask } from '../../utils/diagrams/types';
 import { getDiagramTheme } from './shared/theme';
+import { buildGanttSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
 type GanttRendererProps = RendererProps<'gantt'>;
 
@@ -127,20 +128,20 @@ export default function GanttRenderer({ ir, dark = false, handleRef }: GanttRend
     };
   }, [items, groups, range]);
 
-  // Export contract: serialize the rendered DOM into a standalone <svg> on
-  // demand. vis-timeline draws with HTML+CSS, not SVG, so produce an SVG
-  // that mirrors the on-screen layout via foreignObject.
+  // Export: build a standalone SVG directly from the IR (no DOM cloning).
+  // The on-screen vis-timeline DOM uses HTML+CSS, which doesn't rasterize
+  // reliably through canvas; the IR-driven SVG is pure primitives and
+  // converts to PNG cleanly.
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => buildExportSvg(containerRef.current, dark),
-      getHtmlContainer: () => containerRef.current,
+      getSvgElement: () => svgStringToElement(buildGanttSvg(ir, { dark })),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, items, dark]);
+  }, [handleRef, ir, dark]);
 
   return (
     <div
