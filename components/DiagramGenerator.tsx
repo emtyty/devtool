@@ -13,21 +13,11 @@ import {
   downloadSvg,
   downloadPng,
 } from '../utils/diagrams/export';
-import {
-  initMermaid,
-  isDarkMode,
-  watchDarkMode,
-  onMermaidThemeChange,
-} from './diagrams/mermaidTheme';
-import { registerMermaidIcons } from './diagrams/mermaidIcons';
+import { isDarkMode, watchDarkMode } from './diagrams/darkMode';
 import { bootstrapDiagramRenderers } from './diagrams/bootstrap';
 import DiagramRenderer from './diagrams/DiagramRenderer';
 import type { RendererHandle } from '../utils/diagrams/registry';
 import ResizableSplit from './ResizableSplit';
-
-// Initial mermaid setup happens inside the component effect below so the
-// chunk graph stays clean (no module-level side effects pulling mermaid into
-// the main entry chunk).
 
 // ── Types ──
 
@@ -134,35 +124,22 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
   const handleRef = useRef<RendererHandle | null>(null);
   const codeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Track dark mode for the native ReactFlow path (mermaid fallback uses
-  // its own initMermaid({dark}) wiring).
+  // Track dark mode so the renderer re-renders with the matching palette.
   const [isDark, setIsDark] = useState(() => isDarkMode());
-  // Bumped on mermaid theme change to force <DiagramRenderer/> remount so
-  // mermaid-fallback diagrams pick up the new colors.
+  // Bumped when the user toggles dark mode — forces <DiagramRenderer/> to
+  // remount, clearing any stale render error.
   const [themeNonce, setThemeNonce] = useState(0);
   const [renderError, setRenderError] = useState<string | null>(null);
 
-  // Initialize mermaid + register icon packs + register native renderers
-  // once on mount. <DiagramRenderer/> reacts to theme changes via the
-  // remount triggered by themeNonce.
+  // Register native renderers once on mount + observe the dark-mode class.
   useEffect(() => {
-    initMermaid({ dark: isDarkMode() });
-    registerMermaidIcons();
     bootstrapDiagramRenderers();
     return watchDarkMode((dark) => {
       setIsDark(dark);
-      initMermaid({ dark });
+      setThemeNonce((n) => n + 1);
+      setRenderError(null);
     });
   }, []);
-
-  useEffect(
-    () =>
-      onMermaidThemeChange(() => {
-        setThemeNonce((n) => n + 1);
-        setRenderError(null);
-      }),
-    []
-  );
 
   // Sync editable code when mermaid code changes (not from code editing)
   useEffect(() => {

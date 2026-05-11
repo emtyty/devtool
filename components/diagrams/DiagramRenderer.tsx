@@ -1,14 +1,12 @@
 import {
   useEffect,
   useState,
-  useRef,
   lazy,
   Suspense,
   type LazyExoticComponent,
   type ComponentType,
   type RefObject,
 } from 'react';
-import mermaid from 'mermaid';
 import { parseToIR } from '../../utils/diagrams/parser';
 import {
   getRenderer,
@@ -32,7 +30,7 @@ function getLazyRenderer(type: DiagramType) {
 }
 
 interface DiagramRendererProps {
-  /** Mermaid source. */
+  /** Mermaid-syntax source string. */
   source: string;
   /** Dark-mode flag; threaded through to the underlying renderer. */
   dark?: boolean;
@@ -43,9 +41,11 @@ interface DiagramRendererProps {
 }
 
 /**
- * Dispatch component. Parses the source to a DiagramIR, then either:
- *   - delegates to the matching renderer in the registry (native path), or
- *   - falls back to mermaid.render() (legacy path).
+ * Dispatch component. Parses the source to a DiagramIR, then delegates to
+ * the matching renderer in the registry.
+ *
+ * Every diagram type the registry knows about renders natively — there is
+ * no mermaid fallback. Unrecognized sources surface a clear error.
  */
 export default function DiagramRenderer({ source, dark, handleRef, onError }: DiagramRendererProps) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
@@ -55,33 +55,42 @@ export default function DiagramRenderer({ source, dark, handleRef, onError }: Di
     setParsed(null);
     parseToIR(source).then((result) => {
       if (cancelled) return;
-      // Don't propagate parse failures to the consumer — a parser miss just
-      // means we route through the mermaid fallback (which is more lenient).
-      // Only mermaid's own failures are real render errors worth showing.
+      if (!result.ok && onError) onError(result.error);
       setParsed(result);
     });
     return () => {
       cancelled = true;
     };
-  }, [source]);
+  }, [source, onError]);
 
   if (!parsed) {
     return <div className="my-4 text-slate-400 text-xs italic">Parsing diagram…</div>;
   }
 
-  // Use mermaid fallback when:
-  //   - parse failed (mermaid may handle a syntax we don't),
-  //   - or the type is recognized but has no native renderer,
-  //   - or the IR's specific type isn't registered.
-  let lazyRenderer: ReturnType<typeof getLazyRenderer> = null;
-  let ir: DiagramIR | null = null;
-  if (parsed.ok && parsed.ir) {
-    ir = parsed.ok ? parsed.ir : null;
-    lazyRenderer = ir ? getLazyRenderer(ir.type) : null;
+  if (!parsed.ok) {
+    return (
+      <div className="my-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs font-mono">
+        Diagram parse error: {parsed.error}
+      </div>
+    );
   }
 
-  if (!lazyRenderer || !ir) {
-    return <MermaidFallback source={source} handleRef={handleRef} onError={onError} />;
+  if (!parsed.ir) {
+    return (
+      <div className="my-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs font-mono">
+        Diagram type "{parsed.type}" is not supported.
+      </div>
+    );
+  }
+
+  const ir: DiagramIR = parsed.ir;
+  const lazyRenderer = getLazyRenderer(ir.type);
+  if (!lazyRenderer) {
+    return (
+      <div className="my-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs font-mono">
+        No renderer registered for "{ir.type}".
+      </div>
+    );
   }
 
   const Component = lazyRenderer;
@@ -90,71 +99,4 @@ export default function DiagramRenderer({ source, dark, handleRef, onError }: Di
       <Component ir={ir} dark={dark} handleRef={handleRef} />
     </Suspense>
   );
-}
-
-// ── Mermaid fallback ─────────────────────────────────────────────────────
-
-let mermaidCounter = 0;
-
-function MermaidFallback({
-  source,
-  handleRef,
-  onError,
-}: {
-  source: string;
-  handleRef?: RefObject<RendererHandle | null>;
-  onError?: (message: string) => void;
-}) {
-  const [svg, setSvg] = useState('');
-  const [error, setError] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const id = `mermaid-fb-${++mermaidCounter}`;
-    mermaid
-      .render(id, source)
-      .then(({ svg: rendered }) => {
-        if (cancelled) return;
-        const clean = rendered
-          .replace(/<rect[^>]*class="[^"]*background[^"]*"[^>]*\/?>/g, '')
-          .replace(/(<svg[^>]*>)\s*<rect[^>]*fill="[^"]*"[^>]*\/?>/g, '$1');
-        setSvg(clean);
-        setError('');
-        document.getElementById(id)?.remove();
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        const message = e instanceof Error ? e.message : String(e);
-        setError(message);
-        onError?.(message);
-        document.getElementById(id)?.remove();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [source, onError]);
-
-  // Expose the rendered <svg> element to the export toolbar
-  useEffect(() => {
-    if (!handleRef) return;
-    handleRef.current = {
-      getSvgElement: () => containerRef.current?.querySelector('svg') ?? null,
-    };
-    return () => {
-      if (handleRef.current && handleRef.current.getSvgElement) handleRef.current = null;
-    };
-  }, [handleRef, svg]);
-
-  if (error) {
-    return (
-      <div className="my-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs font-mono">
-        Mermaid error: {error}
-      </div>
-    );
-  }
-  if (!svg) {
-    return <div className="my-4 text-slate-400 text-xs italic">Rendering diagram…</div>;
-  }
-  return <div ref={containerRef} dangerouslySetInnerHTML={{ __html: svg }} />;
 }

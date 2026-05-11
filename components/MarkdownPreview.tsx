@@ -37,14 +37,8 @@ import ResizableSplit from './ResizableSplit';
 import DiagramExportToolbar from './diagrams/DiagramExportToolbar';
 import DiagramRenderer from './diagrams/DiagramRenderer';
 import type { RendererHandle } from '../utils/diagrams/registry';
-import { toSvgString } from '../utils/diagrams/export';
-import {
-  initMermaid,
-  isDarkMode,
-  watchDarkMode,
-  onMermaidThemeChange,
-} from './diagrams/mermaidTheme';
-import { registerMermaidIcons } from './diagrams/mermaidIcons';
+import { svgToPngBlob, toSvgString } from '../utils/diagrams/export';
+import { watchDarkMode } from './diagrams/darkMode';
 import { bootstrapDiagramRenderers } from './diagrams/bootstrap';
 import { parseHeadings, type Heading } from '../utils/markdownToc';
 
@@ -60,9 +54,9 @@ const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }
   const [themeNonce, setThemeNonce] = useState(0);
   const handleRef = useRef<RendererHandle | null>(null);
 
-  // Force <DiagramRenderer/> to remount when the central theme changes,
-  // so mermaid-fallback diagrams pick up new colors.
-  useEffect(() => onMermaidThemeChange(() => setThemeNonce((n) => n + 1)), []);
+  // Force <DiagramRenderer/> to remount when dark mode toggles, so the
+  // renderer picks up the new palette.
+  useEffect(() => watchDarkMode(() => setThemeNonce((n) => n + 1)), []);
 
   const sourceForExport = () => handleRef.current?.getSvgElement() ?? null;
 
@@ -133,6 +127,99 @@ const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }
     </>
   );
 });
+
+// ── Copy-as-rich-HTML helpers ────────────────────────────────────────────────
+//
+// When the user copies the markdown preview, they expect any rendered
+// diagrams to come along. Most editors (Gmail, Word, Notion) don't paste
+// inline <svg> reliably, but they all paste <img> data URLs. So we walk
+// the preview DOM, convert each <svg> to a PNG data URL, and replace the
+// SVG with an <img> of the same dimensions before writing to the
+// clipboard's text/html slot.
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('FileReader error'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function buildPreviewHtmlWithImages(node: HTMLElement): Promise<string> {
+  const clone = node.cloneNode(true) as HTMLElement;
+
+  // Strip the hover-only export toolbars overlaid on each diagram. They
+  // belong to the editor, not to the user's content — pasting "SVG PNG SVG
+  // PNG" into a doc is never what they want.
+  clone.querySelectorAll('[role="toolbar"]').forEach((el) => el.remove());
+  clone.querySelectorAll('[data-no-copy="true"]').forEach((el) => el.remove());
+
+  // The live tree also contains lucide-react icon <svg>s inside each
+  // export toolbar (Copy / Download / etc). querySelectorAll('svg') would
+  // pick those up, but the clone has its toolbars removed — so indices
+  // would misalign and the wrong SVG would replace each diagram. Filter
+  // toolbar/no-copy descendants from the live list to match the clone.
+  const isExcluded = (el: Element) =>
+    el.closest('[role="toolbar"]') !== null || el.closest('[data-no-copy="true"]') !== null;
+  const liveSvgs = Array.from(node.querySelectorAll('svg')).filter((svg) => !isExcluded(svg));
+  const cloneSvgs = Array.from(clone.querySelectorAll('svg'));
+  const count = Math.min(liveSvgs.length, cloneSvgs.length);
+
+  // Convert every SVG in parallel so one slow / failing diagram doesn't
+  // block the rest. If a conversion fails we still want SOMETHING in that
+  // slot — fall back to keeping the inline SVG as a clone (some editors
+  // honor it, others strip — at least it's not silently lost).
+  const conversions = await Promise.all(
+    Array.from({ length: count }, async (_unused, i) => {
+      const liveSvg = liveSvgs[i];
+      try {
+        const rect = liveSvg.getBoundingClientRect();
+        // Read dimensions from attributes as a fallback when the live
+        // element isn't currently laid out (off-screen, display:none parent).
+        let width = rect.width;
+        let height = rect.height;
+        if (!(width > 0)) {
+          const w = parseFloat(liveSvg.getAttribute('width') ?? '');
+          if (!Number.isNaN(w)) width = w;
+        }
+        if (!(height > 0)) {
+          const h = parseFloat(liveSvg.getAttribute('height') ?? '');
+          if (!Number.isNaN(h)) height = h;
+        }
+        if (!(width > 0) || !(height > 0)) {
+          const vb = liveSvg.getAttribute('viewBox')?.split(/[\s,]+/).map(Number);
+          if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+            width = width > 0 ? width : vb[2];
+            height = height > 0 ? height : vb[3];
+          }
+        }
+
+        const svgString = toSvgString(liveSvg, { stripForeignObject: false });
+        const pngBlob = await svgToPngBlob(svgString, { scale: 2, background: '#ffffff' });
+        const dataUrl = await blobToDataUrl(pngBlob);
+        return { ok: true as const, dataUrl, width, height };
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[markdown-copy] diagram ${i} → PNG failed:`, err);
+        return { ok: false as const };
+      }
+    })
+  );
+
+  for (let i = 0; i < count; i++) {
+    const result = conversions[i];
+    const cloneSvg = cloneSvgs[i];
+    if (!result.ok) continue; // leave the inline SVG in place
+    const img = document.createElement('img');
+    img.src = result.dataUrl;
+    if (result.width > 0) img.width = Math.round(result.width);
+    if (result.height > 0) img.height = Math.round(result.height);
+    img.alt = 'diagram';
+    cloneSvg.replaceWith(img);
+  }
+  return clone.innerHTML;
+}
 
 // ── Editor helpers ───────────────────────────────────────────────────────────
 
@@ -460,14 +547,10 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
     return () => observer.disconnect();
   }, []);
 
-  // Initialize mermaid + register icon packs + register native renderers on
-  // mount. Re-initializes mermaid when dark mode toggles; MermaidBlock
-  // instances re-render via the theme listener inside their own effect.
+  // Register native renderers on mount. MermaidBlock instances observe
+  // dark-mode changes themselves and remount their <DiagramRenderer/>.
   useEffect(() => {
-    initMermaid({ dark: isDarkMode() });
-    registerMermaidIcons();
     bootstrapDiagramRenderers();
-    return watchDarkMode((dark) => initMermaid({ dark }));
   }, []);
 
   useEffect(() => {
@@ -731,11 +814,13 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
           onClick={async () => {
             const node = previewRef.current;
             if (!node) return;
-            const html = node.innerHTML;
             const source = markdown;
             let ok = false;
             try {
               if (typeof ClipboardItem !== 'undefined') {
+                // Rasterize any embedded diagrams so they paste as <img> in
+                // editors that strip inline SVG (Gmail, most rich-text apps).
+                const html = await buildPreviewHtmlWithImages(node);
                 await navigator.clipboard.write([
                   new ClipboardItem({
                     'text/html': new Blob([html], { type: 'text/html' }),
@@ -759,8 +844,8 @@ export default function MarkdownPreview({ initialData }: { initialData?: string 
             setPreviewCopied(true);
             setTimeout(() => setPreviewCopied(false), 2000);
           }}
-          title="Copy as rich HTML (paste-friendly) and Markdown source"
-          aria-label="Copy preview as rich HTML and Markdown source"
+          title="Copy as rich HTML (with diagrams as images) and Markdown source"
+          aria-label="Copy preview as rich HTML with diagrams and Markdown source"
           className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-[10px] font-bold shadow-sm transition-colors"
         >
           {previewCopied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}

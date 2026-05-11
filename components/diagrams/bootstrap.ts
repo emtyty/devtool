@@ -67,4 +67,19 @@ export function bootstrapDiagramRenderers(): void {
     type: 'mindmap',
     loader: () => import('./MindmapRenderer'),
   });
+
+  register({
+    type: 'architecture',
+    loader: () => import('./ArchitectureRenderer'),
+  });
+
+  register({
+    type: 'c4',
+    loader: () => import('./C4Renderer'),
+  });
+
+  register({
+    type: 'gitgraph',
+    loader: () => import('./GitGraphRenderer'),
+  });
 }

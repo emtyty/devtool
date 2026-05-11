@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import { getDiagramTheme } from './shared/theme';
-import { buildQuadrantSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
+import { buildArchitectureSvg, svgStringToElement } from '../../utils/diagrams/svgBuilders';
 
-type QuadrantRendererProps = RendererProps<'quadrant'>;
+type ArchitectureRendererProps = RendererProps<'architecture'>;
 
-export default function QuadrantRenderer({ ir, dark = false, handleRef }: QuadrantRendererProps) {
+export default function ArchitectureRenderer({ ir, dark = false, handleRef }: ArchitectureRendererProps) {
   const theme = getDiagramTheme(dark);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const svg = useMemo(() => buildQuadrantSvg(ir, { dark }), [ir, dark]);
+  const svg = useMemo(() => buildArchitectureSvg(ir, { dark }), [ir, dark]);
 
   useEffect(() => {
     if (!handleRef) return;
@@ -25,7 +25,7 @@ export default function QuadrantRenderer({ ir, dark = false, handleRef }: Quadra
   return (
     <div
       ref={containerRef}
-      className="quadrant-renderer"
+      className="architecture-renderer"
       style={{ width: '100%', background: theme.canvasBg, borderRadius: 12, padding: 12, overflow: 'auto' }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />

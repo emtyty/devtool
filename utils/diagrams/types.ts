@@ -293,6 +293,111 @@ export interface MindmapIR {
   root: MindmapNode;
 }
 
+// ── Architecture-beta IR ────────────────────────────────────────────────
+//
+// Mirrors mermaid v11's architecture-beta syntax:
+//   architecture-beta
+//     group api(cloud)[API]
+//     service db(database)[DB] in api
+//     service web(server)[Web]
+//     db:L --> R:web
+
+export type ArchSide = 'L' | 'R' | 'T' | 'B';
+
+export interface ArchitectureNode {
+  id: string;
+  label: string;
+  kind: 'group' | 'service';
+  /** Iconify-style ref (e.g. `logos:aws-rds`, `cloud`, `database`). */
+  icon?: string;
+  /** Parent group id when nested. */
+  parent?: string;
+}
+
+export interface ArchitectureEdge {
+  source: string;
+  target: string;
+  sourceSide?: ArchSide;
+  targetSide?: ArchSide;
+  label?: string;
+}
+
+export interface ArchitectureIR {
+  type: 'architecture';
+  nodes: ArchitectureNode[];
+  edges: ArchitectureEdge[];
+}
+
+// ── C4 model IR ──────────────────────────────────────────────────────────
+//
+// Mirrors mermaid's C4 syntax. Variants C4Context / C4Container /
+// C4Component / C4Deployment share the same node + relation primitives.
+
+export type C4Variant = 'context' | 'container' | 'component' | 'deployment';
+export type C4ElementKind =
+  | 'person'
+  | 'person-external'
+  | 'system'
+  | 'system-external'
+  | 'system-db'
+  | 'system-queue'
+  | 'container'
+  | 'container-external'
+  | 'container-db'
+  | 'container-queue'
+  | 'component'
+  | 'component-external'
+  | 'component-db'
+  | 'component-queue'
+  | 'boundary'
+  | 'system-boundary'
+  | 'container-boundary'
+  | 'enterprise-boundary'
+  | 'node';
+
+export interface C4Element {
+  id: string;
+  kind: C4ElementKind;
+  label: string;
+  technology?: string;
+  description?: string;
+  parent?: string;
+}
+
+export interface C4Relation {
+  source: string;
+  target: string;
+  label?: string;
+  technology?: string;
+}
+
+export interface C4IR {
+  type: 'c4';
+  variant: C4Variant;
+  title?: string;
+  elements: C4Element[];
+  relations: C4Relation[];
+}
+
+// ── GitGraph IR ──────────────────────────────────────────────────────────
+//
+// Mirrors a subset of mermaid's gitGraph syntax. Each entry is a discrete
+// operation that mutates the graph state at parse-time. The builder walks
+// these to compute swim-lane positions.
+
+export type GitGraphOp =
+  | { kind: 'commit'; id?: string; type?: 'NORMAL' | 'REVERSE' | 'HIGHLIGHT'; tag?: string }
+  | { kind: 'branch'; name: string }
+  | { kind: 'checkout'; name: string }
+  | { kind: 'merge'; from: string; tag?: string }
+  | { kind: 'cherry-pick'; commitId: string };
+
+export interface GitGraphIR {
+  type: 'gitgraph';
+  title?: string;
+  ops: GitGraphOp[];
+}
+
 export type DiagramIR =
   | FlowchartIR
   | ERDiagramIR
@@ -304,7 +409,10 @@ export type DiagramIR =
   | StateDiagramIR
   | GanttDiagramIR
   | TimelineIR
-  | MindmapIR;
+  | MindmapIR
+  | ArchitectureIR
+  | C4IR
+  | GitGraphIR;
 
 export type DiagramType = DiagramIR['type'];
 

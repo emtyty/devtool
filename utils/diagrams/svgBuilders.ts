@@ -14,6 +14,11 @@
 //     layout positions all match.
 
 import type {
+  ArchitectureIR,
+  ArchitectureNode,
+  C4Element,
+  C4ElementKind,
+  C4IR,
   ClassDiagramIR,
   ClassMember,
   ClassNode,
@@ -21,6 +26,7 @@ import type {
   EdgeIR,
   FlowchartIR,
   GanttDiagramIR,
+  GitGraphIR,
   JourneyIR,
   MindmapIR,
   MindmapNode,
@@ -32,6 +38,7 @@ import type {
   StateNode,
   TimelineIR,
 } from './types';
+import dagre from 'dagre';
 
 // ── XML escaping ────────────────────────────────────────────────────────
 
@@ -977,9 +984,16 @@ export function buildQuadrantSvg(ir: QuadrantChartIR, options: BuildOptions = {}
   const titleH = ir.title ? 32 : 0;
   const chartW = 700;
   const chartH = 500;
-  const width = padding * 2 + chartW;
+  // Reserve extra horizontal space for the Y-axis endpoint labels (e.g.
+  // "High Impact" / "Low Impact"), which extend leftward from the chart's
+  // left edge with text-anchor="end".
+  const yAxis = ir.yAxisLabel ?? { low: 'Low', high: 'High' };
+  const xAxis = ir.xAxisLabel ?? { low: 'Low', high: 'High' };
+  const longestYLabel = Math.max(yAxis.low.length, yAxis.high.length);
+  const leftPadding = Math.max(padding, longestYLabel * 7 + 24);
+  const width = leftPadding + chartW + padding;
   const height = padding * 2 + titleH + chartH;
-  const x0 = padding;
+  const x0 = leftPadding;
   const y0 = padding + titleH;
 
   const tints = dark
@@ -1011,9 +1025,8 @@ export function buildQuadrantSvg(ir: QuadrantChartIR, options: BuildOptions = {}
   if (labels.q3) parts.push(`<text x="${x0 + halfW / 2}" y="${y0 + halfH + halfH / 2}" text-anchor="middle" font-size="13" font-weight="500" fill="${common.text}">${escXml(labels.q3)}</text>`);
   if (labels.q4) parts.push(`<text x="${x0 + halfW + halfW / 2}" y="${y0 + halfH + halfH / 2}" text-anchor="middle" font-size="13" font-weight="500" fill="${common.text}">${escXml(labels.q4)}</text>`);
 
-  // Axis endpoint labels (outside the chart)
-  const xAxis = ir.xAxisLabel ?? { low: 'Low', high: 'High' };
-  const yAxis = ir.yAxisLabel ?? { low: 'Low', high: 'High' };
+  // Axis endpoint labels (outside the chart). `leftPadding` was sized to
+  // fit the widest Y-axis label so they don't get clipped at viewBox edge.
   parts.push(`<text x="${x0}" y="${y0 + chartH + 24}" text-anchor="start" font-size="12" fill="${common.text}">${escXml(xAxis.low)}</text>`);
   parts.push(`<text x="${x0 + chartW}" y="${y0 + chartH + 24}" text-anchor="end" font-size="12" fill="${common.text}">${escXml(xAxis.high)}</text>`);
   parts.push(`<text x="${x0 - 12}" y="${y0 + chartH}" text-anchor="end" font-size="12" fill="${common.text}">${escXml(yAxis.low)}</text>`);
@@ -1094,6 +1107,548 @@ export function buildJourneySvg(ir: JourneyIR, options: BuildOptions = {}): stri
     });
     cy += SECTION_HEADER_H;
   });
+
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+// ── Architecture-beta ────────────────────────────────────────────────────
+
+const ARCH_ICON_TINT: Record<string, { fill: string; border: string }> = {
+  aws:        { fill: '#fff5e6', border: '#ff9900' },
+  google:     { fill: '#e8f0fe', border: '#4285f4' },
+  azure:      { fill: '#e3f2fd', border: '#0078d4' },
+  cloudflare: { fill: '#fff4e0', border: '#f48120' },
+  docker:     { fill: '#e7f3ff', border: '#2496ed' },
+  kubernetes: { fill: '#eaf1ff', border: '#326ce5' },
+  redis:      { fill: '#fde7e3', border: '#dc382d' },
+  postgresql: { fill: '#e3f2fa', border: '#336791' },
+  mongodb:    { fill: '#e8f5e9', border: '#47a248' },
+  cloud:      { fill: '#f0f4ff', border: '#6366f1' },
+  database:   { fill: '#fff7ed', border: '#f59e0b' },
+  disk:       { fill: '#ecfeff', border: '#06b6d4' },
+  server:     { fill: '#ecfdf5', border: '#10b981' },
+  internet:   { fill: '#eff6ff', border: '#3b82f6' },
+};
+
+function archTint(icon: string | undefined, dark: boolean): { fill: string; border: string } {
+  if (!icon) return dark ? { fill: '#1e293b', border: '#475569' } : { fill: '#ffffff', border: '#cbd5e1' };
+  const key = Object.keys(ARCH_ICON_TINT).find((k) => icon.toLowerCase().includes(k));
+  const base = key ? ARCH_ICON_TINT[key] : { fill: '#ffffff', border: '#cbd5e1' };
+  if (!dark) return base;
+  // Dark mode — use the border color tinted background
+  return { fill: `${base.border}25`, border: base.border };
+}
+
+export function buildArchitectureSvg(ir: ArchitectureIR, options: BuildOptions = {}): string {
+  const { common } = palette(options.dark ?? false);
+  const dark = options.dark ?? false;
+  const padding = options.padding ?? 40;
+
+  const SERVICE_W = 130;
+  const SERVICE_H = 80;
+
+  // Group children by parent
+  const byParent = new Map<string | undefined, ArchitectureNode[]>();
+  for (const n of ir.nodes) {
+    const k = n.parent;
+    if (!byParent.has(k)) byParent.set(k, []);
+    byParent.get(k)!.push(n);
+  }
+
+  // Layout each group's children with dagre
+  const groupBounds = new Map<string, { width: number; height: number; positions: Map<string, { x: number; y: number }> }>();
+  for (const node of ir.nodes) {
+    if (node.kind !== 'group') continue;
+    const children = byParent.get(node.id) ?? [];
+    const g = new dagre.graphlib.Graph();
+    g.setGraph({ rankdir: 'LR', nodesep: 30, ranksep: 50, marginx: 16, marginy: 16 });
+    g.setDefaultEdgeLabel(() => ({}));
+    for (const c of children) {
+      g.setNode(c.id, { width: SERVICE_W, height: SERVICE_H });
+    }
+    // Include only edges where both endpoints are children of this group
+    const childIds = new Set(children.map((c) => c.id));
+    for (const e of ir.edges) {
+      if (childIds.has(e.source) && childIds.has(e.target) && g.hasNode(e.source) && g.hasNode(e.target)) {
+        g.setEdge(e.source, e.target);
+      }
+    }
+    if (children.length > 0) dagre.layout(g);
+
+    const positions = new Map<string, { x: number; y: number }>();
+    let minLeft = Infinity, minTop = Infinity, maxRight = 0, maxBottom = 0;
+    for (const c of children) {
+      const { x, y } = g.node(c.id) as { x: number; y: number };
+      const left = x - SERVICE_W / 2;
+      const top = y - SERVICE_H / 2;
+      positions.set(c.id, { x: left, y: top });
+      minLeft = Math.min(minLeft, left);
+      minTop = Math.min(minTop, top);
+      maxRight = Math.max(maxRight, left + SERVICE_W);
+      maxBottom = Math.max(maxBottom, top + SERVICE_H);
+    }
+    const HEADER = 28;
+    const PAD = 16;
+    const dx = PAD - (isFinite(minLeft) ? minLeft : 0);
+    const dy = HEADER + PAD - (isFinite(minTop) ? minTop : 0);
+    const offset = new Map<string, { x: number; y: number }>();
+    for (const [id, p] of positions) offset.set(id, { x: p.x + dx, y: p.y + dy });
+    groupBounds.set(node.id, {
+      width: Math.max(220, (isFinite(maxRight - minLeft) ? maxRight - minLeft : 0) + PAD * 2),
+      height: Math.max(120, (isFinite(maxBottom - minTop) ? maxBottom - minTop : 0) + HEADER + PAD * 2),
+      positions: offset,
+    });
+  }
+
+  // Outer layout: top-level services + groups
+  const topLevel = ir.nodes.filter((n) => !n.parent);
+  const outer = new dagre.graphlib.Graph();
+  outer.setGraph({ rankdir: 'LR', nodesep: 50, ranksep: 80, marginx: 32, marginy: 32 });
+  outer.setDefaultEdgeLabel(() => ({}));
+  for (const n of topLevel) {
+    if (n.kind === 'group') {
+      const b = groupBounds.get(n.id)!;
+      outer.setNode(n.id, { width: b.width, height: b.height });
+    } else {
+      outer.setNode(n.id, { width: SERVICE_W, height: SERVICE_H });
+    }
+  }
+  for (const e of ir.edges) {
+    // For inter-group / top-level edges
+    if (outer.hasNode(e.source) && outer.hasNode(e.target)) outer.setEdge(e.source, e.target);
+  }
+  dagre.layout(outer);
+
+  const abs = new Map<string, { x: number; y: number; width: number; height: number; kind: 'group' | 'service'; node: ArchitectureNode }>();
+  for (const n of topLevel) {
+    const { x, y } = outer.node(n.id) as { x: number; y: number };
+    const w = n.kind === 'group' ? groupBounds.get(n.id)!.width : SERVICE_W;
+    const h = n.kind === 'group' ? groupBounds.get(n.id)!.height : SERVICE_H;
+    abs.set(n.id, { x: x - w / 2, y: y - h / 2, width: w, height: h, kind: n.kind, node: n });
+  }
+  // Children
+  for (const n of ir.nodes) {
+    if (!n.parent) continue;
+    const parentBox = abs.get(n.parent);
+    if (!parentBox) continue;
+    const pos = groupBounds.get(n.parent)?.positions.get(n.id);
+    if (!pos) continue;
+    abs.set(n.id, { x: parentBox.x + pos.x, y: parentBox.y + pos.y, width: SERVICE_W, height: SERVICE_H, kind: n.kind, node: n });
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const b of abs.values()) {
+    minX = Math.min(minX, b.x);
+    minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x + b.width);
+    maxY = Math.max(maxY, b.y + b.height);
+  }
+  minX -= padding; minY -= padding; maxX += padding; maxY += padding;
+  const width = Math.round(maxX - minX);
+  const height = Math.round(maxY - minY);
+
+  const parts: string[] = [];
+  parts.push(svgOpen(minX, minY, width, height, common.canvasBg));
+  parts.push(`<defs>${arrowDef('arr', common.edgeColor)}</defs>`);
+
+  // Groups first (under children + edges)
+  for (const n of ir.nodes) {
+    if (n.kind !== 'group') continue;
+    const b = abs.get(n.id);
+    if (!b) continue;
+    const tint = archTint(n.icon, dark);
+    parts.push(
+      `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" rx="12" fill="${tint.fill}" stroke="${tint.border}" stroke-width="1.5" stroke-dasharray="6 4"/>`
+    );
+    parts.push(`<text x="${b.x + 14}" y="${b.y + 18}" font-size="12" font-weight="700" fill="${common.text}">${escXml(n.label)}</text>`);
+    if (n.icon) {
+      parts.push(`<text x="${b.x + b.width - 14}" y="${b.y + 18}" text-anchor="end" font-size="9" fill="${common.subtle}">${escXml(n.icon)}</text>`);
+    }
+  }
+
+  // Edges
+  for (const e of ir.edges) {
+    const a = abs.get(e.source);
+    const b = abs.get(e.target);
+    if (!a || !b) continue;
+    parts.push(buildEdgePath(a, b, { source: e.source, target: e.target, label: e.label, kind: 'solid' }, common));
+  }
+
+  // Services
+  for (const n of ir.nodes) {
+    if (n.kind !== 'service') continue;
+    const b = abs.get(n.id);
+    if (!b) continue;
+    const tint = archTint(n.icon, dark);
+    parts.push(
+      `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" rx="10" fill="${tint.fill}" stroke="${tint.border}" stroke-width="1.5"/>`
+    );
+    // Icon placeholder badge (top-center)
+    parts.push(`<circle cx="${b.x + b.width / 2}" cy="${b.y + 22}" r="14" fill="${tint.border}" opacity="0.85"/>`);
+    if (n.icon) {
+      const short = n.icon.split(':').pop()!.slice(0, 3).toUpperCase();
+      parts.push(`<text x="${b.x + b.width / 2}" y="${b.y + 26}" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">${escXml(short)}</text>`);
+    }
+    parts.push(`<text x="${b.x + b.width / 2}" y="${b.y + 56}" text-anchor="middle" font-size="12" font-weight="600" fill="${common.text}">${escXml(n.label)}</text>`);
+  }
+
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+// ── C4 model ────────────────────────────────────────────────────────────
+
+interface C4Style {
+  fill: string;
+  border: string;
+  text: string;
+  badge: string;
+  badgeText: string;
+  /** Cylinder / queue shape variant */
+  shape: 'rect' | 'person' | 'cylinder' | 'queue' | 'boundary' | 'node';
+  dashed?: boolean;
+}
+
+function c4StyleFor(kind: C4ElementKind, dark: boolean): C4Style {
+  const isExternal = kind.endsWith('-external');
+  // Color tiers — Person, System, Container, Component
+  const base = kind.startsWith('person')
+    ? { fill: dark ? 'rgba(8, 80, 134, 0.4)' : '#08427b', text: '#ffffff' }
+    : kind.startsWith('system')
+      ? { fill: dark ? 'rgba(17, 102, 187, 0.4)' : '#1168bd', text: '#ffffff' }
+      : kind.startsWith('container')
+        ? { fill: dark ? 'rgba(67, 130, 245, 0.4)' : '#438dd5', text: '#ffffff' }
+        : kind.startsWith('component')
+          ? { fill: dark ? 'rgba(133, 187, 245, 0.4)' : '#85bbf0', text: '#0f172a' }
+          : { fill: dark ? 'rgba(148, 163, 184, 0.3)' : '#9ca3af', text: '#0f172a' };
+
+  let shape: C4Style['shape'] = 'rect';
+  if (kind.startsWith('person')) shape = 'person';
+  else if (kind.endsWith('-db')) shape = 'cylinder';
+  else if (kind.endsWith('-queue')) shape = 'queue';
+  else if (kind.endsWith('boundary')) shape = 'boundary';
+  else if (kind === 'node') shape = 'node';
+
+  return {
+    fill: isExternal ? (dark ? 'rgba(100, 116, 139, 0.4)' : '#999999') : base.fill,
+    border: isExternal ? '#64748b' : '#073b6f',
+    text: base.text,
+    badge: '#0f172a40',
+    badgeText: '#ffffff',
+    shape,
+    dashed: shape === 'boundary' || shape === 'node',
+  };
+}
+
+function c4BadgeLabel(kind: C4ElementKind): string {
+  if (kind.startsWith('person')) return 'Person';
+  if (kind.endsWith('-external')) {
+    if (kind.startsWith('system')) return 'External System';
+    if (kind.startsWith('container')) return 'External Container';
+    if (kind.startsWith('component')) return 'External Component';
+  }
+  if (kind.endsWith('-db')) return kind.startsWith('system') ? 'System' : kind.startsWith('container') ? 'Container' : 'Component';
+  if (kind.endsWith('-queue')) return kind.startsWith('system') ? 'System' : kind.startsWith('container') ? 'Container' : 'Component';
+  if (kind === 'system') return 'System';
+  if (kind === 'container') return 'Container';
+  if (kind === 'component') return 'Component';
+  if (kind === 'node') return 'Deployment Node';
+  return 'Boundary';
+}
+
+export function buildC4Svg(ir: C4IR, options: BuildOptions = {}): string {
+  const { common } = palette(options.dark ?? false);
+  const dark = options.dark ?? false;
+  const padding = options.padding ?? 40;
+  const titleH = ir.title ? 32 : 0;
+
+  const ELEM_W = 200;
+  const ELEM_H = 110;
+
+  const nonBoundary = ir.elements.filter((e) => !c4StyleFor(e.kind, dark).shape.includes('boundary') && c4StyleFor(e.kind, dark).shape !== 'node');
+  const boundaries = ir.elements.filter((e) => {
+    const s = c4StyleFor(e.kind, dark);
+    return s.shape === 'boundary' || s.shape === 'node';
+  });
+
+  // Outer dagre layout for all elements
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80, marginx: 32, marginy: 32 });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const el of nonBoundary) g.setNode(el.id, { width: ELEM_W, height: ELEM_H });
+  for (const rel of ir.relations) {
+    if (g.hasNode(rel.source) && g.hasNode(rel.target)) g.setEdge(rel.source, rel.target);
+  }
+  dagre.layout(g);
+
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+  for (const el of nonBoundary) {
+    const { x, y } = g.node(el.id) as { x: number; y: number };
+    positions.set(el.id, { x: x - ELEM_W / 2, y: y - ELEM_H / 2, width: ELEM_W, height: ELEM_H });
+  }
+
+  // Compute boundary bounding boxes from their children
+  for (const b of boundaries) {
+    const children = ir.elements.filter((e) => e.parent === b.id);
+    const childPositions = children.map((c) => positions.get(c.id)).filter((p): p is { x: number; y: number; width: number; height: number } => !!p);
+    if (childPositions.length === 0) continue;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of childPositions) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + p.width);
+      maxY = Math.max(maxY, p.y + p.height);
+    }
+    positions.set(b.id, { x: minX - 20, y: minY - 28, width: maxX - minX + 40, height: maxY - minY + 48 });
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of positions.values()) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + p.width);
+    maxY = Math.max(maxY, p.y + p.height);
+  }
+  minX -= padding; minY -= padding - titleH; maxX += padding; maxY += padding;
+  const width = Math.round(maxX - minX);
+  const height = Math.round(maxY - minY) + titleH;
+  const viewMinY = minY - titleH;
+
+  const parts: string[] = [];
+  parts.push(svgOpen(minX, viewMinY, width, height, common.canvasBg));
+  parts.push(`<defs>${arrowDef('arr', common.edgeColor)}</defs>`);
+  if (ir.title) {
+    parts.push(`<text x="${minX + width / 2}" y="${viewMinY + 22}" text-anchor="middle" font-size="16" font-weight="700" fill="${common.text}">${escXml(ir.title)}</text>`);
+  }
+
+  // Boundaries first (under everything else)
+  for (const b of boundaries) {
+    const p = positions.get(b.id);
+    if (!p) continue;
+    const style = c4StyleFor(b.kind, dark);
+    parts.push(
+      `<rect x="${p.x}" y="${p.y}" width="${p.width}" height="${p.height}" rx="8" fill="none" stroke="${style.border}" stroke-width="2" stroke-dasharray="8 4"/>`
+    );
+    parts.push(`<text x="${p.x + 12}" y="${p.y + 18}" font-size="11" font-weight="700" fill="${common.text}">${escXml(b.label)}</text>`);
+    parts.push(`<text x="${p.x + 12}" y="${p.y + 32}" font-size="9" fill="${common.subtle}" font-style="italic">[${escXml(c4BadgeLabel(b.kind))}]</text>`);
+  }
+
+  // Relations
+  for (const rel of ir.relations) {
+    const a = positions.get(rel.source);
+    const b = positions.get(rel.target);
+    if (!a || !b) continue;
+    const labelLine = rel.label ?? '';
+    const techLine = rel.technology ? `[${rel.technology}]` : '';
+    parts.push(
+      buildEdgePath(a, b, { source: rel.source, target: rel.target, label: [labelLine, techLine].filter(Boolean).join(' '), kind: 'solid' }, common)
+    );
+  }
+
+  // Elements (non-boundaries)
+  for (const el of nonBoundary) {
+    const p = positions.get(el.id);
+    if (!p) continue;
+    parts.push(buildC4Element(el, p, dark));
+  }
+
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+function buildC4Element(el: C4Element, p: { x: number; y: number; width: number; height: number }, dark: boolean): string {
+  const style = c4StyleFor(el.kind, dark);
+  const cx = p.x + p.width / 2;
+  const parts: string[] = [];
+
+  if (style.shape === 'person') {
+    // Head + body
+    const headR = 14;
+    parts.push(
+      `<rect x="${p.x}" y="${p.y + headR + 8}" width="${p.width}" height="${p.height - headR - 8}" rx="10" fill="${style.fill}" stroke="${style.border}" stroke-width="1.5"/>`
+    );
+    parts.push(`<circle cx="${cx}" cy="${p.y + headR + 4}" r="${headR}" fill="${style.fill}" stroke="${style.border}" stroke-width="1.5"/>`);
+  } else if (style.shape === 'cylinder') {
+    const ry = 8;
+    parts.push(
+      `<path d="M ${p.x} ${p.y + ry} A ${p.width / 2} ${ry} 0 0 0 ${p.x + p.width} ${p.y + ry} L ${p.x + p.width} ${p.y + p.height - ry} A ${p.width / 2} ${ry} 0 0 1 ${p.x} ${p.y + p.height - ry} Z" fill="${style.fill}" stroke="${style.border}" stroke-width="1.5"/>`
+    );
+    parts.push(`<ellipse cx="${cx}" cy="${p.y + ry}" rx="${p.width / 2}" ry="${ry}" fill="none" stroke="${style.border}" stroke-width="1.5"/>`);
+  } else if (style.shape === 'queue') {
+    parts.push(
+      `<rect x="${p.x}" y="${p.y}" width="${p.width}" height="${p.height}" rx="${p.height / 2}" fill="${style.fill}" stroke="${style.border}" stroke-width="1.5"/>`
+    );
+  } else {
+    parts.push(
+      `<rect x="${p.x}" y="${p.y}" width="${p.width}" height="${p.height}" rx="8" fill="${style.fill}" stroke="${style.border}" stroke-width="1.5"/>`
+    );
+  }
+
+  // Inner text: badge + label + tech + description
+  const badgeY = p.y + (style.shape === 'person' ? 36 : 18);
+  parts.push(`<text x="${cx}" y="${badgeY}" text-anchor="middle" font-size="9" font-style="italic" font-weight="600" fill="${style.text}" opacity="0.85">[${escXml(c4BadgeLabel(el.kind))}]</text>`);
+  parts.push(`<text x="${cx}" y="${badgeY + 18}" text-anchor="middle" font-size="13" font-weight="700" fill="${style.text}">${escXml(el.label)}</text>`);
+  if (el.technology) {
+    parts.push(`<text x="${cx}" y="${badgeY + 32}" text-anchor="middle" font-size="10" font-style="italic" fill="${style.text}" opacity="0.85">[${escXml(el.technology)}]</text>`);
+  }
+  if (el.description) {
+    const lines = wrapText(el.description, 28);
+    const startY = badgeY + (el.technology ? 48 : 36);
+    for (let i = 0; i < Math.min(lines.length, 2); i++) {
+      parts.push(`<text x="${cx}" y="${startY + i * 12}" text-anchor="middle" font-size="10" fill="${style.text}" opacity="0.92">${escXml(lines[i])}</text>`);
+    }
+  }
+  return parts.join('');
+}
+
+// ── GitGraph ─────────────────────────────────────────────────────────────
+
+interface GitCommit {
+  id: string;
+  branch: string;
+  parents: string[];
+  tag?: string;
+  type: 'NORMAL' | 'REVERSE' | 'HIGHLIGHT';
+  isMerge?: boolean;
+}
+
+export function buildGitGraphSvg(ir: GitGraphIR, options: BuildOptions = {}): string {
+  const { common } = palette(options.dark ?? false);
+  const dark = options.dark ?? false;
+  const padding = options.padding ?? 40;
+  const titleH = ir.title ? 32 : 0;
+
+  // Walk ops to compute commits + branches.
+  const commits: GitCommit[] = [];
+  const branchOrder: string[] = ['main'];
+  const branchHead = new Map<string, string | null>(); // branch → latest commit id
+  branchHead.set('main', null);
+  let currentBranch = 'main';
+  let counter = 0;
+
+  for (const op of ir.ops) {
+    if (op.kind === 'branch') {
+      if (!branchOrder.includes(op.name)) branchOrder.push(op.name);
+      branchHead.set(op.name, branchHead.get(currentBranch) ?? null);
+      currentBranch = op.name;
+    } else if (op.kind === 'checkout') {
+      currentBranch = op.name;
+      if (!branchOrder.includes(op.name)) branchOrder.push(op.name);
+      if (!branchHead.has(op.name)) branchHead.set(op.name, null);
+    } else if (op.kind === 'commit') {
+      const id = op.id ?? `c${++counter}`;
+      const parent = branchHead.get(currentBranch);
+      const commit: GitCommit = {
+        id,
+        branch: currentBranch,
+        parents: parent ? [parent] : [],
+        tag: op.tag,
+        type: op.type ?? 'NORMAL',
+      };
+      commits.push(commit);
+      branchHead.set(currentBranch, id);
+    } else if (op.kind === 'merge') {
+      const id = `merge-${++counter}`;
+      const a = branchHead.get(currentBranch);
+      const b = branchHead.get(op.from);
+      const commit: GitCommit = {
+        id,
+        branch: currentBranch,
+        parents: [a, b].filter((p): p is string => !!p),
+        tag: op.tag,
+        type: 'NORMAL',
+        isMerge: true,
+      };
+      commits.push(commit);
+      branchHead.set(currentBranch, id);
+    } else if (op.kind === 'cherry-pick') {
+      const id = `cherry-${++counter}`;
+      const parent = branchHead.get(currentBranch);
+      commits.push({
+        id,
+        branch: currentBranch,
+        parents: parent ? [parent] : [],
+        type: 'HIGHLIGHT',
+      });
+      branchHead.set(currentBranch, id);
+    }
+  }
+
+  const BRANCH_GAP = 60;
+  const COMMIT_GAP = 70;
+  const branchIdx = new Map<string, number>(branchOrder.map((b, i) => [b, i]));
+  const branchX = (b: string) => padding + 90 + (branchIdx.get(b) ?? 0) * BRANCH_GAP;
+
+  const commitPositions = new Map<string, { x: number; y: number }>();
+  commits.forEach((c, i) => {
+    commitPositions.set(c.id, { x: branchX(c.branch), y: padding + titleH + 40 + i * COMMIT_GAP });
+  });
+
+  const width = padding * 2 + 90 + branchOrder.length * BRANCH_GAP + 200;
+  const height = padding * 2 + titleH + 60 + commits.length * COMMIT_GAP;
+
+  const branchColors = ['#3b82f6', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#06b6d4', '#ec4899'];
+  const branchColor = (b: string) => branchColors[(branchIdx.get(b) ?? 0) % branchColors.length];
+
+  const parts: string[] = [];
+  parts.push(svgOpen(0, 0, width, height, common.canvasBg));
+  if (ir.title) {
+    parts.push(`<text x="${width / 2}" y="22" text-anchor="middle" font-size="15" font-weight="600" fill="${common.text}">${escXml(ir.title)}</text>`);
+  }
+  // Branch labels at top
+  for (const b of branchOrder) {
+    const x = branchX(b);
+    const y = padding + titleH + 16;
+    parts.push(`<text x="${x}" y="${y}" text-anchor="middle" font-size="11" font-weight="700" fill="${branchColor(b)}">${escXml(b)}</text>`);
+    // Branch swim-line
+    parts.push(`<line x1="${x}" y1="${y + 8}" x2="${x}" y2="${height - padding}" stroke="${branchColor(b)}" stroke-width="2" opacity="0.3"/>`);
+  }
+
+  // Parent connections
+  for (const c of commits) {
+    const cp = commitPositions.get(c.id);
+    if (!cp) continue;
+    for (const pid of c.parents) {
+      const pp = commitPositions.get(pid);
+      if (!pp) continue;
+      const sameLane = pp.x === cp.x;
+      const stroke = branchColor(c.branch);
+      if (sameLane) {
+        parts.push(`<line x1="${pp.x}" y1="${pp.y}" x2="${cp.x}" y2="${cp.y}" stroke="${stroke}" stroke-width="2"/>`);
+      } else {
+        // Curve from parent commit to child
+        const midY = (pp.y + cp.y) / 2;
+        parts.push(`<path d="M ${pp.x} ${pp.y} C ${pp.x} ${midY}, ${cp.x} ${midY}, ${cp.x} ${cp.y}" stroke="${stroke}" stroke-width="2" fill="none"/>`);
+      }
+    }
+  }
+
+  // Commit nodes
+  for (const c of commits) {
+    const cp = commitPositions.get(c.id);
+    if (!cp) continue;
+    const color = branchColor(c.branch);
+    const r = 9;
+    if (c.type === 'REVERSE') {
+      parts.push(`<rect x="${cp.x - r}" y="${cp.y - r}" width="${r * 2}" height="${r * 2}" fill="${dark ? '#0f172a' : '#ffffff'}" stroke="${color}" stroke-width="2"/>`);
+    } else if (c.type === 'HIGHLIGHT') {
+      parts.push(`<rect x="${cp.x - r}" y="${cp.y - r}" width="${r * 2}" height="${r * 2}" rx="3" fill="${color}" stroke="${color}" stroke-width="2"/>`);
+    } else if (c.isMerge) {
+      parts.push(`<circle cx="${cp.x}" cy="${cp.y}" r="${r}" fill="${dark ? '#0f172a' : '#ffffff'}" stroke="${color}" stroke-width="2.5"/>`);
+      parts.push(`<circle cx="${cp.x}" cy="${cp.y}" r="${r - 4}" fill="${color}"/>`);
+    } else {
+      parts.push(`<circle cx="${cp.x}" cy="${cp.y}" r="${r}" fill="${color}" stroke="${dark ? '#0f172a' : '#ffffff'}" stroke-width="2"/>`);
+    }
+    // Commit id label
+    const labelX = padding + 90 + branchOrder.length * BRANCH_GAP + 24;
+    parts.push(`<text x="${labelX}" y="${cp.y + 4}" font-family='${MONO_FAMILY}' font-size="11" fill="${common.text}">${escXml(c.id)}</text>`);
+    if (c.tag) {
+      const tagX = labelX + c.id.length * 7 + 12;
+      parts.push(`<rect x="${tagX}" y="${cp.y - 8}" width="${c.tag.length * 6.5 + 12}" height="16" rx="3" fill="${color}" opacity="0.85"/>`);
+      parts.push(`<text x="${tagX + 6}" y="${cp.y + 4}" font-size="10" font-weight="700" fill="#ffffff">${escXml(c.tag)}</text>`);
+    }
+  }
 
   parts.push('</svg>');
   return parts.join('');

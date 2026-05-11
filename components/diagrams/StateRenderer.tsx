@@ -1,163 +1,29 @@
 import { useEffect, useMemo, useRef } from 'react';
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  Background,
-  Controls,
-  Handle,
-  Position,
-  MarkerType,
-  type Node,
-  type Edge,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import type { RendererHandle, RendererProps } from '../../utils/diagrams/registry';
 import type { StateDiagramIR, StateNode } from '../../utils/diagrams/types';
 import { getDiagramTheme } from './shared/theme';
 import { buildStateSvg, svgStringToElement, type StateBuildPositions } from '../../utils/diagrams/svgBuilders';
 
-interface StateNodeData extends Record<string, unknown> {
-  state: StateNode;
-  dark: boolean;
-}
+type StateRendererProps = RendererProps<'state'>;
 
-interface CompositeNodeData extends Record<string, unknown> {
-  state: StateNode;
-  dark: boolean;
-  width: number;
-  height: number;
-}
-
-const HANDLE_STYLE = { background: 'transparent', border: 'none', width: 1, height: 1, opacity: 0 } as const;
 const COMPOSITE_HEADER_HEIGHT = 32;
 const COMPOSITE_PAD = 18;
 
-function StateBox({ data }: { data: StateNodeData }) {
-  const { state, dark } = data;
-  const isMarker = state.kind === 'start' || state.kind === 'end';
-
-  if (isMarker) {
-    const fill = state.kind === 'start' ? (dark ? '#e2e8f0' : '#0f172a') : 'transparent';
-    const border = dark ? '#e2e8f0' : '#0f172a';
-    return (
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          background: fill,
-          border: `2px solid ${border}`,
-          boxSizing: 'border-box',
-          position: 'relative',
-        }}
-      >
-        {state.kind === 'end' && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 4,
-              borderRadius: '50%',
-              background: dark ? '#e2e8f0' : '#0f172a',
-            }}
-          />
-        )}
-        <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
-        <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
-        <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
-        <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        background: dark ? '#1e293b' : '#ffffff',
-        color: dark ? '#e2e8f0' : '#1e293b',
-        border: `1.5px solid ${dark ? '#475569' : '#cbd5e1'}`,
-        borderRadius: 14,
-        padding: '10px 18px',
-        fontSize: 13,
-        fontWeight: 500,
-        minWidth: 80,
-        textAlign: 'center',
-        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)',
-      }}
-    >
-      <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
-      <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
-      {state.label || state.id}
-    </div>
-  );
-}
-
-function CompositeBox({ data }: { data: CompositeNodeData }) {
-  const { state, dark, width, height } = data;
-  return (
-    <div
-      style={{
-        width,
-        height,
-        background: dark ? 'rgba(15, 23, 42, 0.5)' : '#ffffff',
-        border: `1.5px solid ${dark ? '#475569' : '#cbd5e1'}`,
-        borderRadius: 14,
-        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
-      <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
-      <div
-        style={{
-          height: COMPOSITE_HEADER_HEIGHT,
-          padding: '0 16px',
-          background: dark ? '#1e293b' : '#f1f5f9',
-          borderBottom: `1px solid ${dark ? '#475569' : '#cbd5e1'}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 600,
-          fontSize: 13,
-          color: dark ? '#e2e8f0' : '#1e293b',
-        }}
-      >
-        {state.label || state.id}
-      </div>
-    </div>
-  );
-}
-
-const NODE_TYPES = { state: StateBox, composite: CompositeBox };
-
-type StateRendererProps = RendererProps<'state'>;
-
-function stateNodeSize(state: StateNode): { width: number; height: number } {
-  // Markers render at 24x24 visually but we reserve a wider footprint in
-  // dagre so the [*]→state edge stays short and clearly attached, instead
-  // of bending across other nodes' columns.
-  if (state.kind === 'start' || state.kind === 'end') return { width: 80, height: 32 };
-  const labelLen = (state.label || state.id).length;
-  return { width: Math.max(96, labelLen * 9 + 40), height: 44 };
+function stateNodeSize(s: StateNode): { width: number; height: number } {
+  if (s.kind === 'start' || s.kind === 'end') return { width: 80, height: 32 };
+  const len = (s.label || s.id).length;
+  return { width: Math.max(96, len * 9 + 40), height: 44 };
 }
 
 interface InnerLayout {
   width: number;
   height: number;
-  /** Per-child position relative to the composite's top-left. */
+  /** Per-child position relative to the composite top-left. */
   positions: Map<string, { x: number; y: number }>;
 }
 
-/** Lay out a composite's children with dagre and return the bounding box. */
-function layoutComposite(
-  parentId: string,
-  ir: StateDiagramIR
-): InnerLayout {
+function layoutComposite(parentId: string, ir: StateDiagramIR): InnerLayout {
   const children = ir.states.filter((s) => s.parent === parentId);
   if (children.length === 0) {
     return { width: 200, height: COMPOSITE_HEADER_HEIGHT + 60, positions: new Map() };
@@ -172,10 +38,7 @@ function layoutComposite(
   }
   dagre.layout(g);
 
-  let minLeft = Infinity;
-  let minTop = Infinity;
-  let maxRight = 0;
-  let maxBottom = 0;
+  let minLeft = Infinity, minTop = Infinity, maxRight = 0, maxBottom = 0;
   const tmp = new Map<string, { x: number; y: number }>();
   for (const c of children) {
     const { x, y } = g.node(c.id) as { x: number; y: number };
@@ -206,15 +69,13 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
   const theme = getDiagramTheme(dark);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { nodes, edges, canvasHeight, svgPositions } = useMemo(() => {
-    // Pre-compute inner layout for each composite so we know its size.
+  const svg = useMemo(() => {
     const compositeIds = ir.states.filter((s) => s.kind === 'composite').map((s) => s.id);
     const innerLayouts = new Map<string, InnerLayout>();
     for (const id of compositeIds) innerLayouts.set(id, layoutComposite(id, ir));
 
     const buildPositions: StateBuildPositions = { topLevel: new Map(), children: new Map() };
 
-    // Outer dagre: top-level nodes (composites + non-composite parents=undefined).
     const topLevel = ir.states.filter((s) => !s.parent);
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 90, marginx: 32, marginy: 32 });
@@ -233,40 +94,26 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
     }
     dagre.layout(g);
 
-    // Build ReactFlow nodes — composites first so children referencing
-    // them via parentId resolve correctly.
-    const rfNodes: Node[] = [];
     for (const s of topLevel) {
       const { x, y } = g.node(s.id) as { x: number; y: number };
       if (s.kind === 'composite') {
         const inner = innerLayouts.get(s.id)!;
-        const px = x - inner.width / 2;
-        const py = y - inner.height / 2;
-        buildPositions.topLevel.set(s.id, { x: px, y: py, width: inner.width, height: inner.height });
-        rfNodes.push({
-          id: s.id,
-          type: 'composite',
-          position: { x: px, y: py },
-          data: { state: s, dark, width: inner.width, height: inner.height } as CompositeNodeData,
-          style: { width: inner.width, height: inner.height, background: 'transparent', border: 'none', padding: 0 },
-          draggable: true,
+        buildPositions.topLevel.set(s.id, {
+          x: x - inner.width / 2,
+          y: y - inner.height / 2,
+          width: inner.width,
+          height: inner.height,
         });
       } else {
         const size = stateNodeSize(s);
-        const px = x - size.width / 2;
-        const py = y - size.height / 2;
-        buildPositions.topLevel.set(s.id, { x: px, y: py, width: size.width, height: size.height });
-        rfNodes.push({
-          id: s.id,
-          type: 'state',
-          position: { x: px, y: py },
-          data: { state: s, dark } as StateNodeData,
-          style: { background: 'transparent', border: 'none', padding: 0 },
-          draggable: true,
+        buildPositions.topLevel.set(s.id, {
+          x: x - size.width / 2,
+          y: y - size.height / 2,
+          width: size.width,
+          height: size.height,
         });
       }
     }
-    // Children — positions are relative to the composite (handled by parentId).
     for (const compId of compositeIds) {
       const inner = innerLayouts.get(compId)!;
       const children = ir.states.filter((s) => s.parent === compId);
@@ -274,81 +121,36 @@ export default function StateRenderer({ ir, dark = false, handleRef }: StateRend
         const pos = inner.positions.get(c.id);
         if (!pos) continue;
         const size = stateNodeSize(c);
-        buildPositions.children.set(c.id, { x: pos.x, y: pos.y, width: size.width, height: size.height, parent: compId });
-        rfNodes.push({
-          id: c.id,
-          type: 'state',
-          position: pos,
-          parentId: compId,
-          extent: 'parent',
-          data: { state: c, dark } as StateNodeData,
-          style: { background: 'transparent', border: 'none', padding: 0 },
-          draggable: true,
+        buildPositions.children.set(c.id, {
+          x: pos.x,
+          y: pos.y,
+          width: size.width,
+          height: size.height,
+          parent: compId,
         });
       }
     }
 
-    const rfEdges: Edge[] = ir.transitions.map((t, i) => ({
-      id: `${t.source}->${t.target}-${i}`,
-      source: t.source,
-      target: t.target,
-      label: t.label,
-      type: 'smoothstep',
-      style: { stroke: theme.edgeColor, strokeWidth: 1.5 },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: theme.edgeColor },
-      labelBgStyle: { fill: theme.edgeLabelBg, fillOpacity: 0.95 },
-      labelStyle: { fill: theme.edgeLabel, fontSize: 11, fontWeight: 500 },
-    }));
-
-    let maxBottom = 0;
-    for (const n of rfNodes) {
-      if (n.parentId) continue;
-      const h =
-        n.type === 'composite'
-          ? (n.data as CompositeNodeData).height
-          : 80;
-      maxBottom = Math.max(maxBottom, n.position.y + h);
-    }
-    return { nodes: rfNodes, edges: rfEdges, canvasHeight: Math.max(360, maxBottom + 60), svgPositions: buildPositions };
-  }, [ir, dark, theme]);
+    return buildStateSvg(ir, buildPositions, { dark });
+  }, [ir, dark]);
 
   useEffect(() => {
     if (!handleRef) return;
     const handle: RendererHandle = {
-      getSvgElement: () => svgStringToElement(buildStateSvg(ir, svgPositions, { dark })),
+      getSvgElement: () => svgStringToElement(svg),
     };
     handleRef.current = handle;
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
     };
-  }, [handleRef, ir, svgPositions, dark]);
+  }, [handleRef, svg]);
 
   return (
     <div
       ref={containerRef}
       className="state-renderer"
-      style={{ width: '100%', height: canvasHeight, background: theme.canvasBg, borderRadius: 12 }}
-    >
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={NODE_TYPES}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          proOptions={{ hideAttribution: true }}
-          nodesDraggable
-          nodesConnectable={false}
-          panOnScroll
-          zoomOnScroll
-          zoomOnPinch
-          minZoom={0.2}
-          maxZoom={2.5}
-        >
-          <Background gap={24} color={dark ? '#1e293b' : '#e2e8f0'} />
-          <Controls showInteractive={false} />
-        </ReactFlow>
-      </ReactFlowProvider>
-    </div>
+      style={{ width: '100%', background: theme.canvasBg, borderRadius: 12, padding: 12, overflow: 'auto' }}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
   );
 }

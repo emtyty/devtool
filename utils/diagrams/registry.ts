@@ -10,12 +10,15 @@
 
 import type { ComponentType, RefObject } from 'react';
 import type {
+  ArchitectureIR,
+  C4IR,
   ClassDiagramIR,
   DiagramIR,
   DiagramType,
   ERDiagramIR,
   FlowchartIR,
   GanttDiagramIR,
+  GitGraphIR,
   JourneyIR,
   MindmapIR,
   PieChartIR,
@@ -63,7 +66,13 @@ export type IRForType<T extends DiagramType> = T extends 'flowchart'
                     ? TimelineIR
                     : T extends 'mindmap'
                       ? MindmapIR
-                      : DiagramIR;
+                      : T extends 'architecture'
+                        ? ArchitectureIR
+                        : T extends 'c4'
+                          ? C4IR
+                          : T extends 'gitgraph'
+                            ? GitGraphIR
+                            : DiagramIR;
 
 export interface RendererProps<T extends DiagramType = DiagramType> {
   ir: IRForType<T>;

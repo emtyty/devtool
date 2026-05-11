@@ -23,8 +23,15 @@
 //   - `class`/`classDef`/`style`/`linkStyle`/`click`
 //   - Asymmetric/parallelogram/trapezoid shapes
 
-import mermaid from 'mermaid';
 import type {
+  ArchSide,
+  ArchitectureEdge,
+  ArchitectureIR,
+  ArchitectureNode,
+  C4Element,
+  C4ElementKind,
+  C4IR,
+  C4Variant,
   ClassDiagramIR,
   ClassMember,
   ClassNode,
@@ -39,6 +46,8 @@ import type {
   GanttDiagramIR,
   GanttItemStatus,
   GanttTask,
+  GitGraphIR,
+  GitGraphOp,
   JourneyIR,
   JourneySection,
   MindmapIR,
@@ -95,21 +104,7 @@ export async function detectDiagramType(source: string): Promise<RecognizedDiagr
   for (const { re, type } of HEADER_KEYWORDS) {
     if (re.test(firstLine)) return type;
   }
-  // Ambiguous header — let mermaid.parse confirm the type. If mermaid
-  // recognizes it as anything (even a type we don't know), return
-  // 'unsupported' so the caller routes through the mermaid fallback rather
-  // than reporting a hard parse failure.
-  try {
-    const result = await mermaid.parse(clean, { suppressErrors: true });
-    if (!result) return 'unsupported';
-    const dt = result.diagramType?.toLowerCase() ?? '';
-    for (const { type } of HEADER_KEYWORDS) {
-      if (dt.includes(type)) return type;
-    }
-    return 'unsupported';
-  } catch {
-    return 'unsupported';
-  }
+  return 'unsupported';
 }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -143,6 +138,12 @@ export async function parseToIR(source: string): Promise<ParseResult> {
         return { ok: true, type, ir: parseTimeline(source) };
       case 'mindmap':
         return { ok: true, type, ir: parseMindmap(source) };
+      case 'architecture':
+        return { ok: true, type, ir: parseArchitecture(source) };
+      case 'c4':
+        return { ok: true, type, ir: parseC4(source) };
+      case 'gitgraph':
+        return { ok: true, type, ir: parseGitGraph(source) };
       default:
         // Recognized but no native renderer yet — caller falls back to mermaid.
         return { ok: true, type, ir: null };
@@ -1268,4 +1269,222 @@ export function parseMindmap(source: string): MindmapIR {
   }
 
   return { type: 'mindmap', root };
+}
+
+// ── Architecture-beta parser ─────────────────────────────────────────────
+//   architecture-beta
+//     group api(cloud)[API]
+//     service db(database)[Postgres] in api
+//     service web(server)[Web]
+//     db:L --> R:web
+
+const ARCH_DECL_RE =
+  /^(group|service)\s+([\w-]+)\s*(?:\(([^)]+)\))?\s*(?:\[([^\]]+)\])?\s*(?:in\s+([\w-]+))?\s*$/i;
+const ARCH_EDGE_RE =
+  /^([\w-]+)(?::([LRTB]))?\s*(?:--|<-->|<--|-->|<-|->)\s*(?:([LRTB]):)?([\w-]+)(?:\s*\[([^\]]+)\])?$/i;
+
+export function parseArchitecture(source: string): ArchitectureIR {
+  const lines = source.split('\n').map((l) => l.trim());
+  const nodes: ArchitectureNode[] = [];
+  const edges: ArchitectureEdge[] = [];
+
+  for (const line of lines) {
+    if (!line || line.startsWith('%%')) continue;
+    if (/^architecture(-beta)?\b/i.test(line)) continue;
+    if (/^title\b/i.test(line)) continue;
+
+    const decl = line.match(ARCH_DECL_RE);
+    if (decl) {
+      const [, kind, id, icon, label, parent] = decl;
+      nodes.push({
+        id,
+        kind: kind.toLowerCase() === 'group' ? 'group' : 'service',
+        label: label?.trim() || id,
+        icon: icon?.trim() || undefined,
+        parent: parent?.trim() || undefined,
+      });
+      continue;
+    }
+    const edge = line.match(ARCH_EDGE_RE);
+    if (edge) {
+      const [, source, sourceSide, targetSide, target, label] = edge;
+      edges.push({
+        source,
+        target,
+        sourceSide: (sourceSide?.toUpperCase() as ArchSide | undefined) ?? undefined,
+        targetSide: (targetSide?.toUpperCase() as ArchSide | undefined) ?? undefined,
+        label: label?.trim() || undefined,
+      });
+    }
+  }
+  return { type: 'architecture', nodes, edges };
+}
+
+// ── C4 parser ────────────────────────────────────────────────────────────
+//   C4Context  /  C4Container  /  C4Component  /  C4Deployment
+//     title System Context Diagram
+//     Person(user, "User", "End user")
+//     System(app, "App", "Main app")
+//     System_Ext(ext, "External", "3rd party")
+//     Rel(user, app, "Uses", "HTTPS")
+//     System_Boundary(b1, "Org") { ... }
+
+const C4_VARIANT_RE = /^C4(Context|Container|Component|Deployment)\b/i;
+const C4_ELEMENT_RE =
+  /^([A-Z][\w_]*)\s*\(\s*([^,)]+)(?:\s*,\s*"([^"]*)")?(?:\s*,\s*"([^"]*)")?(?:\s*,\s*"([^"]*)")?(?:\s*,\s*"([^"]*)")?\s*\)\s*\{?\s*$/;
+const C4_REL_RE =
+  /^(Rel|BiRel|Rel_Back|Rel_Up|Rel_Down|Rel_Left|Rel_Right)\s*\(\s*([\w_]+)\s*,\s*([\w_]+)\s*(?:,\s*"([^"]*)")?(?:\s*,\s*"([^"]*)")?\s*\)\s*$/i;
+
+const C4_KIND_MAP: Record<string, C4ElementKind> = {
+  Person: 'person',
+  Person_Ext: 'person-external',
+  System: 'system',
+  System_Ext: 'system-external',
+  SystemDb: 'system-db',
+  SystemDb_Ext: 'system-db',
+  SystemQueue: 'system-queue',
+  SystemQueue_Ext: 'system-queue',
+  Container: 'container',
+  Container_Ext: 'container-external',
+  ContainerDb: 'container-db',
+  ContainerDb_Ext: 'container-db',
+  ContainerQueue: 'container-queue',
+  Component: 'component',
+  Component_Ext: 'component-external',
+  ComponentDb: 'component-db',
+  ComponentQueue: 'component-queue',
+  Boundary: 'boundary',
+  System_Boundary: 'system-boundary',
+  Container_Boundary: 'container-boundary',
+  Enterprise_Boundary: 'enterprise-boundary',
+  Node: 'node',
+  Deployment_Node: 'node',
+};
+
+export function parseC4(source: string): C4IR {
+  const lines = source.split('\n').map((l) => l.trim());
+  const elements: C4Element[] = [];
+  const relations: C4IR['relations'] = [];
+  let variant: C4Variant = 'context';
+  let title: string | undefined;
+  const boundaryStack: string[] = [];
+
+  for (const rawLine of lines) {
+    let line = rawLine;
+    if (!line || line.startsWith('%%')) continue;
+    const v = line.match(C4_VARIANT_RE);
+    if (v) {
+      const t = v[1].toLowerCase();
+      variant = (t === 'context' ? 'context'
+        : t === 'container' ? 'container'
+        : t === 'component' ? 'component'
+        : 'deployment');
+      continue;
+    }
+    const titleMatch = line.match(/^title\s+(.+)$/i);
+    if (titleMatch) {
+      title = titleMatch[1].trim();
+      continue;
+    }
+
+    // Boundary close
+    if (line === '}') {
+      boundaryStack.pop();
+      continue;
+    }
+
+    const rel = line.match(C4_REL_RE);
+    if (rel) {
+      const [, , src, tgt, label, technology] = rel;
+      relations.push({ source: src, target: tgt, label, technology });
+      continue;
+    }
+
+    const el = line.match(C4_ELEMENT_RE);
+    if (el) {
+      const [, type, id, ...rest] = el;
+      const kind = C4_KIND_MAP[type] ?? 'system';
+      const label = rest[0] ?? id;
+      // For boundaries: label is the only string after id
+      // For elements with tech: order is label, technology, description
+      const isBoundary = kind.endsWith('boundary') || kind === 'node';
+      const technology = !isBoundary ? rest[1] : undefined;
+      const description = !isBoundary ? rest[2] : rest[1];
+      elements.push({
+        id,
+        kind,
+        label: label.trim(),
+        technology: technology?.trim(),
+        description: description?.trim(),
+        parent: boundaryStack.length > 0 ? boundaryStack[boundaryStack.length - 1] : undefined,
+      });
+      // If this line opens a boundary (ends with `{`), push it.
+      if (line.endsWith('{') && isBoundary) {
+        boundaryStack.push(id);
+      }
+    }
+  }
+  return { type: 'c4', variant, title, elements, relations };
+}
+
+// ── GitGraph parser ──────────────────────────────────────────────────────
+//   gitGraph
+//     commit
+//     branch develop
+//     checkout develop
+//     commit id: "fix"
+//     commit tag: "v1.0"
+//     checkout main
+//     merge develop
+
+export function parseGitGraph(source: string): GitGraphIR {
+  const lines = source.split('\n').map((l) => l.trim());
+  const ops: GitGraphOp[] = [];
+  let title: string | undefined;
+
+  for (const line of lines) {
+    if (!line || line.startsWith('%%')) continue;
+    if (/^gitgraph\b/i.test(line) || /^---/.test(line)) continue;
+    const titleMatch = line.match(/^title:\s*(.+)$/i) || line.match(/^title\s+(.+)$/i);
+    if (titleMatch) {
+      title = titleMatch[1].trim();
+      continue;
+    }
+
+    // commit [id: "x"] [tag: "y"] [type: HIGHLIGHT|REVERSE|NORMAL]
+    const commit = line.match(/^commit\b(.*)$/i);
+    if (commit) {
+      const rest = commit[1];
+      const idMatch = rest.match(/id:\s*"([^"]+)"/);
+      const tagMatch = rest.match(/tag:\s*"([^"]+)"/);
+      const typeMatch = rest.match(/type:\s*(HIGHLIGHT|REVERSE|NORMAL)/);
+      ops.push({
+        kind: 'commit',
+        id: idMatch?.[1],
+        tag: tagMatch?.[1],
+        type: typeMatch ? (typeMatch[1] as 'NORMAL' | 'REVERSE' | 'HIGHLIGHT') : 'NORMAL',
+      });
+      continue;
+    }
+    const branch = line.match(/^branch\s+([\w/-]+)/i);
+    if (branch) {
+      ops.push({ kind: 'branch', name: branch[1] });
+      continue;
+    }
+    const checkout = line.match(/^(?:checkout|switch)\s+([\w/-]+)/i);
+    if (checkout) {
+      ops.push({ kind: 'checkout', name: checkout[1] });
+      continue;
+    }
+    const merge = line.match(/^merge\s+([\w/-]+)(?:\s+tag:\s*"([^"]+)")?/i);
+    if (merge) {
+      ops.push({ kind: 'merge', from: merge[1], tag: merge[2] });
+      continue;
+    }
+    const cherry = line.match(/^cherry-pick\s+id:\s*"([^"]+)"/i);
+    if (cherry) {
+      ops.push({ kind: 'cherry-pick', commitId: cherry[1] });
+    }
+  }
+  return { type: 'gitgraph', title, ops };
 }
