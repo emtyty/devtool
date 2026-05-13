@@ -168,7 +168,7 @@ interface NodeDecl {
 
 const HEADER_RE = /^(?:flowchart|graph)\s+(TB|TD|BT|LR|RL)\b/i;
 const SUBGRAPH_OPEN_RE = /^subgraph\s+([\w-]+)(?:\s*\[(.+?)\])?/i;
-const EDGE_LINE_REGEX = /-{2,}>|-{2,}|-\.-+>|={2,}>|-{2,}-|=={2,}/;
+const EDGE_LINE_REGEX = /-{2,}>|-{2,}|-\.-+>|={2,}>|-{2,}-|=={2,}|~~~/;
 
 export function parseFlowchart(source: string): FlowchartIR {
   const rawLines = source.split('\n');
@@ -238,13 +238,26 @@ export function parseFlowchart(source: string): FlowchartIR {
     if (EDGE_LINE_REGEX.test(line)) {
       const edge = parseEdge(line);
       if (edge) {
-        const from = parseNodeDecl(edge.from);
-        const to = parseNodeDecl(edge.to);
-        ensureNode(from);
-        ensureNode(to);
-        const e: EdgeIR = { source: from.id, target: to.id, kind: edge.kind };
-        if (edge.label) e.label = edge.label;
-        edges.push(e);
+        // Expand `&` multi-source / multi-target shorthand:
+        //   A & B & C --> D & E   →  6 edges (Cartesian product).
+        // Splitting on `&` is safe because `&` isn't valid inside an id or
+        // shape-bracket — shape contents are already inside [...] / (...) /
+        // {...} when present.
+        const fromTokens = edge.from.split(/\s*&\s*/).filter(Boolean);
+        const toTokens = edge.to.split(/\s*&\s*/).filter(Boolean);
+        for (const f of fromTokens) {
+          const fromDecl = parseNodeDecl(f);
+          if (!fromDecl.id) continue;
+          ensureNode(fromDecl);
+          for (const t of toTokens) {
+            const toDecl = parseNodeDecl(t);
+            if (!toDecl.id) continue;
+            ensureNode(toDecl);
+            const e: EdgeIR = { source: fromDecl.id, target: toDecl.id, kind: edge.kind };
+            if (edge.label) e.label = edge.label;
+            edges.push(e);
+          }
+        }
         continue;
       }
     }
@@ -253,6 +266,12 @@ export function parseFlowchart(source: string): FlowchartIR {
     const decl = parseNodeDecl(line);
     if (decl.id) ensureNode(decl);
   }
+
+  // Post-process: when a subgraph and a node share an id (which happens when
+  // an edge references the subgraph name as a target — common in real mermaid
+  // sources), drop the duplicate node. Edges keep the id; the layout pass
+  // redirects them to a representative child.
+  for (const sg of subgraphs) nodes.delete(sg.id);
 
   return {
     type: 'flowchart',
@@ -344,6 +363,7 @@ function parseEdge(line: string): ParsedEdge | null {
 
   // Unlabeled or `|label|` syntax: `A --> |label| B`
   const unlabeled: { re: RegExp; kind: EdgeKind }[] = [
+    { re: /^(.+?)\s*~~~\s*(?:\|([^|]+)\|\s*)?(.+)$/, kind: 'invisible' },
     { re: /^(.+?)\s*-\.-+>\s*(?:\|([^|]+)\|\s*)?(.+)$/, kind: 'dashed' },
     { re: /^(.+?)\s*={2,}>\s*(?:\|([^|]+)\|\s*)?(.+)$/, kind: 'thick' },
     { re: /^(.+?)\s*-{2,}>\s*(?:\|([^|]+)\|\s*)?(.+)$/, kind: 'solid' },

@@ -57,23 +57,41 @@ export function layoutFlowchart(ir: FlowchartIR, options: DagreLayoutOptions = {
   g.setDefaultEdgeLabel(() => ({}));
 
   // Subgraph parents (compound graph)
+  const subgraphIds = new Set<string>();
   if (ir.subgraphs) {
     for (const sg of ir.subgraphs) {
       g.setNode(sg.id, { label: sg.label, clusterLabelPos: 'top' });
+      subgraphIds.add(sg.id);
     }
   }
 
-  // Nodes
+  // Nodes — also track one representative child per subgraph so that any
+  // edges pointing at the subgraph itself can be redirected (dagre's
+  // compound layout crashes with "rank undefined" on edges to a cluster).
+  const representativeChild = new Map<string, string>();
   for (const node of ir.nodes) {
     const size = nodeSizes.get(node.id) ?? defaultSize;
     g.setNode(node.id, { ...size, label: node.label });
-    if (node.subgraph) g.setParent(node.id, node.subgraph);
+    if (node.subgraph) {
+      g.setParent(node.id, node.subgraph);
+      if (!representativeChild.has(node.subgraph)) {
+        representativeChild.set(node.subgraph, node.id);
+      }
+    }
   }
 
-  // Edges
+  // Edges — redirect any endpoint that is itself a subgraph (cluster) to one
+  // of its children. Drop the edge entirely if the cluster is empty.
+  const resolveEndpoint = (id: string): string | null => {
+    if (!subgraphIds.has(id)) return id;
+    return representativeChild.get(id) ?? null;
+  };
   for (const edge of ir.edges) {
-    if (!g.hasNode(edge.source) || !g.hasNode(edge.target)) continue;
-    g.setEdge(edge.source, edge.target, edge.label ? { label: edge.label } : {});
+    const source = resolveEndpoint(edge.source);
+    const target = resolveEndpoint(edge.target);
+    if (!source || !target) continue;
+    if (!g.hasNode(source) || !g.hasNode(target)) continue;
+    g.setEdge(source, target, edge.label ? { label: edge.label } : {});
   }
 
   dagre.layout(g);
