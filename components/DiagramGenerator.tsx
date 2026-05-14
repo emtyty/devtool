@@ -8,15 +8,16 @@ import { generateDiagramJSON, type DiagramOutput, type NodeType, type FlowchartN
 import { buildSequenceMermaid, buildFlowchartMermaid } from '../utils/mermaidBuilder';
 import { TEMPLATES, CATEGORY_LABELS, DIAGRAM_TYPE_LABELS, STARTER_TEMPLATES, type DiagramTemplate, type DiagramType, type TemplateCategory } from '../utils/diagramTemplates';
 import {
+  DiagramRenderer,
+  bootstrapDiagramRenderers,
+  isDarkMode,
+  watchDarkMode,
   copySvgToClipboard,
   copyPngToClipboard,
   downloadSvg,
   downloadPng,
-} from '../utils/diagrams/export';
-import { isDarkMode, watchDarkMode } from './diagrams/darkMode';
-import { bootstrapDiagramRenderers } from './diagrams/bootstrap';
-import DiagramRenderer from './diagrams/DiagramRenderer';
-import type { RendererHandle } from '../utils/diagrams/registry';
+  type RendererHandle,
+} from 'merslim';
 import ResizableSplit from './ResizableSplit';
 
 // ── Types ──
@@ -269,7 +270,7 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── Export — delegates to the centralized pipeline (utils/diagrams/export) ──
+  // ── Export — delegates to merslim's export pipeline ──
 
   type ExportAction = 'copy-svg' | 'copy-png' | 'download-svg' | 'download-png';
 

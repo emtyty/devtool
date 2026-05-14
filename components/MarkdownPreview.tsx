@@ -34,12 +34,15 @@ import {
 } from 'lucide-react';
 
 import ResizableSplit from './ResizableSplit';
-import DiagramExportToolbar from './diagrams/DiagramExportToolbar';
-import DiagramRenderer from './diagrams/DiagramRenderer';
-import type { RendererHandle } from '../utils/diagrams/registry';
-import { svgToPngBlob, toSvgString } from '../utils/diagrams/export';
-import { watchDarkMode } from './diagrams/darkMode';
-import { bootstrapDiagramRenderers } from './diagrams/bootstrap';
+import {
+  DiagramRenderer,
+  DiagramExportToolbar,
+  bootstrapDiagramRenderers,
+  watchDarkMode,
+  svgToPngBlob,
+  toSvgString,
+  type RendererHandle,
+} from 'merslim';
 import { parseHeadings, type Heading } from '../utils/markdownToc';
 
 // ── Mermaid diagram renderer ─────────────────────────────────────────────────
