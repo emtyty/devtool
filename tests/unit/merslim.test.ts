@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseToIR, toSvgString, getSvgDimensions } from 'merslim';
+import { parseToIR, toSvgString, getSvgDimensions, sourceToAscii } from 'merslim';
 
 describe('merslim integration', () => {
   it('parses a simple flowchart to IR', async () => {
@@ -28,5 +28,13 @@ describe('merslim integration', () => {
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240"></svg>'
     );
     expect(dims).toEqual({ width: 320, height: 240 });
+  });
+
+  it('renders a flowchart to ASCII art', async () => {
+    const ascii = await sourceToAscii('flowchart LR\n  A[Start] --> B[End]');
+    expect(ascii).toBeTruthy();
+    expect(typeof ascii).toBe('string');
+    expect(ascii).toContain('Start');
+    expect(ascii).toContain('End');
   });
 });

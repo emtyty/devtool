@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play, Copy, Check, RotateCcw, GitBranch, Workflow, Code2, Eye,
   Loader2, LayoutTemplate, PenTool, Plus, Trash2, Save, FolderOpen, X,
-  Image, ImageDown, FileDown, Layers,
+  Image, ImageDown, FileDown, Layers, Terminal,
 } from 'lucide-react';
 import { generateDiagramJSON, type DiagramOutput, type NodeType, type FlowchartNode, type FlowchartEdge, type FlowchartSubgroup } from '../utils/diagramParser';
 import { buildSequenceMermaid, buildFlowchartMermaid } from '../utils/mermaidBuilder';
@@ -16,6 +16,7 @@ import {
   copyPngToClipboard,
   downloadSvg,
   downloadPng,
+  sourceToAscii,
   type RendererHandle,
 } from 'merslim';
 import ResizableSplit from './ResizableSplit';
@@ -23,7 +24,7 @@ import ResizableSplit from './ResizableSplit';
 // ── Types ──
 
 type InputMode = 'text' | 'templates' | 'editor';
-type ViewTab = 'preview' | 'code';
+type ViewTab = 'preview' | 'terminal' | 'code';
 
 interface EditorNode {
   id: string;
@@ -93,7 +94,13 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedAscii, setCopiedAscii] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+
+  // ASCII preview state — recomputed lazily when the Terminal tab is active.
+  const [asciiOutput, setAsciiOutput] = useState('');
+  const [asciiLoading, setAsciiLoading] = useState(false);
+  const [asciiError, setAsciiError] = useState<string | null>(null);
 
   // Template state
   const [templateFilter, setTemplateFilter] = useState<TemplateCategory | 'all'>('all');
@@ -148,6 +155,36 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
     // Clear stale render error when source changes
     setRenderError(null);
   }, [mermaidCode]);
+
+  // Lazy ASCII rendering — only compute when the Terminal tab is active, so
+  // users who never open it don't pay for the conversion.
+  useEffect(() => {
+    if (viewTab !== 'terminal' || !mermaidCode) return;
+    let cancelled = false;
+    setAsciiLoading(true);
+    setAsciiError(null);
+    sourceToAscii(mermaidCode)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result) {
+          setAsciiError('ASCII art is not available for this diagram type.');
+          setAsciiOutput('');
+        } else {
+          setAsciiOutput(result);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAsciiError(err instanceof Error ? err.message : String(err));
+        setAsciiOutput('');
+      })
+      .finally(() => {
+        if (!cancelled) setAsciiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewTab, mermaidCode]);
 
   // ── Keyboard shortcuts ──
   useEffect(() => {
@@ -269,6 +306,24 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleCopyAscii = useCallback(async () => {
+    try {
+      const ascii = await sourceToAscii(mermaidCode);
+      if (!ascii) {
+        setExportError('ASCII art is not available for this diagram type.');
+        setTimeout(() => setExportError(null), 4000);
+        return;
+      }
+      await navigator.clipboard.writeText(ascii);
+      setCopiedAscii(true);
+      setTimeout(() => setCopiedAscii(false), 2000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setExportError(`Copy ASCII failed: ${message}`);
+      setTimeout(() => setExportError(null), 4000);
+    }
+  }, [mermaidCode]);
 
   // ── Export — delegates to merslim's export pipeline ──
 
@@ -768,10 +823,26 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
         {/* View toggle + actions */}
         <div className="flex items-center justify-between">
           <div className="flex bg-slate-800/80 border border-slate-700/50 p-0.5 rounded-xl gap-0.5">
-            <button onClick={() => setViewTab('preview')} className={TAB_CLS(viewTab === 'preview')}>
+            <button
+              onClick={() => setViewTab('preview')}
+              aria-pressed={viewTab === 'preview'}
+              className={TAB_CLS(viewTab === 'preview')}
+            >
               <Eye size={11} /> Preview
             </button>
-            <button onClick={() => setViewTab('code')} className={TAB_CLS(viewTab === 'code')}>
+            <button
+              onClick={() => setViewTab('terminal')}
+              aria-pressed={viewTab === 'terminal'}
+              title="Preview as Unicode/ASCII art"
+              className={TAB_CLS(viewTab === 'terminal')}
+            >
+              <Terminal size={11} /> Terminal (ASCII)
+            </button>
+            <button
+              onClick={() => setViewTab('code')}
+              aria-pressed={viewTab === 'code'}
+              className={TAB_CLS(viewTab === 'code')}
+            >
               <Code2 size={11} /> Code Editor
             </button>
           </div>
@@ -785,6 +856,17 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
               >
                 {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
                 {copied ? 'Copied' : 'Copy'}
+              </button>
+
+              {/* Copy ASCII */}
+              <button
+                onClick={handleCopyAscii}
+                title="Copy diagram as Unicode/ASCII art"
+                aria-label="Copy diagram as ASCII art"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-slate-400 hover:text-white border border-slate-700/50 rounded-lg transition-all duration-200 hover:border-slate-600 hover:bg-white/5"
+              >
+                {copiedAscii ? <Check size={11} className="text-emerald-400" /> : <Terminal size={11} />}
+                {copiedAscii ? 'Copied' : 'ASCII'}
               </button>
 
               {/* Save */}
@@ -918,6 +1000,28 @@ const DiagramGenerator: React.FC<{ initialData?: string | null }> = ({ initialDa
                   onError={(msg) => setRenderError(msg)}
                 />
               </div>
+            )}
+          </div>
+        )}
+
+        {!loading && hasGenerated && viewTab === 'terminal' && (
+          <div className="p-4 h-full">
+            {asciiLoading ? (
+              <div className="flex items-center justify-center h-full gap-3 text-slate-500">
+                <Loader2 size={18} className="animate-spin text-blue-400" />
+                <span className="text-xs font-bold uppercase tracking-widest">Rendering ASCII…</span>
+              </div>
+            ) : asciiError ? (
+              <div role="alert" className="space-y-2">
+                <p className="text-amber-400 text-sm font-bold">ASCII unavailable</p>
+                <p className="text-amber-200/70 text-xs font-mono bg-amber-950/30 rounded-lg p-3 whitespace-pre-wrap">
+                  {asciiError}
+                </p>
+              </div>
+            ) : (
+              <pre className="w-full h-full min-h-[400px] font-mono text-[12px] text-emerald-200/90 bg-slate-950/60 border border-slate-700/50 rounded-xl p-4 overflow-auto leading-snug whitespace-pre">
+                {asciiOutput}
+              </pre>
             )}
           </div>
         )}
