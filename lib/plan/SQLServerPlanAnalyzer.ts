@@ -1,4 +1,4 @@
-import type { PlanSummary, PlanNode, RedFlag } from '../../types';
+import type { PlanSummary, PlanStatement, PlanNode, RedFlag } from '../../types';
 import type { IExecutionPlanAnalyzer } from './IExecutionPlanAnalyzer';
 
 export class SQLServerPlanAnalyzer implements IExecutionPlanAnalyzer {
@@ -221,11 +221,48 @@ export class SQLServerPlanAnalyzer implements IExecutionPlanAnalyzer {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlString, 'text/xml');
 
-    const stmtSimple = this.getElementsByLocalName(doc, 'StmtSimple')[0];
-    const statementText = stmtSimple ? stmtSimple.getAttribute('StatementText') || '' : '';
+    const stmtSimpleEls = this.getElementsByLocalName(doc, 'StmtSimple');
+    const statements: PlanStatement[] = [];
+    for (const stmt of stmtSimpleEls) {
+      const s = this.extractStatementSummary(stmt);
+      if (s) statements.push(s);
+    }
+
+    // Fallback for XML that has RelOps but no StmtSimple wrapper (rare hand-crafted snippets).
+    if (statements.length === 0) {
+      const relOps = this.getElementsByLocalName(doc, 'RelOp');
+      if (relOps.length > 0) {
+        const totalCost = parseFloat(relOps[0].getAttribute('EstimatedTotalSubtreeCost') || '0');
+        const rootNode = this.buildPlanNode(relOps[0], totalCost);
+        const executionPath = this.flattenExecutionPath(rootNode);
+        const opsMap: Record<string, number> = {};
+        relOps.forEach(op => {
+          const name = op.getAttribute('PhysicalOp') || op.getAttribute('LogicalOp') || '';
+          if (name) opsMap[name] = (opsMap[name] || 0) + 1;
+        });
+        statements.push({
+          statementText: '',
+          totalCost,
+          totalNodes: relOps.length,
+          planTree: rootNode,
+          executionPath,
+          redFlags: this.collectRedFlagsFromRelOps(relOps, totalCost, 1),
+          missingIndexes: [],
+          operations: Object.entries(opsMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count),
+        });
+      }
+    }
+
+    return this.aggregateStatements(statements);
+  }
+
+  private static extractStatementSummary(stmtSimple: Element): PlanStatement | null {
+    const statementText = stmtSimple.getAttribute('StatementText') || '';
 
     const missingIndexes: string[] = [];
-    this.getElementsByLocalName(doc, 'MissingIndex').forEach(node => {
+    this.getElementsByLocalName(stmtSimple, 'MissingIndex').forEach(node => {
       const schema = node.getAttribute('Schema') || '';
       const table = node.getAttribute('Table') || '';
       const equalityCols: string[] = [];
@@ -245,18 +282,51 @@ export class SQLServerPlanAnalyzer implements IExecutionPlanAnalyzer {
       missingIndexes.push(indexStr);
     });
 
-    const relOps = this.getElementsByLocalName(doc, 'RelOp');
-    const totalCost = relOps.length > 0
-      ? parseFloat(relOps[0].getAttribute('EstimatedTotalSubtreeCost') || '0')
-      : 0;
+    const relOps = this.getElementsByLocalName(stmtSimple, 'RelOp');
+    if (relOps.length === 0) {
+      // Statement carries text (e.g. DDL) but no plan tree — preserve the entry so the
+      // UI can still surface it instead of silently dropping the statement.
+      if (!statementText) return null;
+      return {
+        statementText,
+        totalCost: 0,
+        totalNodes: 0,
+        planTree: null,
+        executionPath: [],
+        redFlags: [],
+        missingIndexes,
+        operations: [],
+      };
+    }
 
-    const rootNode = relOps.length > 0 ? this.buildPlanNode(relOps[0], totalCost) : null;
-    const executionPath = rootNode ? this.flattenExecutionPath(rootNode) : [];
+    const totalCost = parseFloat(relOps[0].getAttribute('EstimatedTotalSubtreeCost') || '0');
+    const rootNode = this.buildPlanNode(relOps[0], totalCost);
+    const executionPath = this.flattenExecutionPath(rootNode);
 
-    const queryPlan = this.getElementsByLocalName(doc, 'QueryPlan')[0];
+    const queryPlan = this.getElementsByLocalName(stmtSimple, 'QueryPlan')[0];
     const dop = queryPlan ? parseInt(queryPlan.getAttribute('DegreeOfParallelism') || '1', 10) : 1;
 
     const opsMap: Record<string, number> = {};
+    relOps.forEach(op => {
+      const name = op.getAttribute('PhysicalOp') || op.getAttribute('LogicalOp') || '';
+      if (name) opsMap[name] = (opsMap[name] || 0) + 1;
+    });
+
+    return {
+      statementText,
+      totalCost,
+      totalNodes: relOps.length,
+      planTree: rootNode,
+      executionPath,
+      redFlags: this.collectRedFlagsFromRelOps(relOps, totalCost, dop),
+      missingIndexes,
+      operations: Object.entries(opsMap)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+    };
+  }
+
+  private static collectRedFlagsFromRelOps(relOps: Element[], totalCost: number, dop: number): RedFlag[] {
     const redFlags: RedFlag[] = [];
 
     relOps.forEach(op => {
@@ -265,9 +335,7 @@ export class SQLServerPlanAnalyzer implements IExecutionPlanAnalyzer {
       const nodeId = op.getAttribute('NodeId') || '';
       const estimateRows = parseFloat(op.getAttribute('EstimateRows') || '0');
       const subtreeCost = parseFloat(op.getAttribute('EstimatedTotalSubtreeCost') || '0');
-
       const opName = physicalOp || logicalOp;
-      if (opName) opsMap[opName] = (opsMap[opName] || 0) + 1;
 
       if (totalCost > 0 && nodeId !== '0' && subtreeCost / totalCost > 0.2) {
         redFlags.push({
@@ -365,17 +433,52 @@ export class SQLServerPlanAnalyzer implements IExecutionPlanAnalyzer {
     const severityOrder = { high: 0, medium: 1, low: 2 };
     uniqueRedFlags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
+    return uniqueRedFlags;
+  }
+
+  private static aggregateStatements(statements: PlanStatement[]): PlanSummary {
+    if (statements.length === 0) {
+      return {
+        totalNodes: 0,
+        operations: [],
+        totalCost: 0,
+        statementText: '',
+        missingIndexes: [],
+        redFlags: [],
+        executionPath: [],
+        planTree: null,
+        statements: [],
+      };
+    }
+
+    const first = statements[0];
+    const totalNodes = statements.reduce((s, st) => s + st.totalNodes, 0);
+    const totalCost = statements.reduce((s, st) => s + st.totalCost, 0);
+
+    const missingIndexes: string[] = [];
+    const redFlags: RedFlag[] = [];
+    const opsMap: Record<string, number> = {};
+    for (const st of statements) {
+      missingIndexes.push(...st.missingIndexes);
+      redFlags.push(...st.redFlags);
+      for (const op of st.operations) {
+        opsMap[op.name] = (opsMap[op.name] || 0) + op.count;
+      }
+    }
+    const operations = Object.entries(opsMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
     return {
-      totalNodes: relOps.length,
-      operations: Object.entries(opsMap)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count),
+      totalNodes,
+      operations,
       totalCost,
-      statementText,
+      statementText: first.statementText,
       missingIndexes,
-      redFlags: uniqueRedFlags,
-      executionPath,
-      planTree: rootNode,
+      redFlags,
+      executionPath: first.executionPath,
+      planTree: first.planTree,
+      statements,
     };
   }
 

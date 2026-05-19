@@ -1,4 +1,4 @@
-import type { PlanSummary, PlanNode, RedFlag } from '../../types';
+import type { PlanSummary, PlanStatement, PlanNode, RedFlag } from '../../types';
 import type { IExecutionPlanAnalyzer } from './IExecutionPlanAnalyzer';
 
 // Maps PostgreSQL "Node Type" values to the physicalOp strings used by PlanTreeRenderer
@@ -183,68 +183,105 @@ export class PostgreSQLPlanAnalyzer implements IExecutionPlanAnalyzer {
       return emptyPlanSummary();
     }
 
-    // EXPLAIN (FORMAT JSON) returns an array; each element has a "Plan" key
-    const planEntry = Array.isArray(parsed) ? parsed[0] : parsed;
+    // EXPLAIN (FORMAT JSON) returns an array — multiple entries appear when
+    // EXPLAIN is run against a multi-statement script. Build one PlanStatement
+    // per entry so the UI can render every query.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rootPgNode: Record<string, any> | undefined = planEntry?.Plan;
-    if (!rootPgNode) return emptyPlanSummary();
+    const planEntries: any[] = Array.isArray(parsed) ? parsed : [parsed];
+    const statements: PlanStatement[] = [];
 
-    const totalCost: number = rootPgNode['Total Cost'] ?? 0;
-    const counter = { id: 0 };
-    const rootNode = buildPlanNode(rootPgNode, totalCost, counter);
-    const executionPath = flattenExecutionPath(rootNode);
-
-    // Build a map from nodeId → raw pg node for red flag detection
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pgNodeMap = new Map<string, Record<string, any>>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function indexPgNodes(pgNode: Record<string, any>, planNode: PlanNode) {
-      pgNodeMap.set(planNode.nodeId, pgNode);
+    for (const entry of planEntries) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pgChildren: Record<string, any>[] = pgNode['Plans'] ?? [];
-      pgChildren.forEach((c, i) => {
-        if (planNode.children[i]) indexPgNodes(c, planNode.children[i]);
+      const rootPgNode: Record<string, any> | undefined = entry?.Plan;
+      if (!rootPgNode) continue;
+
+      const totalCost: number = rootPgNode['Total Cost'] ?? 0;
+      const counter = { id: 0 };
+      const rootNode = buildPlanNode(rootPgNode, totalCost, counter);
+      const executionPath = flattenExecutionPath(rootNode);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pgNodeMap = new Map<string, Record<string, any>>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      function indexPgNodes(pgNode: Record<string, any>, planNode: PlanNode) {
+        pgNodeMap.set(planNode.nodeId, pgNode);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pgChildren: Record<string, any>[] = pgNode['Plans'] ?? [];
+        pgChildren.forEach((c, i) => {
+          if (planNode.children[i]) indexPgNodes(c, planNode.children[i]);
+        });
+      }
+      indexPgNodes(rootPgNode, rootNode);
+
+      const opsMap: Record<string, number> = {};
+      for (const n of executionPath) {
+        if (n.physicalOp) opsMap[n.physicalOp] = (opsMap[n.physicalOp] || 0) + 1;
+      }
+
+      const redFlags: RedFlag[] = [];
+      collectRedFlags(rootNode, pgNodeMap, totalCost, redFlags);
+
+      const seen = new Set<string>();
+      const uniqueRedFlags = redFlags.filter(f => {
+        const key = `${f.type}|${f.nodeId ?? ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const severityOrder = { high: 0, medium: 1, low: 2 };
+      uniqueRedFlags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+      const statementText: string = entry?.['Query Text'] ?? '';
+
+      statements.push({
+        statementText,
+        totalCost,
+        totalNodes: counter.id,
+        planTree: rootNode,
+        executionPath,
+        redFlags: uniqueRedFlags,
+        missingIndexes: [],
+        operations: Object.entries(opsMap)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count),
       });
     }
-    indexPgNodes(rootPgNode, rootNode);
 
-    // Collect operations summary
-    const opsMap: Record<string, number> = {};
-    for (const n of executionPath) {
-      if (n.physicalOp) opsMap[n.physicalOp] = (opsMap[n.physicalOp] || 0) + 1;
-    }
-
-    const redFlags: RedFlag[] = [];
-    collectRedFlags(rootNode, pgNodeMap, totalCost, redFlags);
-
-    // Deduplicate
-    const seen = new Set<string>();
-    const uniqueRedFlags = redFlags.filter(f => {
-      const key = `${f.type}|${f.nodeId ?? ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    const severityOrder = { high: 0, medium: 1, low: 2 };
-    uniqueRedFlags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
-
-    // Statement text from planning info (not always present)
-    const statementText: string = planEntry?.['Query Text'] ?? '';
-
-    return {
-      totalNodes: counter.id,
-      operations: Object.entries(opsMap)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count),
-      totalCost,
-      statementText,
-      missingIndexes: [],
-      redFlags: uniqueRedFlags,
-      executionPath,
-      planTree: rootNode,
-    };
+    return aggregateStatements(statements);
   }
+}
+
+function aggregateStatements(statements: PlanStatement[]): PlanSummary {
+  if (statements.length === 0) return emptyPlanSummary();
+
+  const first = statements[0];
+  const totalNodes = statements.reduce((s, st) => s + st.totalNodes, 0);
+  const totalCost = statements.reduce((s, st) => s + st.totalCost, 0);
+  const missingIndexes: string[] = [];
+  const redFlags: RedFlag[] = [];
+  const opsMap: Record<string, number> = {};
+  for (const st of statements) {
+    missingIndexes.push(...st.missingIndexes);
+    redFlags.push(...st.redFlags);
+    for (const op of st.operations) {
+      opsMap[op.name] = (opsMap[op.name] || 0) + op.count;
+    }
+  }
+  const operations = Object.entries(opsMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalNodes,
+    operations,
+    totalCost,
+    statementText: first.statementText,
+    missingIndexes,
+    redFlags,
+    executionPath: first.executionPath,
+    planTree: first.planTree,
+    statements,
+  };
 }
 
 function emptyPlanSummary(): PlanSummary {
@@ -257,5 +294,6 @@ function emptyPlanSummary(): PlanSummary {
     redFlags: [],
     executionPath: [],
     planTree: null,
+    statements: [],
   };
 }

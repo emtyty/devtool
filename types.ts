@@ -49,6 +49,17 @@ export interface PlanNode {
   estimatedRowsRead?: number;
 }
 
+export interface PlanStatement {
+  statementText: string;
+  totalCost: number;
+  totalNodes: number;
+  planTree: PlanNode | null;
+  executionPath: PlanNode[];
+  redFlags: RedFlag[];
+  missingIndexes: string[];
+  operations: { name: string; count: number }[];
+}
+
 export interface PlanSummary {
   totalNodes: number;
   operations: { name: string; count: number }[];
@@ -58,6 +69,7 @@ export interface PlanSummary {
   redFlags: RedFlag[];
   executionPath: PlanNode[];
   planTree: PlanNode | null;
+  statements: PlanStatement[];
 }
 
 // --- Mock Data Generator ---

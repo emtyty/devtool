@@ -282,17 +282,31 @@ export class MySQLPlanAnalyzer implements IExecutionPlanAnalyzer {
     const severityOrder = { high: 0, medium: 1, low: 2 };
     uniqueRedFlags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
+    const operations = Object.entries(opsMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const statement = {
+      statementText: '',
+      totalCost,
+      totalNodes: counter.id,
+      planTree: rootNode,
+      executionPath,
+      redFlags: uniqueRedFlags,
+      missingIndexes: [],
+      operations,
+    };
+
     return {
       totalNodes: counter.id,
-      operations: Object.entries(opsMap)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count),
+      operations,
       totalCost,
       statementText: '',
       missingIndexes: [],
       redFlags: uniqueRedFlags,
       executionPath,
       planTree: rootNode,
+      statements: [statement],
     };
   }
 }
@@ -307,5 +321,6 @@ function emptyPlanSummary(): PlanSummary {
     redFlags: [],
     executionPath: [],
     planTree: null,
+    statements: [],
   };
 }

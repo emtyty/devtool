@@ -921,14 +921,51 @@ export default function QueryPlanViewer({ initialData }: { initialData?: string 
               {/* Modern container */}
               {viewMode === 'modern' && (
                 <div className="overflow-auto p-4 bg-white min-h-[400px]">
-                  {summary?.planTree
-                    ? <PlanTreeRenderer root={summary.planTree} redFlags={summary.redFlags} activeNodeId={activeNodeId} />
-                    : (
-                      <div className="h-96 flex items-center justify-center text-slate-400 text-sm italic">
-                        No plan rendered yet. Paste an execution plan and click Render.
-                      </div>
-                    )
-                  }
+                  {summary && summary.statements.length > 0 ? (
+                    <div className="flex flex-col gap-8">
+                      {summary.statements.map((stmt, i) => (
+                        <div
+                          key={i}
+                          className={i > 0 ? 'pt-8 border-t border-slate-200' : ''}
+                        >
+                          {summary.statements.length > 1 && (
+                            <div className="flex items-center gap-2 mb-4 flex-wrap">
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 uppercase tracking-widest">
+                                Query {i + 1} / {summary.statements.length}
+                              </span>
+                              {stmt.statementText && (
+                                <span
+                                  className="text-xs text-slate-500 font-mono truncate max-w-3xl"
+                                  title={stmt.statementText}
+                                >
+                                  {stmt.statementText.replace(/\s+/g, ' ').slice(0, 140)}
+                                  {stmt.statementText.length > 140 ? '…' : ''}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-400 tabular-nums ml-auto">
+                                cost {stmt.totalCost.toFixed(4)} · {stmt.totalNodes} nodes
+                              </span>
+                            </div>
+                          )}
+                          {stmt.planTree ? (
+                            <PlanTreeRenderer
+                              root={stmt.planTree}
+                              redFlags={stmt.redFlags}
+                              activeNodeId={activeNodeId}
+                            />
+                          ) : (
+                            <div className="h-24 flex items-center justify-center text-slate-400 text-xs italic">
+                              Statement has no execution plan tree.
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-96 flex items-center justify-center text-slate-400 text-sm italic">
+                      No plan rendered yet. Paste an execution plan and click Render.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -16,7 +16,7 @@
 //   - CSS :hover overlay → richer panel when opened in a browser, via the
 //     adjacent-sibling selector .qp-trigger:hover + .qp-tip.
 
-import type { PlanNode, PlanSummary, RedFlag } from '../types';
+import type { PlanNode, PlanStatement, PlanSummary, RedFlag } from '../types';
 
 // ── Layout constants ────────────────────────────────────────────────────
 const BOX_W = 208;
@@ -957,14 +957,25 @@ function buildSummaryBlock(summary: PlanSummary): SummaryRender {
   return { parts, width: W, height: totalH };
 }
 
-// ── Main ────────────────────────────────────────────────────────────────
-export function buildPlanSvg(summary: PlanSummary): string {
-  const root = summary.planTree;
-  if (!root) return '';
-  const redFlags = summary.redFlags;
-  const layout = positionTree(root, 0, 0);
-  const all = flatten(layout);
+// ── Multi-statement layout constants ────────────────────────────────────
+const STATEMENT_HEADER_H = 32;
+const STATEMENT_BLOCK_GAP = 60;
 
+interface StatementBlock {
+  stmt: PlanStatement;
+  index: number;
+  yOffset: number;
+  treeYTop: number;
+  layouts: Layout[];
+  flagMap: Map<string, 'high' | 'medium' | 'low'>;
+  tipPlacements: Map<string, TipPlacement>;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+function buildFlagMap(redFlags: RedFlag[]): Map<string, 'high' | 'medium' | 'low'> {
   const flagMap = new Map<string, 'high' | 'medium' | 'low'>();
   const sevOrder = { high: 0, medium: 1, low: 2 } as const;
   for (const f of redFlags) {
@@ -972,46 +983,109 @@ export function buildPlanSvg(summary: PlanSummary): string {
     const ex = flagMap.get(f.nodeId);
     if (!ex || sevOrder[f.severity] < sevOrder[ex]) flagMap.set(f.nodeId, f.severity);
   }
+  return flagMap;
+}
 
-  // Box bounds
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const l of all) {
-    minX = Math.min(minX, l.x);
-    minY = Math.min(minY, l.y);
-    maxX = Math.max(maxX, l.x + BOX_W);
-    maxY = Math.max(maxY, l.y + BOX_H);
+// ── Main ────────────────────────────────────────────────────────────────
+export function buildPlanSvg(summary: PlanSummary): string {
+  // Prefer the per-statement breakdown when present so multi-query plans
+  // (multi-StmtSimple .sqlplan files, PG EXPLAIN arrays) render every tree.
+  // Fall back to top-level planTree only if no statements were provided.
+  const statementSource: PlanStatement[] =
+    summary.statements && summary.statements.length > 0
+      ? summary.statements.filter((s): s is PlanStatement => s.planTree !== null)
+      : summary.planTree
+        ? [
+            {
+              statementText: summary.statementText,
+              totalCost: summary.totalCost,
+              totalNodes: summary.totalNodes,
+              planTree: summary.planTree,
+              executionPath: summary.executionPath,
+              redFlags: summary.redFlags,
+              missingIndexes: summary.missingIndexes,
+              operations: summary.operations,
+            },
+          ]
+        : [];
+
+  if (statementSource.length === 0) return '';
+
+  // Position each statement's tree at a stacked y-offset so trees never overlap.
+  const blocks: StatementBlock[] = [];
+  let cumulativeY = 0;
+  let canvasMinX = Infinity;
+  let canvasMaxX = -Infinity;
+
+  for (let i = 0; i < statementSource.length; i++) {
+    const stmt = statementSource[i];
+    const root = stmt.planTree!;
+    const layout = positionTree(root, 0, 0);
+    const all = flatten(layout);
+
+    let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+    for (const l of all) {
+      mnX = Math.min(mnX, l.x);
+      mnY = Math.min(mnY, l.y);
+      mxX = Math.max(mxX, l.x + BOX_W);
+      mxY = Math.max(mxY, l.y + BOX_H);
+    }
+
+    // Position the tree below the statement header at its yOffset.
+    const treeYTop = cumulativeY + STATEMENT_HEADER_H;
+
+    // Translate all layouts vertically so absolute Y = treeYTop + (l.y - mnY).
+    const shift = treeYTop - mnY;
+    for (const l of all) l.y += shift;
+    mnY += shift;
+    mxY += shift;
+
+    // Compute tooltip placements (in absolute coords).
+    const tipPlacements = new Map<string, TipPlacement>();
+    for (const l of all) {
+      const model = buildTipModel(l.node);
+      const tipLayout = layoutTip(model);
+      let tipX = l.x - 4;
+      if (tipX + TOOLTIP_W > mxX + 240) tipX = mxX + 240 - TOOLTIP_W;
+      if (tipX < mnX - 240) tipX = mnX - 240;
+      const tipY = l.y + BOX_H + 8;
+      tipPlacements.set(l.node.nodeId, { x: tipX, y: tipY, height: tipLayout.totalH, model, layout: tipLayout });
+      mnX = Math.min(mnX, tipX);
+      mxX = Math.max(mxX, tipX + TOOLTIP_W);
+      mxY = Math.max(mxY, tipY + tipLayout.totalH);
+    }
+
+    blocks.push({
+      stmt,
+      index: i,
+      yOffset: cumulativeY,
+      treeYTop,
+      layouts: all,
+      flagMap: buildFlagMap(stmt.redFlags),
+      tipPlacements,
+      minX: mnX,
+      minY: mnY,
+      maxX: mxX,
+      maxY: mxY,
+    });
+
+    canvasMinX = Math.min(canvasMinX, mnX);
+    canvasMaxX = Math.max(canvasMaxX, mxX);
+    cumulativeY = mxY + STATEMENT_BLOCK_GAP;
   }
 
-  // Pre-compute tooltip placement and grow the canvas to fit each one.
-  const tipPlacements = new Map<string, TipPlacement>();
-  for (const l of all) {
-    const model = buildTipModel(l.node);
-    const layout = layoutTip(model);
-    let tipX = l.x - 4;
-    if (tipX + TOOLTIP_W > maxX + 240) tipX = maxX + 240 - TOOLTIP_W;
-    if (tipX < minX - 240) tipX = minX - 240;
-    const tipY = l.y + BOX_H + 8;
-    tipPlacements.set(l.node.nodeId, { x: tipX, y: tipY, height: layout.totalH, model, layout });
-    minX = Math.min(minX, tipX);
-    maxX = Math.max(maxX, tipX + TOOLTIP_W);
-    maxY = Math.max(maxY, tipY + layout.totalH);
-  }
-
-  // Pre-compute summary block (positioned below the tree).
+  // Plan summary block (uses aggregate top-level data, sits below all trees).
   const summaryBlock = buildSummaryBlock(summary);
-  const summaryX = minX; // align to left edge of canvas content
-  const treeBottom = Math.max(...all.map((l) => l.y + BOX_H));
-  const summaryY = treeBottom + SUMMARY_GAP;
-  maxX = Math.max(maxX, summaryX + summaryBlock.width);
-  maxY = Math.max(maxY, summaryY + summaryBlock.height);
+  const summaryX = canvasMinX;
+  const summaryY = cumulativeY;
+  canvasMaxX = Math.max(canvasMaxX, summaryX + summaryBlock.width);
+  const canvasMaxY = summaryY + summaryBlock.height;
+  const canvasMinY = blocks.length > 0 ? Math.min(...blocks.map(b => b.yOffset)) : 0;
 
-  const W = Math.round(maxX - minX + PAD * 2);
-  const H = Math.round(maxY - minY + PAD * 2);
-  const offsetX = PAD - minX;
-  const offsetY = PAD - minY;
+  const W = Math.round(canvasMaxX - canvasMinX + PAD * 2);
+  const H = Math.round(canvasMaxY - canvasMinY + PAD * 2);
+  const offsetX = PAD - canvasMinX;
+  const offsetY = PAD - canvasMinY;
 
   const parts: string[] = [];
   parts.push(
@@ -1050,121 +1124,150 @@ export function buildPlanSvg(summary: PlanSummary): string {
       .qp-tip-object { fill: #93c5fd; font-size: 11px; }
       .qp-tip-output { fill: #cbd5e1; font-size: 11px; }
       .qp-tip-predicate { fill: #fde047; font-size: 11px; }
+      .qp-stmt-label { fill: #1d4ed8; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; }
+      .qp-stmt-text { fill: #64748b; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .qp-stmt-divider { stroke: #e2e8f0; stroke-width: 1; }
     </style>`
   );
 
   parts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
   parts.push(`<g transform="translate(${offsetX},${offsetY})">`);
 
-  // ── LAYER 1: ARROWS ─────────────────────────────────────────────────
-  for (const l of all) {
-    for (const child of l.children) {
-      const x1 = l.x + BOX_W;
-      const y1 = l.y + BOX_H / 2;
-      const x2 = child.x;
-      const y2 = child.y + BOX_H / 2;
-      const thickness = rowsToThickness(child.node.estimateRows);
+  const showHeaders = blocks.length > 1;
+
+  // ── LAYER 0: STATEMENT HEADERS + DIVIDERS ───────────────────────────
+  if (showHeaders) {
+    for (const b of blocks) {
+      const headerY = b.yOffset + 18;
+      if (b.index > 0) {
+        parts.push(
+          `<line class="qp-stmt-divider" x1="${canvasMinX}" y1="${b.yOffset - STATEMENT_BLOCK_GAP / 2}" x2="${canvasMaxX}" y2="${b.yOffset - STATEMENT_BLOCK_GAP / 2}"/>`
+        );
+      }
+      const label = `QUERY ${b.index + 1} / ${blocks.length}`;
       parts.push(
-        `<polygon points="${arrowPolygon(x1, y1, x2, y2, thickness)}" fill="#cbd5e1" stroke="#94a3b8" stroke-width="0.5">`
+        `<text class="qp-stmt-label" x="${canvasMinX}" y="${headerY}">${escXml(label)}</text>`
       );
-      parts.push(`<title>Estimated Rows: ${child.node.estimateRows.toLocaleString()}</title>`);
-      parts.push(`</polygon>`);
+      if (b.stmt.statementText) {
+        const oneLine = b.stmt.statementText.replace(/\s+/g, ' ').trim();
+        const maxChars = Math.max(20, Math.floor((canvasMaxX - canvasMinX - 110) / 6.6));
+        const truncated = truncate(oneLine, maxChars);
+        parts.push(
+          `<text class="qp-stmt-text" x="${canvasMinX + 90}" y="${headerY}">${escXml(truncated)}</text>`
+        );
+      }
     }
   }
 
-  // ── LAYER 2: BOXES (with <title> fallback) ───────────────────────────
-  for (const l of all) {
-    const op = l.node.physicalOp || l.node.logicalOp;
-    const style = OP_STYLES[op] ?? DEFAULT_STYLE;
-    const flagSev = flagMap.get(l.node.nodeId);
-
-    parts.push(`<g transform="translate(${l.x},${l.y})">`);
-
-    if (flagSev) {
-      const ring = FLAG_RING[flagSev];
-      parts.push(
-        `<rect x="${-ring.pad}" y="${-ring.pad}" width="${BOX_W + ring.pad * 2}" height="${BOX_H + ring.pad * 2}" rx="14" ry="14" fill="none" stroke="${ring.color}" stroke-width="${ring.width}"/>`
-      );
+  // ── LAYER 1: ARROWS (all statements) ────────────────────────────────
+  for (const b of blocks) {
+    for (const l of b.layouts) {
+      for (const child of l.children) {
+        const x1 = l.x + BOX_W;
+        const y1 = l.y + BOX_H / 2;
+        const x2 = child.x;
+        const y2 = child.y + BOX_H / 2;
+        const thickness = rowsToThickness(child.node.estimateRows);
+        parts.push(
+          `<polygon points="${arrowPolygon(x1, y1, x2, y2, thickness)}" fill="#cbd5e1" stroke="#94a3b8" stroke-width="0.5">`
+        );
+        parts.push(`<title>Estimated Rows: ${child.node.estimateRows.toLocaleString()}</title>`);
+        parts.push(`</polygon>`);
+      }
     }
+  }
 
-    parts.push(
-      `<rect x="0" y="0" width="${BOX_W}" height="${BOX_H}" rx="11" ry="11" fill="#ffffff" stroke="${style.border}" stroke-width="1" filter="url(#qp-shadow)"/>`
-    );
+  // ── LAYER 2: BOXES (all statements, with <title> fallback) ──────────
+  for (const b of blocks) {
+    for (const l of b.layouts) {
+      const op = l.node.physicalOp || l.node.logicalOp;
+      const style = OP_STYLES[op] ?? DEFAULT_STYLE;
+      const flagSev = b.flagMap.get(l.node.nodeId);
 
-    // Header band — rounded top corners, flat bottom (border-b separates from body)
-    parts.push(
-      `<path d="M 1 12 Q 1 1 12 1 L ${BOX_W - 12} 1 Q ${BOX_W - 1} 1 ${BOX_W - 1} 12 L ${BOX_W - 1} ${HEADER_H} L 1 ${HEADER_H} Z" fill="${style.headerBg}" stroke="${style.border}" stroke-width="1"/>`
-    );
-    // Lucide icon — colored per operator type, matches React's <Icon size={20} className={iconClass}/>
-    parts.push(renderIcon(style.iconName, BOX_PAD, (HEADER_H - ICON_SIZE) / 2, ICON_SIZE, style.iconStroke));
-    // Operator name — slate-700, 11px bold (matches React's text-[11px] font-bold text-slate-700)
-    const textX = BOX_PAD + ICON_SIZE + 8; // gap-2 = 8px
-    const maxTextChars = Math.floor((BOX_W - textX - BOX_PAD) / 6.6);
-    parts.push(
-      `<text x="${textX}" y="${HEADER_H / 2 + 4}" font-size="11" font-weight="700" fill="#334155">${escXml(truncate(op, maxTextChars))}</text>`
-    );
+      parts.push(`<g transform="translate(${l.x},${l.y})">`);
 
-    let bodyY = HEADER_H + 16;
-    if (l.node.objectName) {
+      if (flagSev) {
+        const ring = FLAG_RING[flagSev];
+        parts.push(
+          `<rect x="${-ring.pad}" y="${-ring.pad}" width="${BOX_W + ring.pad * 2}" height="${BOX_H + ring.pad * 2}" rx="14" ry="14" fill="none" stroke="${ring.color}" stroke-width="${ring.width}"/>`
+        );
+      }
+
       parts.push(
-        `<text x="14" y="${bodyY}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#94a3b8">${escXml(truncate(l.node.objectName, 30))}</text>`
+        `<rect x="0" y="0" width="${BOX_W}" height="${BOX_H}" rx="11" ry="11" fill="#ffffff" stroke="${style.border}" stroke-width="1" filter="url(#qp-shadow)"/>`
+      );
+
+      parts.push(
+        `<path d="M 1 12 Q 1 1 12 1 L ${BOX_W - 12} 1 Q ${BOX_W - 1} 1 ${BOX_W - 1} 12 L ${BOX_W - 1} ${HEADER_H} L 1 ${HEADER_H} Z" fill="${style.headerBg}" stroke="${style.border}" stroke-width="1"/>`
+      );
+      parts.push(renderIcon(style.iconName, BOX_PAD, (HEADER_H - ICON_SIZE) / 2, ICON_SIZE, style.iconStroke));
+      const textX = BOX_PAD + ICON_SIZE + 8;
+      const maxTextChars = Math.floor((BOX_W - textX - BOX_PAD) / 6.6);
+      parts.push(
+        `<text x="${textX}" y="${HEADER_H / 2 + 4}" font-size="11" font-weight="700" fill="#334155">${escXml(truncate(op, maxTextChars))}</text>`
+      );
+
+      let bodyY = HEADER_H + 16;
+      if (l.node.objectName) {
+        parts.push(
+          `<text x="14" y="${bodyY}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#94a3b8">${escXml(truncate(l.node.objectName, 30))}</text>`
+        );
+        bodyY += 14;
+      }
+
+      const barWidth = Math.min(100, l.node.selfCostPercent);
+      const fullBarW = BOX_W - 70;
+      parts.push(
+        `<rect x="14" y="${bodyY + 4}" width="${fullBarW}" height="4" rx="2" ry="2" fill="#f1f5f9"/>`
+      );
+      parts.push(
+        `<rect x="14" y="${bodyY + 4}" width="${((fullBarW * barWidth) / 100).toFixed(1)}" height="4" rx="2" ry="2" fill="${costBarColor(l.node.selfCostPercent)}"/>`
+      );
+      parts.push(
+        `<text x="${BOX_W - 14}" y="${bodyY + 9}" font-size="10" font-weight="600" fill="#64748b" text-anchor="end">${l.node.selfCostPercent.toFixed(1)}%</text>`
       );
       bodyY += 14;
+
+      const rowsLabel =
+        `${l.node.estimateRows.toLocaleString()} rows` +
+        (l.node.estimateExecutions > 1 ? ` · ×${l.node.estimateExecutions}` : '');
+      parts.push(
+        `<text x="14" y="${bodyY + 9}" font-size="10" fill="#94a3b8">${escXml(rowsLabel)}</text>`
+      );
+
+      const titleLines = [op];
+      if (l.node.logicalOp && l.node.logicalOp !== l.node.physicalOp) titleLines.push(l.node.logicalOp);
+      titleLines.push(`Cost: ${l.node.selfCost.toFixed(6)} (${l.node.selfCostPercent.toFixed(1)}%)`);
+      titleLines.push(`Rows: ${l.node.estimateRows.toLocaleString()}`);
+      titleLines.push(`Executions: ${l.node.estimateExecutions}`);
+      if (l.node.objectFull) titleLines.push(`Object: ${l.node.objectFull}`);
+      if (l.node.predicate) titleLines.push(`Predicate: ${l.node.predicate}`);
+      parts.push(`<title>${escXml(titleLines.join('\n'))}</title>`);
+
+      parts.push(`</g>`);
     }
-
-    const barWidth = Math.min(100, l.node.selfCostPercent);
-    const fullBarW = BOX_W - 70;
-    parts.push(
-      `<rect x="14" y="${bodyY + 4}" width="${fullBarW}" height="4" rx="2" ry="2" fill="#f1f5f9"/>`
-    );
-    parts.push(
-      `<rect x="14" y="${bodyY + 4}" width="${((fullBarW * barWidth) / 100).toFixed(1)}" height="4" rx="2" ry="2" fill="${costBarColor(l.node.selfCostPercent)}"/>`
-    );
-    parts.push(
-      `<text x="${BOX_W - 14}" y="${bodyY + 9}" font-size="10" font-weight="600" fill="#64748b" text-anchor="end">${l.node.selfCostPercent.toFixed(1)}%</text>`
-    );
-    bodyY += 14;
-
-    const rowsLabel =
-      `${l.node.estimateRows.toLocaleString()} rows` +
-      (l.node.estimateExecutions > 1 ? ` · ×${l.node.estimateExecutions}` : '');
-    parts.push(
-      `<text x="14" y="${bodyY + 9}" font-size="10" fill="#94a3b8">${escXml(rowsLabel)}</text>`
-    );
-
-    // <title> fallback — works in every viewer
-    const titleLines = [op];
-    if (l.node.logicalOp && l.node.logicalOp !== l.node.physicalOp) titleLines.push(l.node.logicalOp);
-    titleLines.push(`Cost: ${l.node.selfCost.toFixed(6)} (${l.node.selfCostPercent.toFixed(1)}%)`);
-    titleLines.push(`Rows: ${l.node.estimateRows.toLocaleString()}`);
-    titleLines.push(`Executions: ${l.node.estimateExecutions}`);
-    if (l.node.objectFull) titleLines.push(`Object: ${l.node.objectFull}`);
-    if (l.node.predicate) titleLines.push(`Predicate: ${l.node.predicate}`);
-    parts.push(`<title>${escXml(titleLines.join('\n'))}</title>`);
-
-    parts.push(`</g>`);
   }
 
-  // ── LAYER 2.5: PLAN SUMMARY (below the tree) ────────────────────────
+  // ── LAYER 2.5: PLAN SUMMARY (below all trees) ───────────────────────
   parts.push(`<g transform="translate(${summaryX},${summaryY})">`);
   parts.push(...summaryBlock.parts);
   parts.push(`</g>`);
 
   // ── LAYER 3: HOVER TRIGGERS + RICH TOOLTIPS (drawn last = on top) ───
-  for (const l of all) {
-    const tip = tipPlacements.get(l.node.nodeId)!;
+  for (const b of blocks) {
+    for (const l of b.layouts) {
+      const tip = b.tipPlacements.get(l.node.nodeId)!;
 
-    parts.push(
-      `<rect class="qp-trigger" x="${l.x}" y="${l.y}" width="${BOX_W}" height="${BOX_H}" rx="11" ry="11"/>`
-    );
-    parts.push(`<g class="qp-tip" transform="translate(${tip.x},${tip.y})">`);
-    // Body bg (slate-900) — rounded corners; the header band paints over the
-    // top portion in slate-800 inside the same clipped region.
-    parts.push(
-      `<rect class="qp-tip-bg" x="0" y="0" width="${TOOLTIP_W}" height="${tip.height}" rx="12" ry="12"/>`
-    );
-    parts.push(...renderTip(tip.model, tip.layout));
-    parts.push(`</g>`);
+      parts.push(
+        `<rect class="qp-trigger" x="${l.x}" y="${l.y}" width="${BOX_W}" height="${BOX_H}" rx="11" ry="11"/>`
+      );
+      parts.push(`<g class="qp-tip" transform="translate(${tip.x},${tip.y})">`);
+      parts.push(
+        `<rect class="qp-tip-bg" x="0" y="0" width="${TOOLTIP_W}" height="${tip.height}" rx="12" ry="12"/>`
+      );
+      parts.push(...renderTip(tip.model, tip.layout));
+      parts.push(`</g>`);
+    }
   }
 
   parts.push(`</g>`);
