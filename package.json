@@ -51,7 +51,7 @@
     "lucide-react": "^0.576.0",
     "mammoth": "^1.12.0",
     "marked": "^17.0.6",
-    "merslim": "^0.2.1",
+    "merslim": "^0.2.3",
     "papaparse": "^5.5.3",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.6.205",
