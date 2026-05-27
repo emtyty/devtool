@@ -29,6 +29,7 @@ interface FilterCellProps {
 }
 
 const PAGE = 60;
+const EMPTY_FILTER = '\0__EMPTY__';
 
 const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, active }) => {
   const [open, setOpen] = useState(false);
@@ -39,6 +40,7 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
   const dropRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
+    if (value === EMPTY_FILTER) return options;
     const q = value.toLowerCase();
     return q ? options.filter(o => o.toLowerCase().includes(q)) : options;
   }, [options, value]);
@@ -82,7 +84,7 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
         <input
           ref={inputRef}
           type="text"
-          value={value}
+          value={value === EMPTY_FILTER ? '(empty)' : value}
           onChange={e => onChange(e.target.value)}
           onFocus={openDrop}
           onClick={e => { e.stopPropagation(); openDrop(); }}
@@ -117,20 +119,27 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
               Freetext: "{value}"
             </div>
           )}
-          {visible.map((v: string) => (
-            <button
-              key={v}
-              onMouseDown={e => { e.preventDefault(); onChange(value === v ? '' : v); setOpen(false); }}
-              className={`w-full text-left px-3 py-1.5 text-xs cursor-pointer truncate transition-colors ${
-                value === v
-                  ? 'bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-              title={v}
-            >
-              {v === '' ? <span className="italic text-slate-400 dark:text-slate-500">(empty)</span> : v}
-            </button>
-          ))}
+          {visible.map((v: string) => {
+            const isEmptyOpt = v === '';
+            const selected = isEmptyOpt ? value === EMPTY_FILTER : value === v;
+            const next = isEmptyOpt
+              ? (value === EMPTY_FILTER ? '' : EMPTY_FILTER)
+              : (value === v ? '' : v);
+            return (
+              <button
+                key={v}
+                onMouseDown={e => { e.preventDefault(); onChange(next); setOpen(false); }}
+                className={`w-full text-left px-3 py-1.5 text-xs cursor-pointer truncate transition-colors ${
+                  selected
+                    ? 'bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                }`}
+                title={v}
+              >
+                {isEmptyOpt ? <span className="italic text-slate-400 dark:text-slate-500">(empty)</span> : v}
+              </button>
+            );
+          })}
           {hasMore && (
             <button
               onMouseDown={e => { e.preventDefault(); setPage(p => p + 1); }}
@@ -262,8 +271,11 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
       .filter(({ row, idx }: { row: Row; idx: number }) =>
         !hiddenRows.has(idx) &&
         columns.every((col: string) => {
-          const f = (debouncedFilters[col] || '').toLowerCase();
-          return !f || String(row[col] ?? '').toLowerCase().includes(f);
+          const raw = debouncedFilters[col] || '';
+          if (!raw) return true;
+          const cell = String(row[col] ?? '');
+          if (raw === EMPTY_FILTER) return cell === '';
+          return cell.toLowerCase().includes(raw.toLowerCase());
         }) &&
         (!gq || columns.some((col: string) => String(row[col] ?? '').toLowerCase().includes(gq)))
       );
