@@ -36,6 +36,16 @@ export function useHistory(maxSize = 50) {
     currentRef.current = newData;
   }, [maxSize]);
 
+  /** Swap the latest state in place (no new undo step), e.g. switching a fill between copy and series */
+  const replace = useCallback((newData: Row[], label: string) => {
+    currentRef.current = newData;
+    if (pastRef.current.length === 0) return;
+    const next = [...pastRef.current];
+    next[next.length - 1] = { ...next[next.length - 1], label };
+    setPast(next);
+    pastRef.current = next;
+  }, []);
+
   const undo = useCallback((): Row[] | null => {
     if (pastRef.current.length === 0) return null;
     const next = [...pastRef.current];
@@ -64,6 +74,7 @@ export function useHistory(maxSize = 50) {
 
   return {
     push,
+    replace,
     undo,
     redo,
     init,

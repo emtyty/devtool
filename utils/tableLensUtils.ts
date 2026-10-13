@@ -231,6 +231,44 @@ export function replaceAll(
   });
 }
 
+// ── Cell fill & navigation ───────────────────────────────────────
+
+/** Inclusive display-position range a fill drag from `src` to `to` covers, excluding the source itself. */
+export function fillRangePositions(src: number, to: number): [number, number] | null {
+  if (src === to) return null;
+  return src < to ? [src + 1, to] : [to, src - 1];
+}
+
+/** Set `col` to `value` on every row index in `targets`. Unchanged rows keep their identity. */
+export function fillColumn(data: Row[], targets: number[], col: string, value: string): Row[] {
+  if (targets.length === 0) return data;
+  const targetSet = new Set(targets);
+  return data.map((row, i) => (targetSet.has(i) && row[col] !== value ? { ...row, [col]: value } : row));
+}
+
+/** Set `col` on `targets[i]` to `values[i]`. Unchanged rows keep their identity. */
+export function setColumnValues(data: Row[], targets: number[], col: string, values: string[]): Row[] {
+  if (targets.length === 0) return data;
+  const byRow = new Map(targets.map((rowIdx, i) => [rowIdx, values[i] ?? '']));
+  return data.map((row, i) => {
+    const next = byRow.get(i);
+    return next !== undefined && row[col] !== next ? { ...row, [col]: next } : row;
+  });
+}
+
+/** Move a grid cursor by (dRow, dCol), clamped to the grid bounds. */
+export function moveCell(
+  pos: number,
+  colIdx: number,
+  dRow: number,
+  dCol: number,
+  rowCount: number,
+  colCount: number,
+): { pos: number; colIdx: number } {
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max - 1, v));
+  return { pos: clamp(pos + dRow, rowCount), colIdx: clamp(colIdx + dCol, colCount) };
+}
+
 // ── Multi-column sort ────────────────────────────────────────────
 
 export function multiSort<T extends { row: Row }>(items: T[], sortKeys: SortKey[]): T[] {
