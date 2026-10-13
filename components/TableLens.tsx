@@ -1,15 +1,48 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Upload, Trash2, Download, Search, ChevronDown, X, Loader2, ArrowUp, ArrowDown, ArrowUpDown, Copy, MoreHorizontal, Paintbrush, WrapText, Pin, PinOff, EyeOff, Eye, Undo2, Redo2, Replace, Sigma } from 'lucide-react';
+import TableLensCellEditor, { type CommitMove } from './TableLensCellEditor';
+import TableLensFillOptions from './TableLensFillOptions';
 import {
   Row, CFRule, SortKey, CF_COLORS, CF_OPS, matchCFRule,
   exportData, computeSummary, findMatches, replaceAll, multiSort, parseJSON,
+  fillColumn, setColumnValues, fillRangePositions, moveCell,
   type FindOptions, type ColumnSummary, type ExportFormat,
 } from '@/utils/tableLensUtils';
+import {
+  buildFillValues, canFillSeries, fillValueAt, isDayFirstLocale, resolveFillMode,
+  type FillDirection, type FillMode,
+} from '@/utils/tableLensFill';
 import { useHistory } from '@/utils/tableLensHistory';
 
 const ROW_H = 33;
 const OVERSCAN = 25;
+/** Width of the sticky checkbox + row-number columns */
+const ROW_GUTTER_W = 36 + 40;
+const EDGE_SCROLL_ZONE = 32;
+const KEY_MOVES: Record<string, [number, number]> = {
+  ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
+};
+
+/** A cell addressed by its index in `data` (stable across sort/filter) and column name */
+type CellRef = { row: number; col: string };
+
+/** Ambiguous slash dates (3/4/2024) follow the browser locale, as Excel does */
+const FILL_OPTS = { dayFirst: isDayFirstLocale() };
+
+/** The fill just applied — kept so Auto Fill Options can redo it in the other mode */
+interface LastFill {
+  col: string;
+  targets: number[];
+  direction: FillDirection;
+  sourceValue: string;
+  mode: FillMode;
+  before: Row[];
+  anchor: DOMRect;
+}
+
+const fillLabel = (mode: FillMode, count: number, col: string) =>
+  mode === 'series' ? `Fill series (${count} cells) in "${col}"` : `Fill ${count} cells in "${col}"`;
 
 function useDebounce<T>(value: T, ms: number): T {
   const [dv, setDv] = useState(value);
@@ -155,6 +188,136 @@ const FilterCell: React.FC<FilterCellProps> = ({ value, onChange, getOptions, ac
   );
 };
 
+// ── Grid DOM helpers (cell selection, fill handle) ──────────────
+function findCellEl(container: HTMLElement, pos: number, col: string): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`tr[data-pos="${pos}"] > td[data-col="${CSS.escape(col)}"]`);
+}
+
+/** Viewport bounds of the scrollable body area — excludes sticky header/footer and scrollbars */
+function getBodyBounds(container: HTMLElement) {
+  const rect = container.getBoundingClientRect();
+  const head = container.querySelector('thead')?.getBoundingClientRect();
+  const foot = container.querySelector('tfoot')?.getBoundingClientRect();
+  return {
+    left: rect.left,
+    right: rect.left + container.clientWidth,
+    top: head?.bottom ?? rect.top,
+    bottom: Math.min(rect.top + container.clientHeight, foot?.top ?? Infinity),
+  };
+}
+
+/** Display position of the body row under the pointer, clamped into the visible body area */
+function hitTestRowPos(container: HTMLElement, x: number, y: number): number | null {
+  const b = getBodyBounds(container);
+  const px = Math.max(b.left + 1, Math.min(b.right - 1, x));
+  const py = Math.max(b.top + 1, Math.min(b.bottom - 1, y));
+  const tr = document.elementFromPoint(px, py)?.closest<HTMLElement>('tr[data-pos]');
+  return tr ? Number(tr.dataset.pos) : null;
+}
+
+/** Auto-scroll speed while dragging near the top/bottom edge of the body */
+function edgeScrollDelta(container: HTMLElement, y: number): number {
+  const b = getBodyBounds(container);
+  if (y < b.top + EDGE_SCROLL_ZONE) return -Math.min(40, Math.ceil((b.top + EDGE_SCROLL_ZONE - y) / 2));
+  if (y > b.bottom - EDGE_SCROLL_ZONE) return Math.min(40, Math.ceil((y - b.bottom + EDGE_SCROLL_ZONE) / 2));
+  return 0;
+}
+
+function scrollCellIntoView(container: HTMLElement, cell: HTMLElement, stickyLeft: number) {
+  const b = getBodyBounds(container);
+  const r = cell.getBoundingClientRect();
+  if (r.top < b.top) container.scrollTop -= b.top - r.top;
+  else if (r.bottom > b.bottom) container.scrollTop += r.bottom - b.bottom;
+  if (cell.style.position === 'sticky') return;
+  const left = b.left + stickyLeft;
+  if (r.left < left) container.scrollLeft -= left - r.left;
+  else if (r.right > b.right) container.scrollLeft += r.right - b.right;
+}
+
+/** Keys reach the grid only when focus is on the page body or a non-form element inside the table */
+function isGridKeyTarget(target: EventTarget | null, container: HTMLElement | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || el.closest('input, textarea, select, button, [contenteditable="true"]')) return false;
+  return el === document.body || !!container?.contains(el);
+}
+
+// ── useFillHandle — Excel-style drag-to-fill down a column ──────
+/** `toggled`: Ctrl (Win) / Option (Mac) held — flips between copy and series, like Excel */
+interface FillDrag { src: number; to: number; toggled: boolean; x: number; y: number }
+
+const isFillToggle = (ev: { ctrlKey: boolean; altKey: boolean }) => ev.ctrlKey || ev.altKey;
+
+function useFillHandle(
+  scrollRef: React.RefObject<HTMLDivElement | null>,
+  onFill: (src: number, to: number, toggled: boolean) => void,
+) {
+  const [fillDrag, setFillDrag] = useState<FillDrag | null>(null);
+  const onFillRef = useRef(onFill);
+  useLayoutEffect(() => { onFillRef.current = onFill; }, [onFill]);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => stopRef.current?.(), []);
+
+  const startFill = useCallback((e: React.MouseEvent, src: number) => {
+    const container = scrollRef.current;
+    if (e.button !== 0 || !container) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let pointer = { x: e.clientX, y: e.clientY };
+    let to = src;
+    let toggled = isFillToggle(e);
+    let moved = false;
+    let frame = 0;
+    // State only updates when the target row or toggle changes, not on every mouse move
+    const publish = () => setFillDrag({ src, to, toggled, x: pointer.x, y: pointer.y });
+    const track = () => {
+      const pos = hitTestRowPos(container, pointer.x, pointer.y);
+      if (pos === null || pos === to) return;
+      to = pos;
+      publish();
+    };
+    const setToggled = (next: boolean) => {
+      if (next === toggled) return;
+      toggled = next;
+      publish();
+    };
+    const tick = () => {
+      const delta = moved ? edgeScrollDelta(container, pointer.y) : 0;
+      if (delta !== 0) { container.scrollTop += delta; track(); }
+      frame = requestAnimationFrame(tick);
+    };
+    const onMove = (ev: MouseEvent) => {
+      pointer = { x: ev.clientX, y: ev.clientY };
+      moved = true;
+      setToggled(isFillToggle(ev));
+      track();
+    };
+    const onKey = (ev: KeyboardEvent) => setToggled(isFillToggle(ev));
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+      stopRef.current = null;
+      setFillDrag(null);
+    };
+    const onUp = (ev: MouseEvent) => {
+      stop();
+      if (to !== src) onFillRef.current(src, to, isFillToggle(ev));
+    };
+    stopRef.current = stop;
+    publish();
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    frame = requestAnimationFrame(tick);
+  }, [scrollRef]);
+
+  return { fillDrag, startFill };
+}
+
 // ── Props ────────────────────────────────────────────────────────
 export interface TableLensProps {
   /** When provided, file picker is hidden and data comes from parent */
@@ -174,8 +337,11 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
   const isFiltering = JSON.stringify(filterInputs) !== JSON.stringify(debouncedFilters);
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [editCell, setEditCell] = useState<{ row: number; col: string } | null>(null);
+  const [activeCell, setActiveCell] = useState<CellRef | null>(null);
+  const [editCell, setEditCell] = useState<CellRef | null>(null);
   const [editVal, setEditVal] = useState('');
+  const [editAnchor, setEditAnchor] = useState<DOMRect | null>(null);
+  const [lastFill, setLastFill] = useState<LastFill | null>(null);
   const [distinctCol, setDistinctCol] = useState('');
   const [distinctValues, setDistinctValues] = useState<string[]>([]);
   const [distinctLoading, setDistinctLoading] = useState(false);
@@ -242,6 +408,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
   dataRef.current = data;
 
   const setDataWithHistory = useCallback((updater: (prev: Row[]) => Row[], label: string) => {
+    setLastFill(null);
     const next = updater(dataRef.current);
     history.push(next, label);
     setData(next);
@@ -412,9 +579,11 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
     const dataCopy = rows.map(r => ({ ...r }));
     setData(dataCopy);
     history.init(dataCopy);
+    setLastFill(null);
     setFilterInputs({});
     setSelected(new Set());
     setEditCell(null);
+    setActiveCell(null);
     setDistinctCol('');
     setBatchCol(cols[0] || '');
     setFileName(name);
@@ -493,14 +662,143 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
     }
   }, [loadParsed]);
 
-  const commitEdit = useCallback(() => {
-    if (!editCell) return;
-    setDataWithHistory(
-      prev => prev.map((r, i) => i === editCell.row ? { ...r, [editCell.col]: editVal } : r),
-      `Edit cell [${editCell.row},${editCell.col}]`,
-    );
+  // ── Cell selection, editing & fill ─────────────────────────────
+  const activePos = useMemo(
+    () => (activeCell ? sortedRows.findIndex(r => r.idx === activeCell.row) : -1),
+    [activeCell, sortedRows],
+  );
+
+  const revealCell = useCallback((pos: number, col: string) => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const cell = findCellEl(container, pos, col);
+    if (!cell) {
+      // Row is outside the virtualized window — jump to it
+      container.scrollTop = Math.max(0, pos * ROW_H - containerH / 2);
+      return;
+    }
+    const frozenW = visibleColumns.filter(c => frozenCols.has(c)).reduce((sum, c) => sum + (colWidths[c] ?? 140), 0);
+    scrollCellIntoView(container, cell, ROW_GUTTER_W + frozenW);
+  }, [containerH, visibleColumns, frozenCols, colWidths]);
+
+  const moveActive = useCallback((dRow: number, dCol: number) => {
+    if (!activeCell || activePos < 0) return;
+    const colIdx = visibleColumns.indexOf(activeCell.col);
+    if (colIdx < 0) return;
+    const next = moveCell(activePos, colIdx, dRow, dCol, sortedRows.length, visibleColumns.length);
+    const col = visibleColumns[next.colIdx];
+    setActiveCell({ row: sortedRows[next.pos].idx, col });
+    revealCell(next.pos, col);
+  }, [activeCell, activePos, visibleColumns, sortedRows, revealCell]);
+
+  const startEdit = useCallback((cell: CellRef, cellEl: HTMLElement, initial?: string) => {
+    setActiveCell(cell);
+    setEditCell(cell);
+    setEditVal(initial ?? dataRef.current[cell.row]?.[cell.col] ?? '');
+    setEditAnchor(cellEl.getBoundingClientRect());
+  }, []);
+
+  const openActiveEditor = useCallback((initial?: string) => {
+    if (!activeCell || activePos < 0 || !scrollRef.current) return;
+    const cellEl = findCellEl(scrollRef.current, activePos, activeCell.col);
+    if (cellEl) startEdit(activeCell, cellEl, initial);
+    else revealCell(activePos, activeCell.col);
+  }, [activeCell, activePos, startEdit, revealCell]);
+
+  const cancelEdit = useCallback(() => {
     setEditCell(null);
-  }, [editCell, editVal, setDataWithHistory]);
+    setEditAnchor(null);
+  }, []);
+
+  const commitEdit = useCallback((move: CommitMove = 'none') => {
+    if (!editCell) return;
+    const { row, col } = editCell;
+    if (editVal !== (dataRef.current[row]?.[col] ?? '')) {
+      setDataWithHistory(prev => fillColumn(prev, [row], col, editVal), `Edit cell [${row},${col}]`);
+    }
+    cancelEdit();
+    if (move === 'down') moveActive(1, 0);
+    else if (move === 'right') moveActive(0, 1);
+    else if (move === 'left') moveActive(0, -1);
+  }, [editCell, editVal, setDataWithHistory, cancelEdit, moveActive]);
+
+  const clearActiveCell = useCallback(() => {
+    if (!activeCell || !dataRef.current[activeCell.row]?.[activeCell.col]) return;
+    const { row, col } = activeCell;
+    setDataWithHistory(prev => fillColumn(prev, [row], col, ''), `Clear cell [${row},${col}]`);
+  }, [activeCell, setDataWithHistory]);
+
+  const handleFill = useCallback((src: number, to: number, toggled: boolean) => {
+    const range = fillRangePositions(src, to);
+    if (!activeCell || !range || !sortedRows[src]) return;
+    const { col } = activeCell;
+    const sourceValue = dataRef.current[sortedRows[src].idx]?.[col] ?? '';
+    const direction: FillDirection = to > src ? 1 : -1;
+    // Nearest-first, so series values line up with distance from the source
+    const inRange = sortedRows.slice(range[0], range[1] + 1).map(r => r.idx);
+    const targets = direction === 1 ? inRange : inRange.reverse();
+    const mode = resolveFillMode(sourceValue, toggled, FILL_OPTS);
+    const before = dataRef.current;
+    const values = buildFillValues(sourceValue, targets.length, direction, mode, FILL_OPTS);
+    setDataWithHistory(prev => setColumnValues(prev, targets, col, values), fillLabel(mode, targets.length, col));
+    const endCell = scrollRef.current && findCellEl(scrollRef.current, to, col);
+    if (endCell && canFillSeries(sourceValue, FILL_OPTS)) {
+      setLastFill({ col, targets, direction, sourceValue, mode, before, anchor: endCell.getBoundingClientRect() });
+    }
+  }, [activeCell, sortedRows, setDataWithHistory]);
+
+  // Auto Fill Options: re-apply the last fill in the other mode, replacing it in history (one undo step)
+  const switchFillMode = useCallback((mode: FillMode) => {
+    if (!lastFill || mode === lastFill.mode) return;
+    const { before, targets, col, sourceValue, direction } = lastFill;
+    const values = buildFillValues(sourceValue, targets.length, direction, mode, FILL_OPTS);
+    const next = setColumnValues(before, targets, col, values);
+    history.replace(next, fillLabel(mode, targets.length, col));
+    setData(next);
+    onDataChange?.(next);
+    setLastFill({ ...lastFill, mode });
+  }, [lastFill, history, onDataChange]);
+
+  const closeFillOptions = useCallback(() => setLastFill(null), []);
+
+  const { fillDrag, startFill } = useFillHandle(scrollRef, handleFill);
+  const fillBounds = fillDrag ? [Math.min(fillDrag.src, fillDrag.to), Math.max(fillDrag.src, fillDrag.to)] : null;
+
+  // Value the last cell under the drag will get — shown next to the pointer like Excel
+  const fillPreview = useMemo(() => {
+    if (!fillDrag || !activeCell || fillDrag.to === fillDrag.src || !sortedRows[fillDrag.src]) return null;
+    const value = data[sortedRows[fillDrag.src].idx]?.[activeCell.col] ?? '';
+    const mode = resolveFillMode(value, fillDrag.toggled, FILL_OPTS);
+    return fillValueAt(value, fillDrag.to - fillDrag.src, mode, FILL_OPTS);
+  }, [fillDrag, activeCell, sortedRows, data]);
+
+  // Keyboard on the selected cell: arrows/Tab move, Enter/F2/typing edits, Delete clears, Esc deselects
+  useEffect(() => {
+    if (!activeCell || editCell) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!isGridKeyTarget(e.target, scrollRef.current) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const delta = KEY_MOVES[e.key] ?? (e.key === 'Tab' ? [0, e.shiftKey ? -1 : 1] : null);
+      if (delta) { e.preventDefault(); moveActive(delta[0], delta[1]); return; }
+      if (e.key === 'Escape') { setActiveCell(null); return; }
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); clearActiveCell(); return; }
+      if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); openActiveEditor(); return; }
+      if (e.key.length === 1) { e.preventDefault(); openActiveEditor(e.key); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeCell, editCell, moveActive, clearActiveCell, openActiveEditor]);
+
+  // Deselect when clicking outside the table (the floating editor counts as inside)
+  useEffect(() => {
+    if (!activeCell) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (scrollRef.current?.contains(target) || target.closest('[data-cell-editor]')) return;
+      setActiveCell(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [activeCell]);
 
   const applyBatch = useCallback(() => {
     if (!batchCol || selected.size === 0) return;
@@ -533,6 +831,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
     );
     setRawData((prev: Row[]) => prev.filter((_r: Row, i: number) => !selected.has(i)));
     setSelected(new Set());
+    setActiveCell(null);
   }, [selected, setDataWithHistory]);
 
   const duplicateSelectedRows = useCallback(() => {
@@ -549,6 +848,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
       return next;
     });
     setSelected(new Set());
+    setActiveCell(null);
   }, [selected, setDataWithHistory]);
 
   const deleteColumn = useCallback((col: string) => {
@@ -558,6 +858,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
     setRawData((prev: Row[]) => prev.map(omitCol));
     setColWidths((prev: Record<string, number>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
     setFilterInputs((prev: Record<string, string>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== col)));
+    setActiveCell(prev => (prev?.col === col ? null : prev));
     setColMenuCol(null);
   }, [setDataWithHistory]);
 
@@ -592,6 +893,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
 
   const hideColumn = useCallback((col: string) => {
     setHiddenCols((prev: Set<string>) => new Set([...Array.from(prev as Set<string>), col]));
+    setActiveCell(prev => (prev?.col === col ? null : prev));
     setColMenuCol(null);
   }, []);
 
@@ -626,6 +928,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
     if (!findQuery) return;
     const newData = replaceAll(data, columns, findQuery, replaceValue, findOpts);
     if (newData !== data) {
+      setLastFill(null);
       history.push(data, `Replace all "${findQuery}" → "${replaceValue}"`);
       setData(newData);
       onDataChange?.(newData);
@@ -634,11 +937,13 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
 
   // Undo/Redo
   const handleUndo = useCallback(() => {
+    setLastFill(null);
     const prev = history.undo();
     if (prev) { setData(prev); onDataChange?.(prev); }
   }, [history, onDataChange]);
 
   const handleRedo = useCallback(() => {
+    setLastFill(null);
     const next = history.redo();
     if (next) { setData(next); onDataChange?.(next); }
   }, [history, onDataChange]);
@@ -1138,7 +1443,12 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
           <div
             ref={scrollRef}
             className="flex-1 overflow-auto"
-            onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+            onScroll={e => {
+              setScrollTop((e.target as HTMLDivElement).scrollTop);
+              // The floating editor is pinned to the viewport — save it rather than let it drift off its cell
+              if (editCell) commitEdit();
+              if (lastFill) setLastFill(null);
+            }}
           >
             <table className="text-xs border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
               <thead className="sticky top-0 z-20">
@@ -1231,6 +1541,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
                   return (
                     <tr
                       key={idx}
+                      data-pos={displayIdx}
                       style={wrapText ? undefined : { height: ROW_H }}
                       className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${
                         isSelected
@@ -1252,7 +1563,8 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
                         }
                       </td>
                       {visibleColumns.map((col: string) => {
-                        const isEditing = editCell?.row === idx && editCell?.col === col;
+                        const isActive = activeCell?.row === idx && activeCell?.col === col;
+                        const isInFill = !!fillBounds && activeCell?.col === col && displayIdx >= fillBounds[0] && displayIdx <= fillBounds[1];
                         const cellModified = isModified && row[col] !== rawData[idx]?.[col];
                         const cfColor = !isSelected && cfRules.length > 0
                           ? cfRules.find((r: CFRule) => r.col === col && matchCFRule(String(row[col] ?? ''), r.op, r.value))?.color
@@ -1263,28 +1575,27 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
                         return (
                           <td
                             key={col}
-                            onClick={() => { setEditCell({ row: idx, col }); setEditVal(row[col] ?? ''); }}
+                            data-col={col}
+                            onMouseDown={e => { if (e.detail > 1) e.preventDefault(); }}
+                            onClick={() => setActiveCell({ row: idx, col })}
+                            onDoubleClick={e => startEdit({ row: idx, col }, e.currentTarget)}
                             style={{
                               width: colWidths[col] ?? 140, minWidth: colWidths[col] ?? 140, maxWidth: colWidths[col] ?? 140,
                               backgroundColor: isFindMatch ? 'rgba(251,191,36,0.25)' : cfColor,
                               ...(isFrozen ? { position: 'sticky' as const, left: frozenLeftOffsets[col] } : {}),
                             }}
-                            className={`px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-pointer ${wrapText ? '' : 'overflow-hidden'} ${isFrozen ? `z-10 ${frozenBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]` : ''} ${
+                            className={`relative px-3 border-r border-slate-100 dark:border-slate-800 last:border-r-0 cursor-cell ${wrapText ? '' : 'overflow-hidden'} ${isFrozen ? `z-10 ${frozenBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]` : ''} ${
                               cellModified ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
-                            }`}
+                            } ${isActive ? 'ring-2 ring-inset ring-blue-500' : ''} ${isInFill && !isActive ? 'bg-blue-100/70 dark:bg-blue-500/20' : ''}`}
                           >
-                            {isEditing ? (
-                              <input
-                                autoFocus
-                                value={editVal}
-                                onChange={e => setEditVal(e.target.value)}
-                                onBlur={commitEdit}
-                                onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditCell(null); }}
-                                onClick={e => e.stopPropagation()}
-                                className="w-full bg-white dark:bg-slate-800 border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none text-slate-700 dark:text-slate-200 min-w-[80px]"
+                            <span title={wrapText ? undefined : String(row[col] ?? '')} className={wrapText ? 'block whitespace-pre-wrap break-words' : 'truncate block'}>{String(row[col] ?? '')}</span>
+                            {isActive && !editCell && (
+                              <div
+                                onMouseDown={e => startFill(e, displayIdx)}
+                                title="Drag to fill"
+                                aria-hidden="true"
+                                className="absolute right-0 bottom-0 w-2 h-2 bg-blue-500 border border-white dark:border-slate-900 cursor-crosshair"
                               />
-                            ) : (
-                              <span title={wrapText ? undefined : String(row[col] ?? '')} className={wrapText ? 'block whitespace-pre-wrap break-words' : 'truncate block'}>{String(row[col] ?? '')}</span>
                             )}
                           </td>
                         );
@@ -1332,6 +1643,7 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
             <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
               Showing {filteredRows.length.toLocaleString()} of {data.length.toLocaleString()} rows
               {selected.size > 0 && <span className="ml-2 text-blue-500">· {selected.size.toLocaleString()} selected</span>}
+              <span className="ml-2 hidden lg:inline">· Double-click to edit · drag the corner square to fill</span>
             </span>
             {modifiedSet.size > 0 && (
               <span className="text-[11px] font-bold text-amber-500">
@@ -1341,6 +1653,35 @@ const TableLens: React.FC<TableLensProps> = ({ externalData, onDataChange }) => 
           </div>
         </div>
       </div>
+
+      {editCell && editAnchor && (
+        <TableLensCellEditor
+          anchor={editAnchor}
+          value={editVal}
+          onChange={setEditVal}
+          onCommit={commitEdit}
+          onCancel={cancelEdit}
+        />
+      )}
+
+      {lastFill && (
+        <TableLensFillOptions
+          anchor={lastFill.anchor}
+          mode={lastFill.mode}
+          onChange={switchFillMode}
+          onClose={closeFillOptions}
+        />
+      )}
+
+      {fillDrag && fillPreview !== null && createPortal(
+        <div
+          style={{ position: 'fixed', left: fillDrag.x + 14, top: fillDrag.y + 14, zIndex: 9999 }}
+          className="pointer-events-none max-w-[240px] truncate px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] font-medium shadow-lg"
+        >
+          {fillPreview || <span className="italic opacity-70">(empty)</span>}
+        </div>,
+        document.body
+      )}
 
       {/* Column context menu portal */}
       {colMenuCol && colMenuRect && createPortal(
