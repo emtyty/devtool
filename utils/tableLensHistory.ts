@@ -1,23 +1,23 @@
 import { useState, useCallback, useRef } from 'react';
-import type { Row } from './tableLensUtils';
 
-interface HistoryEntry {
-  data: Row[];
+interface HistoryEntry<T> {
+  data: T;
   label: string;
 }
 
-export function useHistory(maxSize = 50) {
-  const [past, setPast] = useState<HistoryEntry[]>([]);
-  const [future, setFuture] = useState<HistoryEntry[]>([]);
-  const currentRef = useRef<Row[]>([]);
-  const pastRef = useRef<HistoryEntry[]>([]);
-  const futureRef = useRef<HistoryEntry[]>([]);
+/** Undo/redo stack of immutable snapshots. `T` must be replaced, never mutated. */
+export function useHistory<T>(maxSize = 50) {
+  const [past, setPast] = useState<HistoryEntry<T>[]>([]);
+  const [future, setFuture] = useState<HistoryEntry<T>[]>([]);
+  const currentRef = useRef<T | null>(null);
+  const pastRef = useRef<HistoryEntry<T>[]>([]);
+  const futureRef = useRef<HistoryEntry<T>[]>([]);
 
   // Keep refs in sync
   pastRef.current = past;
   futureRef.current = future;
 
-  const init = useCallback((data: Row[]) => {
+  const init = useCallback((data: T) => {
     currentRef.current = data;
     setPast([]);
     setFuture([]);
@@ -25,19 +25,26 @@ export function useHistory(maxSize = 50) {
     futureRef.current = [];
   }, []);
 
-  const push = useCallback((newData: Row[], label: string) => {
-    const entry = { data: currentRef.current, label };
-    const next = [...pastRef.current, entry];
-    if (next.length > maxSize) next.shift();
-    setPast(next);
-    pastRef.current = next;
-    setFuture([]);
-    futureRef.current = [];
-    currentRef.current = newData;
-  }, [maxSize]);
+  const push = useCallback(
+    (newData: T, label: string) => {
+      if (currentRef.current === null) {
+        currentRef.current = newData;
+        return;
+      }
+      const entry = { data: currentRef.current, label };
+      const next = [...pastRef.current, entry];
+      if (next.length > maxSize) next.shift();
+      setPast(next);
+      pastRef.current = next;
+      setFuture([]);
+      futureRef.current = [];
+      currentRef.current = newData;
+    },
+    [maxSize]
+  );
 
   /** Swap the latest state in place (no new undo step), e.g. switching a fill between copy and series */
-  const replace = useCallback((newData: Row[], label: string) => {
+  const replace = useCallback((newData: T, label: string) => {
     currentRef.current = newData;
     if (pastRef.current.length === 0) return;
     const next = [...pastRef.current];
@@ -46,8 +53,8 @@ export function useHistory(maxSize = 50) {
     pastRef.current = next;
   }, []);
 
-  const undo = useCallback((): Row[] | null => {
-    if (pastRef.current.length === 0) return null;
+  const undo = useCallback((): T | null => {
+    if (pastRef.current.length === 0 || currentRef.current === null) return null;
     const next = [...pastRef.current];
     const entry = next.pop()!;
     const futureNext = [...futureRef.current, { data: currentRef.current, label: entry.label }];
@@ -59,8 +66,8 @@ export function useHistory(maxSize = 50) {
     return entry.data;
   }, []);
 
-  const redo = useCallback((): Row[] | null => {
-    if (futureRef.current.length === 0) return null;
+  const redo = useCallback((): T | null => {
+    if (futureRef.current.length === 0 || currentRef.current === null) return null;
     const next = [...futureRef.current];
     const entry = next.pop()!;
     const pastNext = [...pastRef.current, { data: currentRef.current, label: entry.label }];
